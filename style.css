@@ -1,0 +1,534 @@
+*{
+        margin: 0; 
+        padding: 0;     
+}
+/* Body---------------------------------------- */
+body{
+    background-color: rgb(0, 0, 0);
+    margin: 0%;
+}
+
+
+
+/* ----------------------------header and navbar starts here----------------------------------------- */
+header{
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    position: fixed;
+    color: white;
+    z-index: 999;
+    background-color: transparent;
+    width: 100%;
+}
+
+
+/* Redimade Hover to use */
+.box1Hover{
+    border-radius: 10%;
+    transition: all 2s ease;
+}
+.box1Hover:hover {
+    transform: translateY(-5px);
+    box-shadow: 10px 10px 15px grey; 
+}
+.box2Hover{
+    
+    transition: all 2s ease;
+}
+.box2Hover:hover {
+    transform: translateY(-10px);
+    shadow: 10px 10px 15px grey; 
+    
+}
+
+
+/*--------------------Nav bar container-------------------------- */
+#nav-container{
+    margin-right: 40px;
+    background-color: transparent;
+    padding: 30px;    
+}
+
+/* nav bar items */
+.nav-items{
+    font-family: 'Special Elite', Arial;
+    transition: color 0.3s linear; 
+    font-size: 20px;
+    padding: 10px;
+    
+}
+.nav-items:hover{
+    color: rgb(143, 138, 143); 
+    transform: translateX(-1px);
+    
+}
+
+/* ----------Nav bike text and the icon---------------- */
+#htext{    
+    color: white;
+    font-size: 30px;
+    margin-left: 20px;
+}
+/* ----------------------------------------Header and nav ends here------------------------------------------------- */
+
+
+
+/* ------------------------------------------Box1 starts here--------------------------------------------------------- */
+/* Summary 
+    This box contain all landing screen style*/
+.box1 {
+    height: 100%;
+    width: 100%;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;    
+}
+
+/*background gift video for the bike--------  */
+#bgmvid {
+    height: 100vh;
+    width: 100vw;
+    display: block;  
+}
+
+/* The landing text---------- */
+#box1-text{
+    color: rgb(186, 182, 182);
+    position: absolute;
+    text-align: center;
+    font-size: 25px;
+    font-weight: 20;
+    font-family: 'Cinzel Decorative', serif;
+    text-shadow: 1px 1px 10px rgba(211, 206, 206, 0.9);
+    transition: all 2s ease;
+}
+#box1-text:hover{
+    color: rgb(240, 238, 238);
+    text-shadow: 1px 1px 20px rgba(231, 222, 222, 0.9);
+}
+
+/* --------------------The container of button Explore Reusable--------------------- */
+.box-but1{
+    height: 60px;
+    width: 200px;
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+    margin: auto;
+    margin-top: 30px;
+    border: 1px white solid;
+    border-radius: 40px;
+    box-shadow: 0 10px 10px rgba(255, 255, 255, 0.432); 
+}
+
+/* ---------Button-Class reuseable---------------- */
+.but1{
+    position: absolute;
+    height: 60px;
+    width: 200px;
+    border: 0;
+    border-radius: 40px;
+    background-color: transparent;
+    color: white;
+    font-size: 20px;
+    font-weight: 100px;
+    font-family: 'Cinzel Decorative', serif;
+    cursor: pointer;
+    display: block;
+    transition: all 2s ease;
+}
+.but1:hover{
+    transform: translateY(-5px);
+    background-color: rgba(130, 131, 132, 0.275)
+}
+/* ------------------------------------------------Landing screen box1 container ends here--------------------------------------------------- */
+
+
+
+/* --------------------------box2----------------------------------------------------------------- */
+/* This box contain the whole about section */
+.box2{
+    min-height: 100vh;
+    width: 100vw;
+    display: flex;
+    flex-wrap: wrap;
+    flex-direction: row;
+    justify-content: space-around;
+    color: white;
+    font-size: 20px;
+    font-family: sans-serif;
+    /* background-color: orange; */
+}
+
+/* Bike img box---------- */
+#bike-imgbox{
+    height: 800px;
+    width: 600px; 
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    /* background-color: brown */
+}
+#img1{
+    width: 100%;
+    height: 100%;
+}
+
+/* About the bike section---------- */
+#ab-box{
+    height: 100vh;
+    width:500px;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    font-family:'Cinzel Decorative', serif; 
+    /* background-color: blue; */
+    /* overflow: hidden; */
+}
+
+/* Content box-------- */
+#ab-conbox{
+    height: 600px;
+    width: 1000px;
+    display: flex;
+    flex-direction: column;
+    margin-top: 90px;
+    margin-right: 50px;
+    /* background-color: red; */
+}
+#bike-text{
+    font-size: 100px;
+    font-family:'League Spartan', sans-serif;
+}
+#ab-content{
+    margin-top: 30px;
+    font-size: 30px;
+    text-align: center;
+}
+/* -----------------------------------------About box2 container ends here---------------------------------------- */
+
+
+
+/* -------------------------------------------Box 3 starts here----------------------------------- */
+/* Summary 
+This box contain the background  gif and the test inside the box*/
+
+/* Whole container for the box3 */
+.box3{
+    height: 100vh;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+}
+
+/* text section */
+#box3-con{
+    width: 70%;
+    display: flex;
+    flex-direction: column;
+    text-align: center;
+    align-items: center;
+    position: absolute;
+    color: white;
+    gap: 30px;
+}
+#box3-con h1{
+    font-size:60px;
+    font-family: 'Cinzel Decorative', Arial, Helvetica, sans-serif;
+    text-shadow: 0px 10px 25px black;
+}
+#box3-con p{
+    font-size: 30px;
+    font-family: 'League Spartan', sans-serif;
+    padding: 30px;
+     text-shadow: 0px 10px 25px black;
+}
+/* -----------------------------------box 3 ends here-------------------------------------------- */
+
+
+
+
+/* -----------------------------------box 4 starts here-------------------------------------------- */
+
+/*  Summary
+  more its contain a main container and inside the container there is three container
+  for the services  */
+
+/* Main container */
+
+.box4{
+    position: relative;
+    height: 100vh;
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+    gap: 20px;
+    justify-content: center;
+    align-items: center;
+   
+    color: white;
+}
+/* Sercvice Header tag */
+#serviceH{
+    position: absolute;
+    top: 5px;
+    font-size: 20px;
+    font-family: Cambria, Cochin, Georgia, Times, 'Times New Roman', serif;
+    
+}
+
+/*The inside box container*/
+.box4_sec{
+    height: 700px;
+    width: 480px;
+    margin-top: 100px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    overflow: hidden;
+    gap: 30px;
+    border: 1px solid white;
+    border-radius: 10%;
+    box-shadow: 1px 10px 2px grey;
+    transition: all 2s ease;
+}
+.box4_sec:hover {
+    transform: translateY(-5px);
+    box-shadow: 10px 10px 15px grey; 
+}
+.box4_sec h1{
+    font-size: 50px;
+    margin-top: 30px;      
+}
+.box4_sec p{
+    font-size: 30px;
+    padding: 20px;
+}
+/* Image */
+.box4_sec img{
+    height: 300px;
+    width: 300px;
+    opacity: 0.4;
+    margin-right: -400px;
+}
+/* -----------------------------------box 4 ends here-------------------------------------------- */
+
+
+/* -----------------------------------boxBLog starts here-------------------------------------------- */
+
+/* Main container */
+.boxBlog{
+    height: 300vh;
+    width: 100%;
+    background-color: rgb(0, 0, 0);
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    z-index: 0;
+}
+.BLbox{
+    height: 100vh;
+    width: 100%;
+    position: relative;  
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 1;
+}
+/* Mountain Image style */
+.BLbox #imgM{
+height: 700px;
+width: 600px;
+opacity: .3;
+z-index: 1;
+position: relative;
+}
+/* Biker images Style */
+.BLbox #img1{
+    height: 500px;
+    width: 700px;
+    clip-path: polygon(27% 7%, 80% 14%, 100% 43%, 99% 99%, 32% 93%, 0 100%, 0 78%, 0% 43%, 0 0);
+    z-index: 2;
+}
+.BLbox #img2{
+    height: 500px;
+    width: 700px;
+    clip-path: polygon(100% 0%, 75% 50%, 100% 100%, 25% 100%, 0% 50%, 25% 0%);    z-index: 2;
+}
+.BLbox #img3{
+    height: 500px;
+    width: 700px;
+    clip-path: polygon(1% 3%, 13% 8%, 23% 3%, 35% 14%, 43% 6%, 59% 10%, 81% 14%, 90% 27%, 98% 43%, 96% 61%, 92% 81%, 85% 91%, 67% 90%, 47% 93%, 22% 91%, 1% 99%, 0% 98%);
+}
+/* Boccontnet Right*/
+.boxconR{
+    height: 300px;
+    width: 800px;
+    right: 10px;
+
+    display: flex;
+    flex-wrap: wrap;
+    flex-direction: column;
+    justify-content: center;
+    position: absolute;
+    gap: 40px;
+    color: white;
+    z-index: 2;
+}
+.boxconR h1{
+    font-size: 40px;
+    text-align: center;
+}
+.boxconR p{
+    font-size: 25px;
+    text-align: center;
+    padding: 20px;
+}
+/* Boccontnet Left*/
+.boxconL{
+    height: 300px;
+    width: 800px;
+    left: 10px;
+
+    display: flex;
+    flex-wrap: wrap;
+    flex-direction: column;
+    justify-content: center;
+    position: absolute;
+    gap: 40px;
+    color: white;
+    z-index: 2;
+}
+.boxconL h1{
+    font-size: 40px;
+    text-align: center;
+}
+.boxconL p{
+    font-size: 25px;
+    text-align: center;
+    padding: 20px;
+}
+
+
+/* Dot road line path */
+.road{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+    pointer-events:none;
+    transform: translate(500px,500px);
+    z-index: -1;
+}
+.road path{
+    fill:none;
+    stroke:white;
+    stroke-width:3;
+    stroke-dasharray:10 10;
+}
+/* -----------------------------------boxBLog ends here-------------------------------------------- */
+
+
+/* -----------------------------------box 5 starts here-------------------------------------------- */
+
+/* Summary 
+This box5 contains contant details
+*/
+
+.box5{
+    width:100%;
+    min-height:100vh;
+    background:#000;
+    position:relative;
+    overflow:hidden;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+}
+
+/* Dark Overlay */
+
+.box5::before{
+    content:"";
+    position:absolute;
+    inset:0;
+    background:rgba(0,0,0,.45);
+    z-index:1;
+}
+
+/* Bike Image */
+
+.box5-bike{
+    position:absolute;
+    right:-120px;
+    bottom:0;
+    width:750px;
+    max-width:55%;
+    z-index:0;
+    opacity:.75;
+}
+
+/* Main Content */
+
+.box5-content{
+    width:85%;
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    position:relative;
+    z-index:2;
+    color:white;
+}
+
+/* Left */
+
+.box5-left{
+    width:45%;
+}
+
+.box5-left h1{
+    font-size:70px;
+    font-family:'League Spartan',sans-serif;
+    margin-bottom:40px;
+}
+
+.box5-left h2{
+    font-size:32px;
+    font-family:'Cinzel Decorative',serif;
+    margin-bottom:20px;
+}
+
+.box5-left p{
+    font-size:28px;
+    line-height:1.6;
+    font-family:'League Spartan',sans-serif;
+}
+
+/* Right */
+
+.box5-right{
+    width:35%;
+}
+
+.box5-right h2{
+    font-size:42px;
+    margin-bottom:35px;
+    font-family:'League Spartan',sans-serif;
+}
+
+.box5-right p{
+    font-size:24px;
+    line-height:1.8;
+    margin-bottom:15px;
+    font-family:'League Spartan',sans-serif;
+}
+
