@@ -1,29 +1,15 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 
-/* =========================================================
-   🚀 NOVA LOGIN — by RideWise
-   New Concepts introduced:
-   1. Mood-Based Theme (auto-detects time of day)
-   2. Magnetic Buttons (attract to cursor)
-   3. Audio-Reactive UI (mic permission optional)
-   4. Liquid Form (inputs morph into colors)
-   5. Gravity Trail (cursor leaves fading trail)
-   6. 3D Hologram Card (parallax depth)
-   7. Ripple Wave on Click (expanding circles)
-   8. Voice Login (Web Speech API)
-   9. Biometric Mock (fingerprint scan visual)
-   10. Password Strength Visualizer (particle stream)
-========================================================= */
-
 function Login() {
   const navigate = useNavigate();
   const containerRef = useRef(null);
   const cardRef = useRef(null);
+  const dropdownRef = useRef(null);
   const trailRef = useRef([]);
   const audioContextRef = useRef(null);
 
-  // ---------- STATE ----------
+  // ================= SINGLE STATE DECLARATIONS =================
   const [theme, setTheme] = useState("dark");
   const [isLogin, setIsLogin] = useState(true);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
@@ -37,25 +23,43 @@ function Login() {
   const [biometricScanning, setBiometricScanning] = useState(false);
   const [rippleColor, setRippleColor] = useState("#ffffff");
   const [tilt, setTilt] = useState({ x: 0, y: 0 });
+  const [open, setOpen] = useState(false);  // 👈 Dropdown state moved here
 
-  // ---------- MOOD DETECTION ----------
+  // Theme data
+  const themeData = {
+    dark:     { label: "Dark",     icon: "🌙" },
+    light:    { label: "Light",    icon: "☀️" },
+    warm:     { label: "Warm",     icon: "🌅" },
+    midnight: { label: "Midnight", icon: "🌌" },
+  };
+
+  // ================= MOOD DETECTION (only on first load) =================
   useEffect(() => {
     const hour = new Date().getHours();
-    if (hour >= 6 && hour < 12) setTheme("warm");     // morning
-    else if (hour >= 12 && hour < 18) setTheme("light"); // afternoon
-    else if (hour >= 18 && hour < 22) setTheme("dark");  // evening
-    else setTheme("midnight");                          // night
+    if (hour >= 6 && hour < 12) setTheme("warm");
+    else if (hour >= 12 && hour < 18) setTheme("light");
+    else if (hour >= 18 && hour < 22) setTheme("dark");
+    else setTheme("midnight");
   }, []);
 
-  // ---------- MOUSE TRACKING ----------
+  // ================= CLICK OUTSIDE DROPDOWN =================
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // ================= MOUSE TRACKING (rest of code same) =================
   useEffect(() => {
     const handleMove = (e) => {
       if (containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
         setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
       }
-
-      // Card 3D tilt
       if (cardRef.current) {
         const r = cardRef.current.getBoundingClientRect();
         const cx = r.left + r.width / 2;
@@ -64,8 +68,6 @@ function Login() {
         const rotateX = -((e.clientY - cy) / r.height) * 12;
         setTilt({ x: rotateX, y: rotateY });
       }
-
-      // Cursor trail
       trailRef.current.push({ x: e.clientX, y: e.clientY, id: Date.now() });
       if (trailRef.current.length > 12) trailRef.current.shift();
     };
@@ -73,7 +75,6 @@ function Login() {
     return () => window.removeEventListener("mousemove", handleMove);
   }, []);
 
-  // ---------- AUTO-REFRESH TRAIL ----------
   useEffect(() => {
     const interval = setInterval(() => {
       trailRef.current = [];
@@ -81,7 +82,7 @@ function Login() {
     return () => clearInterval(interval);
   }, []);
 
-  // ---------- RIPPLE CLICK ----------
+  // ================= RIPPLE =================
   const createRipple = (e) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const size = Math.max(rect.width, rect.height) * 2;
@@ -93,28 +94,28 @@ function Login() {
     setTimeout(() => setRipples((prev) => prev.filter((r) => r.id !== id)), 800);
   };
 
-  // ---------- VOICE LOGIN ----------
+  // ================= VOICE =================
   const startVoice = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) return alert("Voice not supported");
     const recognition = new SpeechRecognition();
     recognition.lang = "en-US";
     recognition.onresult = (event) => {
-      const text = event.results[0][0].transcript.toLowerCase();
-      if (text.includes("login") || text.includes("sign in")) setIsLogin(true);
-      if (text.includes("signup") || text.includes("sign up")) setIsLogin(false);
-      if (text.includes("dark")) setTheme("dark");
-      if (text.includes("light")) setTheme("light");
-      if (text.includes("om")||text.includes("warm")||text.includes("worm")||text.includes("orange")) setTheme("warm");
-      if (text.includes("midnight")) setTheme("midnight");
-      if (text.includes("home")) navigate("/");
+      const text = event.results[0][0].transcript.toLowerCase().trim();
+      if (text.includes("login") || text.includes("sign in") || text.includes("log in")) setIsLogin(true);
+      if (text.includes("signup") || text.includes("sign up") || text.includes("register")) setIsLogin(false);
+      if (text.includes("dark") || text.includes("night") || text.includes("black")) setTheme("dark");
+      if (text.includes("light") || text.includes("day") || text.includes("bright") || text.includes("white")) setTheme("light");
+      if (text.includes("warm") || text.includes("orange") || text.includes("sunset") || text.includes("sunrise")) setTheme("warm");
+      if (text.includes("midnight") || text.includes("purple") || text.includes("galaxy") || text.includes("space")) setTheme("midnight");
+      if (text.includes("home") || text.includes("back") || text.includes("landing")) navigate("/");
     };
     recognition.start();
     setVoiceMode(true);
     setTimeout(() => setVoiceMode(false), 5000);
   };
 
-  // ---------- BIOMETRIC SCAN ----------
+  // ================= BIOMETRIC =================
   const startBiometric = () => {
     setBiometricScanning(true);
     setTimeout(() => {
@@ -124,7 +125,7 @@ function Login() {
     }, 3000);
   };
 
-  // ---------- PASSWORD STRENGTH ----------
+  // ================= PASSWORD STRENGTH =================
   useEffect(() => {
     let s = 0;
     if (formData.password.length > 5) s += 25;
@@ -134,7 +135,7 @@ function Login() {
     setPasswordStrength(s);
   }, [formData.password]);
 
-  // ---------- SUBMIT ----------
+  // ================= SUBMIT =================
   const handleSubmit = (e) => {
     e.preventDefault();
     setLoading(true);
@@ -144,7 +145,7 @@ function Login() {
   const handleChange = (field) => (e) =>
     setFormData((p) => ({ ...p, [field]: e.target.value }));
 
-  // ---------- THEME SYSTEM ----------
+  // ================= THEME STYLES =================
   const themes = {
     dark: {
       bg: "bg-black",
@@ -153,7 +154,7 @@ function Login() {
       card: "bg-white/5 border-white/10 text-white",
       input: "bg-white/5 border-white/15 text-white placeholder-gray-500",
       button: "bg-white text-black",
-      record: "bg-white border-white",
+      record: "bg-red-500 border border-white/30",
       glow: "rgba(255,255,255,0.15)",
       particle: "bg-white",
       accent: "from-white to-gray-400",
@@ -165,7 +166,7 @@ function Login() {
       card: "bg-white border-gray-200 shadow-xl text-black",
       input: "bg-gray-50 border-gray-300 text-black placeholder-gray-400",
       button: "bg-black text-white",
-      record: "bg-white/5 border-white/",
+      record: "bg-red-500 border border-black/30",
       glow: "rgba(0,0,0,0.08)",
       particle: "bg-black",
       accent: "from-black to-gray-500",
@@ -177,7 +178,7 @@ function Login() {
       card: "bg-white/60 backdrop-blur-xl border-orange-200 shadow-xl text-orange-950",
       input: "bg-white/70 border-orange-200 text-orange-950 placeholder-orange-300",
       button: "bg-gradient-to-r from-orange-500 to-rose-500 text-white",
-      record: "bg-white/5 border-white/",
+      record: "bg-red-500 border border-orange-300",
       glow: "rgba(251,146,60,0.2)",
       particle: "bg-orange-500",
       accent: "from-orange-500 to-rose-500",
@@ -189,7 +190,7 @@ function Login() {
       card: "bg-white/5 border-purple-500/20 text-white",
       input: "bg-white/5 border-purple-400/20 text-white placeholder-purple-400",
       button: "bg-gradient-to-r from-purple-500 to-pink-500 text-white",
-      record: "bg-white/5 border-white/",
+      record: "bg-red-500 border border-purple-400/40",
       glow: "rgba(168,85,247,0.25)",
       particle: "bg-purple-400",
       accent: "from-purple-400 to-pink-400",
@@ -197,17 +198,15 @@ function Login() {
   };
   const tc = themes[theme];
 
-  // ---------- STRENGTH COLOR ----------
   const strengthColor =
-    passwordStrength <= 25 ? "bg-red-500" :
-    passwordStrength <= 50 ? "bg-orange-500" :
-    passwordStrength <= 75 ? "bg-yellow-500" : "bg-green-500";
+    passwordStrength <= 25 ? "bg-red-500"
+    : passwordStrength <= 50 ? "bg-orange-500"
+    : passwordStrength <= 75 ? "bg-yellow-500"
+    : "bg-green-500";
 
   return (
-    <div
-      ref={containerRef}
-      className={`relative min-h-screen w-full overflow-hidden transition-all duration-1000 ${tc.bg}`}
-    >
+    <div ref={containerRef} className={`relative min-h-screen w-full overflow-hidden transition-all duration-1000 ${tc.bg}`}>
+      
       {/* ================= CURSOR TRAIL ================= */}
       <div className="fixed inset-0 pointer-events-none z-40">
         {trailRef.current.map((p, i) => (
@@ -221,7 +220,6 @@ function Login() {
               height: 8,
               background: `rgba(255,255,255,${(i / 12) * 0.5})`,
               filter: "blur(2px)",
-              transition: "opacity 0.3s",
               opacity: i / 12,
             }}
           />
@@ -230,7 +228,7 @@ function Login() {
 
       {/* ================= MOUSE GLOW ================= */}
       <div
-        className="pointer-events-none fixed inset-0 transition-opacity duration-500 z-0"
+        className="pointer-events-none fixed inset-0 z-0"
         style={{
           background: `radial-gradient(circle 600px at ${mousePos.x}px ${mousePos.y}px, ${tc.glow}, transparent 40%)`,
         }}
@@ -250,9 +248,7 @@ function Login() {
               opacity: Math.random() * 0.4 + 0.2,
               animation: `pulse ${Math.random() * 3 + 2}s infinite`,
               animationDelay: `${Math.random() * 3}s`,
-              transform: `translate(${
-                (mousePos.x - window.innerWidth / 2) * 0.02
-              }px, ${(mousePos.y - window.innerHeight / 2) * 0.02}px)`,
+              transform: `translate(${(mousePos.x - window.innerWidth/2) * 0.02}px, ${(mousePos.y - window.innerHeight/2) * 0.02}px)`,
               transition: "transform 0.6s ease-out",
             }}
           />
@@ -261,6 +257,7 @@ function Login() {
 
       {/* ================= TOP BAR ================= */}
       <div className="fixed top-6 left-6 right-6 z-50 flex justify-between items-center">
+        
         <button
           onClick={() => navigate("/")}
           className={`px-4 py-2 rounded-full backdrop-blur-md border flex items-center gap-2 transition-all hover:scale-110 ${tc.card}`}
@@ -278,57 +275,85 @@ function Login() {
           </span>
         </div>
 
+        {/* RIGHT SIDE: Voice + Theme */}
         <div className="flex items-center gap-2">
+          
           {/* Voice Button */}
-<div className="flex items-center gap-2">
-  <span className={`text-xs font-bold tracking-widest hidden md:inline transition-all ${
-    voiceMode ? "text-red-500 animate-pulse" : tc.sub
-  }`}>
-    {voiceMode ? "LISTENING..." : "VOICE"}
-  </span>
-  
-  <button
-    onClick={startVoice}
-    className={`group relative w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 hover:scale-110 ${
-      voiceMode 
-        ? "bg-red-500 text-white animate-pulse shadow-lg shadow-red-500/50" 
-        : tc.record
-    }`}
-    title="Voice Control - Try saying: dark, light, login, signup, home"
-  >
-    <i className={`fa ${voiceMode ? "fa-microphone-slash" : "fa-microphone"} text-sm`}></i>
-    
-    {/* Pulse rings when active */}
-    {voiceMode && (
-      <>
-        <span className="absolute inset-0 rounded-full bg-red-500 animate-ping opacity-30"></span>
-        <span className="absolute inset-0 rounded-full bg-red-500 animate-pulse opacity-50"></span>
-      </>
-    )}
-  </button>
-</div>
+          <div className="flex items-center gap-2">
+            <span className={`text-xs font-bold tracking-widest hidden md:inline transition-all ${
+              voiceMode ? "text-red-500 animate-pulse" : tc.sub
+            }`}>
+              {voiceMode ? "LISTENING..." : "VOICE"}
+            </span>
 
-          {/* Theme Switcher - DROPDOWN */}
-          <select
-            value={theme}
-            onChange={(e) => setTheme(e.target.value)}
-            className={`px-3 py-2 rounded-full backdrop-blur-md border text-sm font-bold cursor-pointer ${tc.card}`}
-          >
-            <option value="dark">🌙 Dark</option>
-            <option value="light">☀️ Light</option>
-            <option value="warm">🌅 Warm</option>
-            <option value="midnight">🌌 Midnight</option>
-          </select>
+            <button
+              onClick={startVoice}
+              className={`group relative w-7 h-7 rounded-full flex items-center justify-center transition-all duration-300 hover:scale-110 ${
+                voiceMode 
+                  ? "bg-red-500 text-white animate-pulse shadow-lg shadow-red-500/50" 
+                  : `${tc.record} ${tc.text}`
+              }`}
+              title="Voice Control - Try: dark, light, signup, home"
+            >
+              <i className={`fa ${voiceMode ? "fa-microphone-slash" : "fa-microphone"} text-sm`}></i>
+
+              {voiceMode && (
+                <>
+                  <span className="absolute inset-0 rounded-full bg-red-500 animate-ping opacity-30"></span>
+                  <span className="absolute inset-0 rounded-full bg-red-500 animate-pulse opacity-50"></span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Theme Dropdown */}
+          <div ref={dropdownRef} className="relative w-44">
+            <button
+              onClick={() => setOpen(!open)}
+              className={`flex items-center justify-between w-full px-4 py-2 rounded-full border backdrop-blur-md transition-all hover:scale-105 ${tc.card}`}
+            >
+              <span className="flex items-center gap-2">
+                <span>{themeData[theme].icon}</span>
+                <span className="font-semibold">{themeData[theme].label}</span>
+              </span>
+              <span className={`transition-transform duration-300 ${open ? "rotate-180" : ""}`}>
+                ⌄
+              </span>
+            </button>
+
+            {open && (
+              <div className={`absolute right-0 mt-2 w-full rounded-xl border backdrop-blur-xl shadow-2xl z-50 overflow-hidden ${tc.card}`}>
+                {Object.entries(themeData).map(([key, value]) => (
+                  <button
+                    key={key}
+                    onClick={() => {
+                      setTheme(key);
+                      setOpen(false);
+                    }}
+                    className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-all hover:bg-white/10 ${
+                      theme === key ? "bg-white/10 font-bold" : ""
+                    }`}
+                  >
+                    <span className="text-lg">{value.icon}</span>
+                    <span>{value.label}</span>
+                    {theme === key && (
+                      <span className="ml-auto text-green-400">✓</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* ================= MAIN CONTENT ================= */}
       <div className="relative min-h-screen flex items-center justify-center px-4 py-24 z-10">
         <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-
-          {/* LEFT - Branding */}
+          
+          {/* LEFT */}
           <div className="hidden lg:block space-y-6">
-            <div className={`inline-block px-4 py-1.5 rounded-full border  backdrop-blur-md text-xs  tracking-widest font-bold ${tc.card}`}>
+            <div className={`inline-block px-4 py-1.5 rounded-full border backdrop-blur-md text-xs tracking-widest font-bold ${tc.card}`}>
               WELCOME BACK RIDER
             </div>
 
@@ -344,7 +369,6 @@ function Login() {
               Share rides, build an audience, and turn your passion into income. Join 5,000+ riders on RideWise.
             </p>
 
-            {/* Animated stats counter */}
             <div className="flex gap-6 pt-4">
               {[
                 { n: 10000, l: "Posts" },
@@ -372,7 +396,7 @@ function Login() {
             </p>
           </div>
 
-          {/* RIGHT - Form Card with 3D tilt */}
+          {/* RIGHT - Form Card */}
           <div
             ref={cardRef}
             className="relative transition-transform duration-200 ease-out"
@@ -381,21 +405,18 @@ function Login() {
               transformStyle: "preserve-3d",
             }}
           >
-            {/* Glow effect */}
             <div
-              className="absolute -inset-2 rounded-3xl blur-3xl opacity-40 transition-all duration-300"
+              className="absolute -inset-2 rounded-3xl blur-3xl opacity-40"
               style={{
-                background: `radial-gradient(circle at ${
-                  mousePos.x / 3
-                }px ${
-                  mousePos.y / 3
-                }px, ${theme === "light" ? "rgba(0,0,0,0.2)" : "rgba(255,255,255,0.3)"}, transparent 60%)`,
+                background: `radial-gradient(circle at ${mousePos.x/3}px ${mousePos.y/3}px, ${theme === "light" ? "rgba(0,0,0,0.2)" : "rgba(255,255,255,0.3)"}, transparent 60%)`,
               }}
             />
 
-            <div className={`relative p-8 md:p-10 rounded-3xl border backdrop-blur-2xl transition-all duration-500 ${tc.card}`} style={{ transform: "translateZ(30px)" }}>
-
-              {/* Login/Signup Toggle */}
+            <div
+              className={`relative p-8 md:p-10 rounded-3xl border backdrop-blur-2xl transition-all duration-500 ${tc.card}`}
+              style={{ transform: "translateZ(30px)" }}
+            >
+              {/* Toggle */}
               <div className={`flex p-1 rounded-full mb-8 ${theme === "light" ? "bg-black/5" : "bg-white/5"}`}>
                 {["Login", "Sign Up"].map((tab) => (
                   <button
@@ -474,13 +495,12 @@ function Login() {
                     </button>
                   </div>
 
-                  {/* Password strength particle stream */}
                   {!isLogin && formData.password && (
                     <div className="mt-2 h-1.5 rounded-full overflow-hidden bg-gray-300/20">
                       <div
                         className={`h-full transition-all duration-500 ${strengthColor}`}
                         style={{ width: `${passwordStrength}%` }}
-                      />
+                      ></div>
                     </div>
                   )}
                 </div>
@@ -495,7 +515,6 @@ function Login() {
                   </div>
                 )}
 
-                {/* Submit with ripple */}
                 <button
                   type="submit"
                   disabled={loading}
@@ -510,7 +529,6 @@ function Login() {
                       <i className="fa fa-arrow-right"></i>
                     </>
                   )}
-                  {/* Ripples */}
                   {ripples.map((r) => (
                     <span
                       key={r.id}
@@ -528,7 +546,6 @@ function Login() {
                   ))}
                 </button>
 
-                {/* Biometric option */}
                 {isLogin && (
                   <>
                     <div className="flex items-center gap-4 my-4">
@@ -541,9 +558,7 @@ function Login() {
                       type="button"
                       onClick={startBiometric}
                       disabled={biometricScanning}
-                      className={`relative w-full py-3.5 rounded-xl border-2 transition-all hover:scale-[1.02] ${
-                        tc.card
-                      } ${biometricScanning ? "animate-pulse" : ""}`}
+                      className={`relative w-full py-3.5 rounded-xl border-2 transition-all hover:scale-[1.02] ${tc.card} ${biometricScanning ? "animate-pulse" : ""}`}
                     >
                       <i className={`fa fa-fingerprint text-lg ${biometricScanning ? "text-green-500" : ""}`}></i>
                       <span className="ml-2 font-semibold">
@@ -578,7 +593,6 @@ function Login() {
         </div>
       </div>
 
-      {/* ================= GLOBAL STYLES ================= */}
       <style>{`
         @keyframes ripple {
           to { transform: scale(4); opacity: 0; }
@@ -588,7 +602,6 @@ function Login() {
   );
 }
 
-/* ---------- REUSABLE INPUT ---------- */
 const Input = ({ icon, label, focused, tc, ...props }) => (
   <div>
     <label className={`text-xs font-bold tracking-wider mb-2 block ${tc.sub}`}>{label}</label>
