@@ -33,7 +33,7 @@ function Login() {
     midnight: { label: "Midnight", icon: "🌌" },
   };
 
-  // ================= MOOD DETECTION (only on first load) =================
+  // ================= MOOD DETECTION (only on first load) change dynamically for the correct hour =================
   useEffect(() => {
     const hour = new Date().getHours();
     if (hour >= 6 && hour < 12) setTheme("warm");
@@ -112,7 +112,7 @@ function Login() {
     };
     recognition.start();
     setVoiceMode(true);
-    setTimeout(() => setVoiceMode(false), 5000);
+    setTimeout(() => setVoiceMode(false), 8000);
   };
 
   // ================= BIOMETRIC =================

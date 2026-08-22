@@ -93,7 +93,7 @@ function Landing() {
           }}
         />
 
-        {/* Floating particles */}
+        {/* Floating particles
         <div className="absolute inset-0 z-10 overflow-hidden pointer-events-none">
           {[...Array(20)].map((_, i) => (
             <div
@@ -108,7 +108,7 @@ function Landing() {
               }}
             ></div>
           ))}
-        </div>
+        </div> */}
 
         <div className="relative z-20 max-w-5xl">
           <div className="inline-block px-4 py-2 mb-6 border border-white/30 rounded-full text-sm tracking-widest backdrop-blur-md hover:border-white transition-colors">
