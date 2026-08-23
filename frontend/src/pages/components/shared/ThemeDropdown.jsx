@@ -23,7 +23,7 @@ export default function ThemeDropdown({ theme, setTheme, tc }) {
   // ================= CLICK OUTSIDE DROPDOWN =================
   useEffect(() => {
     const handleClickOutside = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+      if (ref.current && !ref.current.contains(e.target)) {
         setOpen(false);
       }
     };

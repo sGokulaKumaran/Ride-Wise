@@ -26,10 +26,11 @@ export function useVoice(commands = {}) {
       const text = event.results[0][0].transcript.toLowerCase().trim();
       console.log("🎤 Heard:", text);
 
-      // Check each command's keywords
-      for (const [action, keywords] of Object.entries(commands)) {
-        if (keywords.some(k => text.includes(k))) {
-          commands[action](); // execute the action
+      // commands is a flat map: { keyword: fn }
+      // Find the first keyword that the spoken text includes, then call its fn
+      for (const [keyword, fn] of Object.entries(commands)) {
+        if (text.includes(keyword)) {
+          fn();
           break;
         }
       }

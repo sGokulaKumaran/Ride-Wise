@@ -1,24 +1,20 @@
 // ============================================================
-// 🏠 Home Page — Main entry point for the homepage
-// Combines all home components + global state (theme, voice, mouse)
+// 🏠 Home Page — Modern Feed-based Layout
+// Layout: [Sidebar] [Top Bar + Feed] [Suggestions]
+// Mobile:  [Top Bar] [Feed] [Bottom Nav]
 // ============================================================
 
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 
-import Navbar from "./components/home/Navbar";
-import Hero from "./components/home/Hero";
-import TrendingVideos from "./components/home/TrendingVideos";
-import ExploreBikes from "./components/home/ExploreBikes";
-import PopularRides from "./components/home/PopularRides";
-import FeaturedVideo from "./components/home/FeaturedVideo";
-import RiderEssentials from "./components/home/RiderEssentials";
-import LiveRides from "./components/home/LiveRides";
-import RideStories from "./components/home/RideStories";
-import Footer from "./components/home/Footer";
-
 import { useTheme } from "./hooks/useTheme";
 import { useVoice } from "./components/shared/useVoice";
+
+import Sidebar from "./components/layout/Sidebar";
+import TopBar from "./components/layout/TopBar";
+import MobileNav from "./components/layout/MobileNav";
+import Feed from "./components/feed/Feed";
+import Suggestions from "./components/feed/Suggestions";
 
 export default function Home() {
   const navigate = useNavigate();
@@ -26,58 +22,46 @@ export default function Home() {
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const trailRef = useRef([]);
 
-  // Helper: scroll to any section by ID
-  const scrollToSection = (id) => {
-    if (id === "top") return window.scrollTo({ top: 0, behavior: "smooth" });
-    const el = document.getElementById(id);
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-
   // Mouse tracking for glow effect + cursor trail
   useEffect(() => {
     const handler = (e) => {
       setMousePos({ x: e.clientX, y: e.clientY });
       trailRef.current.push({ x: e.clientX, y: e.clientY, id: Date.now() });
-      if (trailRef.current.length > 10) trailRef.current.shift();
+      if (trailRef.current.length > 8) trailRef.current.shift();
     };
     window.addEventListener("mousemove", handler);
     return () => window.removeEventListener("mousemove", handler);
   }, []);
 
-  // Clear trail periodically for smooth fade effect
+  // Clear trail periodically
   useEffect(() => {
     const interval = setInterval(() => { trailRef.current = []; }, 100);
     return () => clearInterval(interval);
   }, []);
 
-  // 🎤 Voice commands — each entry maps to multiple keywords
+  // 🎤 Voice commands — keywords mapped to actions
   const voiceCommands = {
     darkTheme:     [() => setTheme("dark"),     ["dark", "night", "black"]],
     lightTheme:    [() => setTheme("light"),    ["light", "day", "bright", "white"]],
     warmTheme:     [() => setTheme("warm"),     ["warm", "orange", "sunset", "sunrise"]],
     midnightTheme: [() => setTheme("midnight"), ["midnight", "purple", "galaxy", "space"]],
-    goHome:        [() => navigate("/"),         ["home", "landing"]],
-    goLogin:       [() => navigate("/login"),    ["login", "sign in"]],
-    goBikes:       [() => scrollToSection("bikes"),    ["bike", "bikes", "explore"]],
-    goTrending:    [() => scrollToSection("trending"), ["trending", "videos"]],
-    goRides:       [() => scrollToSection("rides"),    ["ride", "rides", "routes"]],
-    goLive:        [() => scrollToSection("live"),     ["live", "streaming"]],
-    goShop:        [() => scrollToSection("shop"),     ["shop", "essentials", "products", "buy"]],
+    goHome:        [() => navigate("/"),        ["home", "landing"]],
+    goTop:         [() => window.scrollTo({ top: 0, behavior: "smooth" }), ["top", "scroll up"]],
+    goExplore:     [() => document.getElementById("explore")?.scrollIntoView({ behavior: "smooth" }), ["explore", "feed"]],
+    goShop:        [() => document.getElementById("shop")?.scrollIntoView({ behavior: "smooth" }), ["shop", "marketplace", "buy"]],
   };
 
-  // Build commands object for useVoice hook
+  // Build flat commands map for useVoice
   const commandsMap = {};
-  Object.entries(voiceCommands).forEach(([key, [fn, keywords]]) => {
-    keywords.forEach((kw) => {
-      commandsMap[kw] = fn;
-    });
+  Object.entries(voiceCommands).forEach(([, [fn, keywords]]) => {
+    keywords.forEach((kw) => { commandsMap[kw] = fn; });
   });
 
   const { voiceMode, startVoice } = useVoice(commandsMap);
 
   return (
     <div className={`relative min-h-screen w-full overflow-x-hidden transition-all duration-1000 ${tc.bg} ${tc.text}`}>
-      
+
       {/* 🎨 Cursor Trail Effect */}
       <div className="fixed inset-0 pointer-events-none z-[60]">
         {trailRef.current.map((p, i) => (
@@ -89,7 +73,7 @@ export default function Home() {
               top: p.y - 3,
               width: 6,
               height: 6,
-              opacity: i / 10,
+              opacity: i / 8,
               filter: "blur(1px)",
             }}
           />
@@ -98,14 +82,17 @@ export default function Home() {
 
       {/* 🌟 Mouse-following Glow */}
       <div
-        className="pointer-events-none fixed inset-0 z-0"
+        className="pointer-events-none fixed inset-0 z-0 transition-opacity duration-500"
         style={{
-          background: `radial-gradient(circle 600px at ${mousePos.x}px ${mousePos.y}px, ${tc.glow}, transparent 40%)`,
+          background: `radial-gradient(circle 500px at ${mousePos.x}px ${mousePos.y}px, ${tc.glow}, transparent 40%)`,
         }}
       />
 
-      {/* 🧭 Navigation */}
-      <Navbar 
+      {/* Left Sidebar (Desktop only) */}
+      <Sidebar tc={tc} />
+
+      {/* Top Bar (YouTube-style) */}
+      <TopBar
         theme={theme}
         setTheme={setTheme}
         tc={tc}
@@ -113,19 +100,21 @@ export default function Home() {
         startVoice={startVoice}
       />
 
-      {/* Spacer for fixed navbar */}
-      <div className="h-28 md:h-24"></div>
+      {/* Right Sidebar Suggestions (Desktop only) */}
+      <Suggestions tc={tc} />
 
-      {/* 📄 Page Sections */}
-      <Hero tc={tc} scrollToSection={scrollToSection} />
-      <TrendingVideos tc={tc} />
-      <ExploreBikes tc={tc} />
-      <PopularRides tc={tc} />
-      <FeaturedVideo tc={tc} />
-      <RiderEssentials tc={tc} />
-      <LiveRides tc={tc} />
-      <RideStories tc={tc} />
-      <Footer tc={tc} />
+      {/* Main Content Area - Feed
+          lg:ml-64  → push right of left sidebar
+          xl:mr-80  → push left of right sidebar
+          pt-16     → clear the fixed top bar
+          pb-20 lg:pb-0 → clear bottom nav on mobile
+      */}
+      <main className="lg:ml-64 xl:mr-80 pt-16 pb-20 lg:pb-0 relative z-10">
+        <Feed tc={tc} />
+      </main>
+
+      {/* Mobile Bottom Navigation */}
+      <MobileNav tc={tc} />
     </div>
   );
 }
