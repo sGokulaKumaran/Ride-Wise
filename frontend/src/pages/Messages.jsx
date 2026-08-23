@@ -3,11 +3,11 @@
 // ============================================================
 
 import { useState, useRef } from "react";
-import { useTheme } from "../hooks/useTheme";
-import Sidebar from "../components/layout/Sidebar";
-import TopBar from "../components/layout/TopBar";
-import MobileNav from "../components/layout/MobileNav";
-import { useVoice } from "../components/shared/useVoice";
+import { useTheme } from "./hooks/useTheme";
+import Sidebar from "./components/layout/Sidebar";
+import TopBar from "./components/layout/TopBar";
+import MobileNav from "./components/layout/MobileNav";
+import { useVoice } from "./components/shared/useVoice";
 import { useNavigate } from "react-router-dom";
 
 const CONVERSATIONS = [

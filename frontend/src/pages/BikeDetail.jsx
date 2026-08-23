@@ -4,12 +4,12 @@
 // ============================================================
 
 import { useParams, useNavigate } from "react-router-dom";
-import { useTheme } from "../hooks/useTheme";
-import BikeDetailView from "../components/details/BikeDetailView";
-import Sidebar from "../components/layout/Sidebar";
-import TopBar from "../components/layout/TopBar";
-import MobileNav from "../components/layout/MobileNav";
-import { useVoice } from "../components/shared/useVoice";
+import { useTheme } from "./hooks/useTheme";
+import BikeDetailView from "./components/details/BikeDetailView";
+import Sidebar from "./components/layout/Sidebar";
+import TopBar from "./components/layout/TopBar";
+import MobileNav from "./components/layout/MobileNav";
+import { useVoice } from "./components/shared/useVoice";
 
 // Mock bike data — replace with API call using useParams().id
 const BIKE_DATA = {

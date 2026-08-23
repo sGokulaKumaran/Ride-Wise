@@ -1,38 +1,28 @@
 // ============================================================
-// 👥 Suggestions — Right sidebar (Facebook-style, desktop only)
-// Shows: Suggested riders, trending topics, online friends
+// 👥 Suggestions — Right sidebar: Nearby Riders + Groups
+// Custom for RideWise — geo-based rider discovery + groups
 // ============================================================
 
 export default function Suggestions({ tc }) {
-  const suggestions = [
-    {
-      user: "@rider_anbu",
-      name: "Anbu Kumar",
-      img: "https://images.unsplash.com/photo-1633332755192-727a05c4013d?w=100&h=100&fit=crop",
-    },
-    {
-      user: "@speed_vikram",
-      name: "Vikram Singh",
-      img: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop",
-    },
-    {
-      user: "@mountain_priya",
-      name: "Priya Sharma",
-      img: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&h=100&fit=crop",
-    },
-    {
-      user: "@moto_karthik",
-      name: "Karthik R",
-      img: "https://images.unsplash.com/photo-1547425260-76bcadfb4f2c?w=100&h=100&fit=crop",
-    },
+  const nearbyRiders = [
+    { name: "Anbu Kumar",   img: "https://images.unsplash.com/photo-1633332755192-727a05c4013d?w=100&h=100&fit=crop", distance: "2.3 km", bike: "R15",      online: true  },
+    { name: "Vikram Singh", img: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop", distance: "3.1 km", bike: "Duke 390", online: true  },
+    { name: "Priya Sharma", img: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&h=100&fit=crop", distance: "4.5 km", bike: "RE 350",   online: false },
+    { name: "Karthik R",    img: "https://images.unsplash.com/photo-1547425260-76bcadfb4f2c?w=100&h=100&fit=crop", distance: "5.2 km", bike: "Ninja 300", online: true  },
   ];
 
-  const trending = [
-    { tag: "#SpitiValley2026", posts: "12K posts" },
-    { tag: "#RoyalEnfield",    posts: "8.5K posts" },
-    { tag: "#NightRide",       posts: "5.2K posts" },
-    { tag: "#KTM390",          posts: "3.1K posts" },
-    { tag: "#LehLadakh",       posts: "9.8K posts" },
+  const groups = [
+    { name: "Chennai Riders",       members: "12.4K", img: "https://images.unsplash.com/photo-1609631839270-c53dba908e91?w=100&h=100&fit=crop" },
+    { name: "Spiti Adventure Club", members: "8.2K",  img: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=100&h=100&fit=crop" },
+    { name: "Daily Commuters",      members: "5.1K",  img: "https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?w=100&h=100&fit=crop" },
+  ];
+
+  const trendingBikes = [
+    "Royal Enfield 650",
+    "KTM Duke 390",
+    "Himalayan 450",
+    "Yamaha R15 V4",
+    "Honda CB300R",
   ];
 
   return (
@@ -40,82 +30,98 @@ export default function Suggestions({ tc }) {
       className={`hidden xl:block fixed right-0 top-16 w-80 h-[calc(100vh-4rem)] p-5 border-l ${tc.divider} overflow-y-auto`}
       style={{ scrollbarWidth: "none" }}
     >
-      {/* Suggested Riders */}
-      <div className="mb-8">
-        <h3 className={`font-bold mb-4 ${tc.sub} text-xs tracking-widest uppercase`}>
-          Suggested For You
+
+      {/* Nearby Riders */}
+      <div className="mb-7">
+        <h3 className={`font-bold mb-4 text-xs tracking-widest uppercase ${tc.sub}`}>
+          📍 Riders Near You
         </h3>
-        <div className="space-y-4">
-          {suggestions.map((s) => (
-            <div key={s.user} className="flex items-center gap-3">
+        <div className="space-y-3">
+          {nearbyRiders.map((r) => (
+            <div
+              key={r.name}
+              className={`flex items-center gap-3 p-2 rounded-xl cursor-pointer transition-all ${tc.cardHover}`}
+            >
               <div className="relative shrink-0">
                 <img
-                  src={s.img}
-                  alt={s.name}
-                  className="w-10 h-10 rounded-full object-cover ring-2 ring-orange-500/30"
+                  src={r.img}
+                  alt={r.name}
+                  className="w-10 h-10 rounded-full object-cover"
                   loading="lazy"
                 />
-                <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-current"></span>
+                <span
+                  className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-current ${
+                    r.online ? "bg-green-500" : "bg-gray-500"
+                  }`}
+                />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-bold text-sm truncate">{s.user}</p>
-                <p className={`text-xs ${tc.sub} truncate`}>{s.name}</p>
+                <p className="font-bold text-sm truncate">{r.name}</p>
+                <p className={`text-xs ${tc.sub}`}>
+                  {r.distance} · 🏍️ {r.bike}
+                </p>
               </div>
               <button className="text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors shrink-0">
-                Follow
+                Connect
               </button>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Trending Topics */}
-      <div className="mb-8">
-        <h3 className={`font-bold mb-4 ${tc.sub} text-xs tracking-widest uppercase`}>
-          Trending Now
+      {/* Ride Groups */}
+      <div className="mb-7">
+        <h3 className={`font-bold mb-4 text-xs tracking-widest uppercase ${tc.sub}`}>
+          🏍️ Ride Groups
         </h3>
         <div className="space-y-3">
-          {trending.map((t, i) => (
+          {groups.map((g) => (
             <div
-              key={t.tag}
-              className={`flex items-center gap-3 cursor-pointer p-2 rounded-xl transition-all ${tc.cardHover}`}
+              key={g.name}
+              className={`flex items-center gap-3 p-2 rounded-xl cursor-pointer transition-all ${tc.cardHover}`}
             >
-              <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black ${tc.badge} shrink-0`}>
-                {i + 1}
+              <img
+                src={g.img}
+                alt={g.name}
+                className="w-10 h-10 rounded-lg object-cover shrink-0"
+                loading="lazy"
+              />
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-sm truncate">{g.name}</p>
+                <p className={`text-xs ${tc.sub}`}>{g.members} members</p>
               </div>
-              <div>
-                <p className="font-bold text-sm">{t.tag}</p>
-                <p className={`text-xs ${tc.sub}`}>{t.posts}</p>
-              </div>
+              <button className="text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors shrink-0">
+                Join
+              </button>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Online Now */}
-      <div className="mb-8">
-        <h3 className={`font-bold mb-4 ${tc.sub} text-xs tracking-widest uppercase`}>
-          Online Now
+      {/* Trending Bikes */}
+      <div className="mb-7">
+        <h3 className={`font-bold mb-4 text-xs tracking-widest uppercase ${tc.sub}`}>
+          🔥 Trending Bikes
         </h3>
-        <div className="flex flex-wrap gap-3">
-          {suggestions.map((s) => (
-            <div key={s.user} className="relative cursor-pointer group">
-              <img
-                src={s.img}
-                alt={s.name}
-                className="w-11 h-11 rounded-full object-cover border-2 border-green-500 group-hover:scale-110 transition-transform"
-                loading="lazy"
-              />
-              <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-current"></span>
+        <div className="space-y-2">
+          {trendingBikes.map((b, i) => (
+            <div
+              key={b}
+              className={`flex items-center gap-3 p-2 rounded-xl cursor-pointer transition-all ${tc.cardHover}`}
+            >
+              <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black ${tc.badge} shrink-0`}>
+                {i + 1}
+              </div>
+              <p className="text-sm font-semibold">🏍️ {b}</p>
             </div>
           ))}
         </div>
       </div>
 
       {/* Footer */}
-      <div className={`text-xs ${tc.sub} space-y-1 pt-4 border-t ${tc.divider}`}>
+      <div className={`pt-4 border-t ${tc.divider} text-xs ${tc.sub} space-y-1`}>
         <p className="font-semibold">©2026 RideWise</p>
-        <p className="opacity-70">Privacy · Terms · Cookies · About</p>
+        <p className="opacity-70">Privacy · Terms · Safety · About</p>
       </div>
     </aside>
   );

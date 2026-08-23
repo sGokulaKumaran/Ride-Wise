@@ -5,11 +5,11 @@
 
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useTheme } from "../hooks/useTheme";
-import Sidebar from "../components/layout/Sidebar";
-import TopBar from "../components/layout/TopBar";
-import MobileNav from "../components/layout/MobileNav";
-import { useVoice } from "../components/shared/useVoice";
+import { useTheme } from "./hooks/useTheme";
+import Sidebar from "./components/layout/Sidebar";
+import TopBar from "./components/layout/TopBar";
+import MobileNav from "./components/layout/MobileNav";
+import { useVoice } from "./components/shared/useVoice";
 
 const FILTERS = ["All", "Sport", "Cruiser", "Adventure", "Classic", "Under ₹1L", "Under ₹2L", "Verified"];
 

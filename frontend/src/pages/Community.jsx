@@ -4,11 +4,11 @@
 
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useTheme } from "../hooks/useTheme";
-import Sidebar from "../components/layout/Sidebar";
-import TopBar from "../components/layout/TopBar";
-import MobileNav from "../components/layout/MobileNav";
-import { useVoice } from "../components/shared/useVoice";
+import { useTheme } from "./hooks/useTheme";
+import Sidebar from "./components/layout/Sidebar";
+import TopBar from "./components/layout/TopBar";
+import MobileNav from "./components/layout/MobileNav";
+import { useVoice } from "./components/shared/useVoice";
 
 const NEARBY_RIDERS = [
   { id: 1, name: "Anbu Kumar",   bike: "Yamaha R15",      distance: "2.3 km", rides: 142, img: "https://images.unsplash.com/photo-1633332755192-727a05c4013d?w=200&h=200&fit=crop", online: true  },

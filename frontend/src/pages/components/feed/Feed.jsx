@@ -1,14 +1,30 @@
 // ============================================================
-// 📰 Feed — Main feed container with mixed content types
-// Mixes: Posts, Bikes like a real social/marketplace app
+// 📰 Feed — Mixed content feed (Posts + Bikes + Rides + Lives + DRides)
+// Single scroll = everything a rider needs
 // ============================================================
 
+import { useState } from "react";
 import PostCard from "./PostCard";
 import BikeCard from "./BikeCard";
+import RideCard from "./RideCard";
+import LiveCard from "./LiveCard";
 import StoryRow from "./StoryRow";
+import DRideModal from "../shared/DRideModal";
 
 export default function Feed({ tc }) {
-  // 🔄 Mixed feed: posts + bike marketplace cards
+  const [selectedDRide, setSelectedDRide] = useState(null);
+
+  // DRides (stories) — bike-tagged ride experiences
+  const drides = [
+    { id: 1, title: "Spiti Trip",    cover: "https://images.unsplash.com/photo-1609631839270-c53dba908e91?w=200&h=200&fit=crop", bike: "Himalayan", viewed: false },
+    { id: 2, title: "Daily Ride",    cover: "https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?w=200&h=200&fit=crop", bike: "R15",       viewed: false },
+    { id: 3, title: "Leh Ride",      cover: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=200&h=200&fit=crop", bike: "RE 650",   viewed: true  },
+    { id: 4, title: "Beach Run",     cover: "https://images.unsplash.com/photo-1518546305927-5a555bb7020d?w=200&h=200&fit=crop", bike: "Duke 390", viewed: false },
+    { id: 5, title: "Night City",    cover: "https://images.unsplash.com/photo-1611516491426-01d49ce9b4d6?w=200&h=200&fit=crop", bike: "Ninja 300",viewed: false },
+    { id: 6, title: "Hill Climb",    cover: "https://images.unsplash.com/photo-1518987048-93e29699e79a?w=200&h=200&fit=crop", bike: "Himalayan", viewed: true  },
+  ];
+
+  // Mixed feed — posts, bikes, rides, lives interleaved
   const feedItems = [
     {
       type: "post",
@@ -16,9 +32,10 @@ export default function Feed({ tc }) {
       location: "Spiti Valley, HP",
       time: "2h ago",
       image: "https://images.unsplash.com/photo-1609631839270-c53dba908e91?w=800&auto=format&q=80",
-      caption: "Made it to the top! 🏔️ 500km journey, totally worth it. The Himalayas never disappoint. Every twist and turn was a reminder of why we ride! #SpitiValley #RoyalEnfield",
+      caption: "Made it to the top! 🏔️ 500km journey, totally worth it. The Himalayas never disappoint. Every twist and turn was pure magic. #SpitiValley #Himalayan",
       bike: "Himalayan 450",
-      tag: "TRENDING",
+      bikePrice: "₹2.85L",
+      ride: "Spiti Valley Loop",
       likes: 1240,
       comments: 89,
     },
@@ -35,27 +52,34 @@ export default function Feed({ tc }) {
       tag: "BESTSELLER",
     },
     {
+      type: "ride",
+      name: "Chennai → Pondicherry",
+      distance: "162 km",
+      duration: "3.5 hrs",
+      difficulty: "Easy",
+      bestBike: "Any 150cc+",
+      rating: 4.6,
+      image: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=800&auto=format&q=80",
+    },
+    {
+      type: "live",
+      user: "@rider_x",
+      title: "Chennai Night Ride 🌙",
+      viewers: 1204,
+      bike: "Royal Enfield 650",
+      image: "https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?w=800&auto=format&q=80",
+    },
+    {
       type: "post",
       user: "@mountain_rider",
       location: "Leh, Ladakh",
       time: "5h ago",
       image: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=800&auto=format&q=80",
-      caption: "Sunrise at 18,000ft. This is why we ride. 🌅 Words can't describe the feeling when the first light hits the mountains. Pure magic.",
-      bike: "Royal Enfield",
+      caption: "Sunrise at 18,000ft. This is why we ride. 🌅 No words can describe the feeling. Pure freedom.",
+      bike: "Royal Enfield 650",
+      ride: "Manali-Leh Highway",
       likes: 3420,
       comments: 245,
-    },
-    {
-      type: "post",
-      user: "@bike_lover",
-      location: "Chennai, TN",
-      time: "8h ago",
-      image: "https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?w=800&auto=format&q=80",
-      caption: "New R15 day! 🎉 First impressions — absolutely stunning. Full review dropping this weekend. Don't miss it! Subscribe now.",
-      bike: "Yamaha R15",
-      tag: "NEW",
-      likes: 890,
-      comments: 56,
     },
     {
       type: "bike",
@@ -75,11 +99,21 @@ export default function Feed({ tc }) {
       location: "Mumbai-Pune Highway",
       time: "12h ago",
       image: "https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?w=800&auto=format&q=80",
-      caption: "Night rides are something else entirely. 🌙 Empty roads, cool breeze, city lights fading in the mirror. Pure freedom. #NightRide #MumbaiRiders",
+      caption: "Night rides are something else entirely. 🌙 Empty roads, cool breeze, city lights fading in the mirror. #NightRide",
       bike: "Kawasaki Z900",
       tag: "FEATURED",
       likes: 2150,
       comments: 134,
+    },
+    {
+      type: "ride",
+      name: "Manali → Rohtang Pass",
+      distance: "51 km",
+      duration: "2 hrs",
+      difficulty: "Hard",
+      bestBike: "Adventure 250cc+",
+      rating: 4.9,
+      image: "https://images.unsplash.com/photo-1518987048-93e29699e79a?w=800&auto=format&q=80",
     },
     {
       type: "bike",
@@ -96,18 +130,19 @@ export default function Feed({ tc }) {
   ];
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6" id="explore">
-      {/* Stories at top */}
-      <StoryRow tc={tc} />
+    <div className="max-w-2xl mx-auto px-4 py-6" id="feed">
 
-      {/* Feed Items - mixed content */}
-      {feedItems.map((item, i) =>
-        item.type === "post" ? (
-          <PostCard key={i} post={item} tc={tc} />
-        ) : (
-          <BikeCard key={i} bike={item} tc={tc} />
-        )
-      )}
+      {/* DRides row at top */}
+      <StoryRow tc={tc} drides={drides} onOpenDRide={setSelectedDRide} />
+
+      {/* Mixed feed */}
+      {feedItems.map((item, i) => {
+        if (item.type === "post") return <PostCard key={i} post={item} tc={tc} />;
+        if (item.type === "bike") return <BikeCard key={i} bike={item} tc={tc} />;
+        if (item.type === "ride") return <RideCard key={i} ride={item} tc={tc} />;
+        if (item.type === "live") return <LiveCard key={i} live={item} tc={tc} />;
+        return null;
+      })}
 
       {/* Load More */}
       <div className="text-center py-8">
@@ -115,9 +150,18 @@ export default function Feed({ tc }) {
           className={`px-8 py-3 rounded-full border font-semibold transition-all hover:scale-105 active:scale-95 ${tc.card} ${tc.cardHover}`}
         >
           <i className="fa fa-refresh mr-2"></i>
-          Load More Posts
+          Load More
         </button>
       </div>
+
+      {/* DRide Modal */}
+      {selectedDRide && (
+        <DRideModal
+          dride={selectedDRide}
+          onClose={() => setSelectedDRide(null)}
+          tc={tc}
+        />
+      )}
     </div>
   );
 }

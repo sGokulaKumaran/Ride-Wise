@@ -1,6 +1,7 @@
 // ============================================================
 // 🎤 useVoice HOOK — Voice command recognition
 // Uses Web Speech API (works in Chrome/Edge, partial Safari)
+// Commands: flat map { keyword: fn }
 // Returns: { voiceMode, startVoice, voiceSupported }
 // ============================================================
 
@@ -10,8 +11,9 @@ export function useVoice(commands = {}) {
   const [voiceMode, setVoiceMode] = useState(false);
 
   const startVoice = useCallback(() => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+
     if (!SpeechRecognition) {
       alert("Voice not supported on this browser. Try Chrome or Edge.");
       return;
@@ -27,7 +29,6 @@ export function useVoice(commands = {}) {
       console.log("🎤 Heard:", text);
 
       // commands is a flat map: { keyword: fn }
-      // Find the first keyword that the spoken text includes, then call its fn
       for (const [keyword, fn] of Object.entries(commands)) {
         if (text.includes(keyword)) {
           fn();
@@ -41,10 +42,10 @@ export function useVoice(commands = {}) {
 
     recognition.start();
     setVoiceMode(true);
-    
+
     // Auto-stop after 6 seconds
     setTimeout(() => {
-      try { recognition.stop(); } catch (e) {}
+      try { recognition.stop(); } catch (e) { /* already stopped */ }
       setVoiceMode(false);
     }, 6000);
   }, [commands]);

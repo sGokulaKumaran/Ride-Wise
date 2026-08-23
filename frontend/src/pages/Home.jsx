@@ -6,13 +6,13 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { useTheme } from "../hooks/useTheme";
-import { useVoice } from "../components/shared/useVoice";
-import Sidebar from "../components/layout/Sidebar";
-import TopBar from "../components/layout/TopBar";
-import MobileNav from "../components/layout/MobileNav";
-import Feed from "../components/feed/Feed";
-import Suggestions from "../components/feed/Suggestions";
+import { useTheme } from "./hooks/useTheme";
+import { useVoice } from "./components/shared/useVoice";
+import Sidebar from "./components/layout/Sidebar";
+import TopBar from "./components/layout/TopBar";
+import MobileNav from "./components/layout/MobileNav";
+import Feed from "./components/feed/Feed";
+import Suggestions from "./components/feed/Suggestions";
 
 export default function Home() {
   const navigate = useNavigate();

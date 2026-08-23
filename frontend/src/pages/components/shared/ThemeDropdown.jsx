@@ -11,16 +11,13 @@ export default function ThemeDropdown({ theme, setTheme, tc }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
- // Theme data
   const themeData = {
     dark:     { label: "Dark",     icon: "🌙" },
     light:    { label: "Light",    icon: "☀️" },
     warm:     { label: "Warm",     icon: "🌅" },
     midnight: { label: "Midnight", icon: "🌌" },
   };
-  
 
-  // ================= CLICK OUTSIDE DROPDOWN =================
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (ref.current && !ref.current.contains(e.target)) {
@@ -47,21 +44,22 @@ export default function ThemeDropdown({ theme, setTheme, tc }) {
 
       {/* Dropdown panel */}
       {open && (
-        <div className={`absolute right-0 mt-2 w-44 rounded-xl border backdrop-blur-2xl shadow-2xl z-50 overflow-hidden ${tc.card}`}>
+        <div
+          className={`absolute right-0 mt-2 w-44 rounded-xl border backdrop-blur-2xl shadow-2xl z-50 overflow-hidden ${tc.card}`}
+        >
           {Object.entries(themeData).map(([key, value]) => (
             <button
               key={key}
-              onClick={() => {
-                setTheme(key);
-                setOpen(false);
-              }}
+              onClick={() => { setTheme(key); setOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-3 text-left text-sm font-semibold transition-all hover:bg-white/10 ${
                 theme === key ? "bg-white/10" : ""
               }`}
             >
               <span className="text-base">{value.icon}</span>
               <span>{value.label}</span>
-              {theme === key && <span className="ml-auto text-green-400 text-xs">✓</span>}
+              {theme === key && (
+                <span className="ml-auto text-green-400 text-xs">✓</span>
+              )}
             </button>
           ))}
         </div>

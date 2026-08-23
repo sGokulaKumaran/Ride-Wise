@@ -4,11 +4,11 @@
 // ============================================================
 
 import { useNavigate } from "react-router-dom";
-import { useTheme } from "../hooks/useTheme";
-import Sidebar from "../components/layout/Sidebar";
-import TopBar from "../components/layout/TopBar";
-import MobileNav from "../components/layout/MobileNav";
-import { useVoice } from "../components/shared/useVoice";
+import { useTheme } from "./hooks/useTheme";
+import Sidebar from "./components/layout/Sidebar";
+import TopBar from "./components/layout/TopBar";
+import MobileNav from "./components/layout/MobileNav";
+import { useVoice } from "./components/shared/useVoice";
 
 const LIVE_STREAMS = [
   { id: 1, user: "@rider_arjun",  title: "Spiti Valley Epic 🏔️",     viewers: 3240, bike: "Himalayan 450",   img: "https://images.unsplash.com/photo-1609631839270-c53dba908e91?w=800&auto=format&q=80", location: "Spiti Valley, HP" },
