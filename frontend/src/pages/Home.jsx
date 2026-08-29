@@ -1,99 +1,106 @@
 // ============================================================
-// 🏠 Home — Rider Dashboard (the main page after login + onboarding)
+// 🏠 Home — Rider Dashboard
+// Route: /home (protected — requires login + onboarding)
+//
+// PHILOSOPHY:
+//   This is intentionally minimal and focused.
+//   One primary action (Start a Ride), nothing else competing for attention.
+//   Everything else (riders, live, community) is a future feature.
 //
 // LAYOUT:
-//   Desktop: [Sidebar] [Main Column 2/3] [Right Rail 1/3]
-//   Mobile:  [TopBar] [Dashboard] [Bottom Nav with Start Ride FAB]
+//   Desktop: [Sidebar 256px] [Centered main content]
+//   Mobile:  [TopBar] [Content] [Bottom Nav with FAB]
 //
 // SECTIONS:
-//   1. Greeting hero + "Start a Ride" CTA (most important button)
-//   2. Riders around you (nearby rider cards)
-//   3. Your recent rides
-//   4. Live now (right rail on desktop)
-//   5. Tip of the day
+//   1. HERO — animated greeting + the single "Start a Ride" CTA
+//   2. STATS — 3 glassy cards: Rides · Distance · Connected
+//   3. TIP   — daily riding tip card
 //
-// DATA:
-//   All data is currently static/mock.
-//   To connect to the backend:
-//     - Replace nearbyRiders with: const { data } = await axios.get('/api/riders/nearby')
-//     - Replace recentRides with:  const { data } = await axios.get('/api/rides/recent')
-//     - Replace trendingRides with: const { data } = await axios.get('/api/live/trending')
-//
-// VOICE COMMANDS:
-//   "dark" / "light" / "warm" / "midnight" → switch theme
-//   "start" → open Start Ride modal
-//   "find"  → navigate to /find-riders (community)
-//   "rides" → navigate to /my-rides
+// INTERACTIONS:
+//   - Mouse glow radial gradient follows cursor (orange tint)
+//   - Motorcycle icon floats up/down continuously (CSS float animation)
+//   - CTA button has a pulsing orange glow ring
+//   - Hovering CTA: lifts + glow intensifies
+//   - Stats cards: hover lifts them with a shadow
+//   - All cards animate in on load (slide-up + fade)
+//   - Voice commands: "start", "dark", "light", "warm", "midnight"
 // ============================================================
 
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { useTheme } from "./hooks/useTheme";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
-import { useVoice } from "./components/shared/useVoice";
+import MobileNav from "./components/layout/MobileNav";
 import Sidebar from "./components/layout/Sidebar";
 import TopBar from "./components/layout/TopBar";
-import MobileNav from "./components/layout/MobileNav";
 import StartRideModal from "./components/shared/StartRideModal";
+import { useVoice } from "./components/shared/useVoice";
+import { useTheme } from "./hooks/useTheme";
 
 export default function Home() {
-  const navigate = useNavigate();
   const { theme, setTheme, tc } = useTheme();
   const { user } = useAuth();
 
-  // Controls whether the Start Ride modal is visible
+  // Controls the Start Ride modal
   const [showStart, setShowStart] = useState(false);
 
+  // Mouse position for the glow effect (orange tint on home, not white)
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const mainRef = useRef(null);
+
+  // Track mouse for the glow
+  useEffect(() => {
+    const handler = (e) => setMousePos({ x: e.clientX, y: e.clientY });
+    window.addEventListener("mousemove", handler);
+    return () => window.removeEventListener("mousemove", handler);
+  }, []);
+
   // ── Voice commands ───────────────────────────────────────────
+  // Say any of these keywords to trigger the action
   const commandsMap = {
-    dark:      () => setTheme("dark"),
-    light:     () => setTheme("light"),
-    warm:      () => setTheme("warm"),
-    midnight:  () => setTheme("midnight"),
-    start:     () => setShowStart(true),
-    find:      () => navigate("/community"),
-    rides:     () => navigate("/my-rides"),
-    community: () => navigate("/community"),
-    messages:  () => navigate("/messages"),
-    settings:  () => navigate("/settings"),
+    start:    () => setShowStart(true),  // "start" or "start a ride"
+    dark:     () => setTheme("dark"),
+    light:    () => setTheme("light"),
+    warm:     () => setTheme("warm"),
+    midnight: () => setTheme("midnight"),
   };
   const { voiceMode, startVoice } = useVoice(commandsMap);
-
-  // ── Mock data — replace with API calls when backend is ready ─
-
-  // Nearby riders (from the same area as the logged-in user)
-  const nearbyRiders = [
-    { id: 1, name: "Anbu Kumar",   bike: "Yamaha R15",     distance: "2.3 km", rides: 142, online: true,  img: "https://images.unsplash.com/photo-1633332755192-727a05c4013d?w=200&h=200&fit=crop" },
-    { id: 2, name: "Vikram Singh", bike: "KTM Duke 390",   distance: "3.1 km", rides: 89,  online: true,  img: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&h=200&fit=crop" },
-    { id: 3, name: "Priya Sharma", bike: "RE Classic 350", distance: "4.5 km", rides: 67,  online: false, img: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=200&h=200&fit=crop" },
-    { id: 4, name: "Karthik R",    bike: "Himalayan 450",  distance: "5.8 km", rides: 234, online: true,  img: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=200&fit=crop" },
-  ];
-
-  // Recent rides by the logged-in user
-  const recentRides = [
-    { id: 1, route: "Chennai → Pondicherry", distance: "151 km", duration: "3h 20m", date: "Last weekend",  img: "https://images.unsplash.com/photo-1518987048-93e29699e79a?w=600&q=80" },
-    { id: 2, route: "Ooty Weekend Ride",     distance: "270 km", duration: "6h 10m", date: "2 weeks ago",   img: "https://images.unsplash.com/photo-1609631839270-c53dba908e91?w=600&q=80" },
-    { id: 3, route: "Mahabalipuram Loop",    distance: "60 km",  duration: "1h 30m", date: "3 weeks ago",   img: "https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?w=600&q=80" },
-  ];
-
-  // Live rides currently being streamed/tracked
-  const trendingRides = [
-    { name: "Spiti Valley Epic 🏔️",   viewers: 3240, bike: "Himalayan 450"  },
-    { name: "Coorg Morning Mist ☁️",  viewers: 780,  bike: "RE Interceptor" },
-    { name: "Leh-Ladakh Highway 🛣️",  viewers: 2150, bike: "RE 650 Twin"    },
-  ];
 
   // ── Time-based greeting ──────────────────────────────────────
   const hour = new Date().getHours();
   const greeting =
-    hour < 12 ? "Good morning" :
-    hour < 17 ? "Good afternoon" :
-    hour < 21 ? "Good evening" : "Good night";
+    hour < 5  ? "Up late, "   :
+    hour < 12 ? "Good morning, " :
+    hour < 17 ? "Good afternoon, " :
+    hour < 21 ? "Good evening, " :
+               "Good night, ";
+
+  const greetingEmoji =
+    hour < 5  ? "🌙" :
+    hour < 12 ? "☀️" :
+    hour < 17 ? "⛅" :
+    hour < 21 ? "🌆" : "🌙";
+
+  // ── Static stats (replace with API later) ────────────────────
+  const stats = [
+    { value: "12",     label: "Total Rides",    icon: "fa-motorcycle", color: "#f97316" },
+    { value: "481 km", label: "Distance Ridden", icon: "fa-route",      color: "#60a5fa" },
+    { value: "248",    label: "Riders Met",      icon: "fa-users",      color: "#34d399" },
+  ];
 
   return (
-    <div className={`relative min-h-screen w-full overflow-x-hidden ${tc.bg} ${tc.text}`}>
+    <div
+      ref={mainRef}
+      className={`relative min-h-screen w-full overflow-x-hidden ${tc.bg} ${tc.text}`}
+    >
 
-      {/* ── Layout components ──────────────────────────────── */}
+      {/* ── Orange-tinted mouse glow (home brand colour) ────── */}
+      <div
+        className="pointer-events-none fixed inset-0 z-0 transition-all duration-300"
+        style={{
+          background: `radial-gradient(circle 500px at ${mousePos.x}px ${mousePos.y}px, rgba(249,115,22,0.10), transparent 55%)`,
+        }}
+      />
+
+      {/* ── Layout ──────────────────────────────────────────── */}
       <Sidebar tc={tc} />
       <TopBar
         theme={theme}
@@ -102,228 +109,174 @@ export default function Home() {
         voiceMode={voiceMode}
         startVoice={startVoice}
       />
-      {/* MobileNav gets onStartRide to control the modal from the FAB */}
+      {/* Pass the modal opener to MobileNav's FAB */}
       <MobileNav tc={tc} onStartRide={() => setShowStart(true)} />
 
-      {/* ── Main content area (offset for Sidebar on desktop) ── */}
-      <main className="lg:ml-64 pt-20 px-4 pb-28 lg:pb-8">
-        <div className="max-w-6xl mx-auto">
+      {/* ════════════════════════════════════════════════════════
+          MAIN CONTENT — centered column, max 520px wide
+          Sits in the middle of the page (not left-aligned)
+      ════════════════════════════════════════════════════════ */}
+      <main className="relative z-10 lg:ml-64 min-h-screen flex flex-col items-center justify-center px-5 pt-20 pb-28 lg:pb-8">
 
-          {/* ══════════════════════════════════════════════════
-              SECTION 1: Greeting hero + Start a Ride CTA
-          ══════════════════════════════════════════════════ */}
-          <section className={`relative rounded-3xl overflow-hidden border p-6 md:p-8 mb-6 ${tc.card}`}>
-            {/* Subtle gradient overlay */}
-            <div className="absolute inset-0 bg-gradient-to-br from-orange-500/15 via-pink-500/5 to-transparent pointer-events-none" />
+        {/* ══════════════════════════════════════════════════════
+            SECTION 1 — HERO
+            The single most important thing on this page:
+            who the user is + the call to start a ride.
+        ══════════════════════════════════════════════════════ */}
+        <div
+          className="w-full max-w-[520px] text-center mb-12"
+          style={{ animation: "slideUp 0.6s ease-out both" }}
+        >
+          {/* Online riders badge */}
+          <div
+            className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full border text-xs font-bold mb-7 ${tc.card}`}
+            style={{ animation: "slideUp 0.5s ease-out both" }}
+          >
+            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+            <span>3 riders online near you</span>
+          </div>
 
-            <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-              {/* Greeting text */}
-              <div>
-                <p className={`text-sm font-medium mb-1 flex items-center gap-1.5 ${tc.sub}`}>
-                  <i className="fa fa-sun text-yellow-400" />
-                  {greeting}, ready to ride?
-                </p>
-                <h1 className="text-3xl md:text-4xl font-black mb-2">
-                  Welcome back,{" "}
-                  <span className="text-orange-400">
-                    {user?.username || "Rider"}
-                  </span>{" "}
-                  🏍️
-                </h1>
-                <p className={`text-sm max-w-md ${tc.sub}`}>
-                  Your next adventure starts here. Connect with riders along your
-                  journey and explore the open road together.
-                </p>
-              </div>
+          {/* Personalised greeting */}
+          <h1
+            className="text-4xl md:text-5xl font-black mb-2 leading-tight"
+            style={{ animation: "slideUp 0.55s ease-out both" }}
+          >
+            {greeting}
+            <span
+              className="bg-clip-text text-transparent"
+              style={{ backgroundImage: "linear-gradient(135deg, #f97316, #ec4899)" }}
+            >
+              {user?.username || "Rider"}
+            </span>{" "}
+            {greetingEmoji}
+          </h1>
 
-              {/* START A RIDE — the single most important CTA on this page */}
-              <button
-                id="start-ride-hero-btn"
-                onClick={() => setShowStart(true)}
-                className="group relative shrink-0 px-7 py-4 rounded-2xl font-black text-base bg-gradient-to-r from-orange-500 to-pink-500 text-white shadow-2xl shadow-orange-500/30 transition-all hover:scale-105 active:scale-95"
-              >
-                <span className="flex items-center gap-2.5">
-                  <i className="fa fa-motorcycle text-xl group-hover:animate-bounce" />
-                  Start a Ride
-                </span>
-                {/* Pulsing ring effect */}
-                <span className="absolute inset-0 rounded-2xl bg-orange-500/30 animate-ping opacity-0 group-hover:opacity-100" />
-              </button>
+          <p
+            className={`text-base md:text-lg mb-10 ${tc.sub}`}
+            style={{ animation: "slideUp 0.6s ease-out both" }}
+          >
+            Your next adventure is one tap away.
+          </p>
+
+          {/* Floating motorcycle emoji */}
+          <div
+            className="text-7xl md:text-8xl mb-10 select-none"
+            style={{ animation: "float 3.5s ease-in-out infinite" }}
+          >
+            🏍️
+          </div>
+
+          {/* ── START A RIDE — the hero CTA ─────────────────────
+              This is the single most important interactive element.
+              - Orange→pink gradient background
+              - Glowing orange shadow (pulses)
+              - Outer ring ping animation
+              - Hover: lifts + glow intensifies
+              - Active (click): compresses
+          ──────────────────────────────────────────────────── */}
+          <div className="relative inline-block">
+            {/* Outer pulsing ring (decorative, behind the button) */}
+            <span
+              className="absolute inset-0 rounded-2xl opacity-50 pointer-events-none"
+              style={{ animation: "ring-pulse 2s ease-in-out infinite" }}
+            />
+
+            <button
+              id="home-start-ride-btn"
+              onClick={() => setShowStart(true)}
+              className="relative group px-10 py-5 rounded-2xl font-black text-lg text-white transition-all duration-300 hover:scale-105 hover:-translate-y-1 active:scale-95 active:translate-y-0"
+              style={{
+                background: "linear-gradient(135deg, #f97316 0%, #ec4899 100%)",
+                boxShadow: "0 8px 40px rgba(249, 115, 22, 0.45)",
+                animation: "glow 3s ease-in-out infinite",
+              }}
+            >
+              <span className="flex items-center justify-center gap-3">
+                {/* Motorcycle bounces on button hover */}
+                <i
+                  className="fa fa-motorcycle text-2xl transition-transform duration-300 group-hover:translate-x-1"
+                />
+                Start a Ride
+                <i
+                  className="fa fa-arrow-right text-base transition-all duration-300 group-hover:translate-x-2 opacity-70"
+                />
+              </span>
+            </button>
+          </div>
+
+          {/* Hint text */}
+          <p
+            className={`mt-5 text-xs ${tc.sub}`}
+            style={{ animation: "slideUp 0.9s ease-out both" }}
+          >
+            🎙️ Or say <span className="font-semibold">"start"</span> to your mic
+          </p>
+        </div>
+
+        {/* ══════════════════════════════════════════════════════
+            SECTION 2 — STATS
+            Three glassmorphism cards. Hover lifts each card.
+        ══════════════════════════════════════════════════════ */}
+        <div
+          className="w-full max-w-[520px] grid grid-cols-3 gap-3 mb-8"
+          style={{ animation: "slideUp 0.75s ease-out both" }}
+        >
+          {stats.map((s, i) => (
+            <div
+              key={s.label}
+              className={`rounded-2xl border p-4 text-center transition-all duration-300 cursor-default ${tc.card}`}
+              style={{
+                animation: `slideUp ${0.8 + i * 0.08}s ease-out both`,
+                // Hover handled by CSS class above but we add JS hover for extra control
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "translateY(-6px) scale(1.03)";
+                e.currentTarget.style.boxShadow = `0 16px 40px rgba(0,0,0,0.25)`;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "";
+                e.currentTarget.style.boxShadow = "";
+              }}
+            >
+              {/* Coloured icon */}
+              <i
+                className={`fa ${s.icon} text-2xl mb-2 block`}
+                style={{ color: s.color }}
+              />
+              {/* Stat value */}
+              <p className="text-xl md:text-2xl font-black">{s.value}</p>
+              {/* Label */}
+              <p className={`text-[10px] md:text-xs mt-0.5 ${tc.sub}`}>{s.label}</p>
             </div>
-          </section>
+          ))}
+        </div>
 
-          {/* ══════════════════════════════════════════════════
-              SECTION 2: Two-column grid
-              Left (2/3): Riders nearby + Recent rides
-              Right (1/3): Live now + Tip
-          ══════════════════════════════════════════════════ */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-
-            {/* ── LEFT / MAIN COLUMN ──────────────────────── */}
-            <div className="lg:col-span-2 space-y-4">
-
-              {/* ── Riders around you ────────────────────── */}
-              <section className={`rounded-2xl border p-5 ${tc.card}`}>
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h2 className="text-lg font-black">📍 Riders around you</h2>
-                    <p className={`text-xs ${tc.sub}`}>Based on your location</p>
-                  </div>
-                  <button
-                    onClick={() => navigate("/community")}
-                    className={`text-xs font-bold ${tc.sub} hover:underline transition-opacity`}
-                  >
-                    See all →
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {nearbyRiders.map((r) => (
-                    <div
-                      key={r.id}
-                      className={`flex items-center gap-3 p-3 rounded-xl border transition-all hover:scale-[1.02] cursor-pointer ${tc.card} ${tc.cardHover}`}
-                    >
-                      {/* Avatar with online indicator */}
-                      <div className="relative shrink-0">
-                        <img
-                          src={r.img}
-                          alt={r.name}
-                          className="w-12 h-12 rounded-full object-cover"
-                          loading="lazy"
-                        />
-                        {r.online && (
-                          <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-black" />
-                        )}
-                      </div>
-
-                      {/* Info */}
-                      <div className="flex-1 min-w-0">
-                        <p className="font-bold text-sm truncate">{r.name}</p>
-                        <p className={`text-xs truncate ${tc.sub}`}>
-                          {r.distance} · 🏍️ {r.bike}
-                        </p>
-                      </div>
-
-                      {/* Connect button */}
-                      <button
-                        className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all hover:scale-105 shrink-0 ${tc.button}`}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        Connect
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </section>
-
-              {/* ── Recent rides ──────────────────────────── */}
-              <section className={`rounded-2xl border p-5 ${tc.card}`}>
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h2 className="text-lg font-black">🛣️ Your recent rides</h2>
-                    <p className={`text-xs ${tc.sub}`}>Your last few adventures</p>
-                  </div>
-                  <button
-                    onClick={() => navigate("/my-rides")}
-                    className={`text-xs font-bold ${tc.sub} hover:underline`}
-                  >
-                    View all →
-                  </button>
-                </div>
-
-                <div className="space-y-3">
-                  {recentRides.map((ride) => (
-                    <div
-                      key={ride.id}
-                      className={`flex items-center gap-3 p-3 rounded-xl border transition-all hover:scale-[1.01] cursor-pointer ${tc.card} ${tc.cardHover}`}
-                    >
-                      <img
-                        src={ride.img}
-                        alt={ride.route}
-                        className="w-16 h-16 rounded-xl object-cover shrink-0"
-                        loading="lazy"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="font-bold text-sm truncate">{ride.route}</p>
-                        <p className={`text-xs ${tc.sub}`}>
-                          {ride.distance} · {ride.duration}
-                        </p>
-                        <p className={`text-xs ${tc.sub}`}>{ride.date}</p>
-                      </div>
-                      <i className={`fa fa-chevron-right ${tc.sub} shrink-0`} />
-                    </div>
-                  ))}
-                </div>
-              </section>
+        {/* ══════════════════════════════════════════════════════
+            SECTION 3 — TIP OF THE DAY
+            Subtle card at the bottom. Soft gradient border.
+        ══════════════════════════════════════════════════════ */}
+        <div
+          className="w-full max-w-[520px]"
+          style={{ animation: "slideUp 1s ease-out both" }}
+        >
+          <div
+            className={`rounded-2xl border p-5 flex items-start gap-4 ${tc.card}`}
+            style={{
+              background: "linear-gradient(135deg, rgba(249,115,22,0.06) 0%, rgba(236,72,153,0.04) 100%)",
+            }}
+          >
+            {/* Tip emoji */}
+            <span className="text-3xl select-none shrink-0">💡</span>
+            <div>
+              <p className="font-black text-sm mb-1">Tip of the day</p>
+              <p className={`text-xs leading-relaxed ${tc.sub}`}>
+                Always check tire pressure before a long ride. Properly inflated tires
+                improve fuel efficiency by up to 10% and make your bike safer to handle.
+              </p>
             </div>
-
-            {/* ── RIGHT RAIL ──────────────────────────────── */}
-            <div className="space-y-4">
-
-              {/* Live now */}
-              <section className={`rounded-2xl border p-5 ${tc.card}`}>
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-base font-black flex items-center gap-2">
-                    <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                    Live now
-                  </h2>
-                  <button
-                    onClick={() => navigate("/live")}
-                    className={`text-xs font-bold ${tc.sub} hover:underline`}
-                  >
-                    All →
-                  </button>
-                </div>
-
-                <div className="space-y-2.5">
-                  {trendingRides.map((t, i) => (
-                    <div
-                      key={i}
-                      className={`p-3 rounded-xl border transition-all hover:scale-[1.02] cursor-pointer ${tc.card} ${tc.cardHover}`}
-                    >
-                      <p className="font-bold text-sm truncate">{t.name}</p>
-                      <p className={`text-xs mt-1 ${tc.sub}`}>
-                        👁 {t.viewers.toLocaleString()} watching · 🏍️ {t.bike}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </section>
-
-              {/* Quick stats */}
-              <section className={`rounded-2xl border p-5 ${tc.card}`}>
-                <h2 className="text-base font-black mb-3">📊 Your stats</h2>
-                <div className="space-y-2.5">
-                  {[
-                    { label: "Total rides",    value: "12",   icon: "fa-motorcycle text-orange-400" },
-                    { label: "Total distance",  value: "481 km", icon: "fa-route text-blue-400" },
-                    { label: "Riders connected", value: "248",  icon: "fa-users text-green-400" },
-                  ].map((s) => (
-                    <div key={s.label} className="flex items-center justify-between">
-                      <span className={`text-xs flex items-center gap-2 ${tc.sub}`}>
-                        <i className={`fa ${s.icon} w-4 text-center`} />
-                        {s.label}
-                      </span>
-                      <span className="font-black text-sm">{s.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </section>
-
-              {/* Tip of the day */}
-              <section className={`rounded-2xl border p-5 ${tc.card} bg-gradient-to-br from-orange-500/10 to-pink-500/10`}>
-                <div className="text-3xl mb-2">💡</div>
-                <h3 className="font-black text-sm mb-1">Tip of the day</h3>
-                <p className={`text-xs leading-relaxed ${tc.sub}`}>
-                  Always check your tire pressure before a long ride. Properly
-                  inflated tires improve fuel efficiency by up to 10% and make
-                  your bike much safer to handle.
-                </p>
-              </section>
-            </div>
-
           </div>
         </div>
+
       </main>
 
       {/* ── Start Ride modal ────────────────────────────────── */}
@@ -332,6 +285,34 @@ export default function Home() {
         onClose={() => setShowStart(false)}
         tc={tc}
       />
+
+      {/* ── CSS Animations ──────────────────────────────────── */}
+      <style>{`
+        /* Motorcycle floats up and down */
+        @keyframes float {
+          0%, 100% { transform: translateY(0px) rotate(-3deg); }
+          50%       { transform: translateY(-18px) rotate(-3deg); }
+        }
+
+        /* CTA button glow pulses gently */
+        @keyframes glow {
+          0%, 100% { box-shadow: 0 8px 40px rgba(249,115,22,0.45); }
+          50%       { box-shadow: 0 12px 60px rgba(249,115,22,0.70); }
+        }
+
+        /* Outer ring around the CTA button expands and fades */
+        @keyframes ring-pulse {
+          0%   { box-shadow: 0 0 0 0px  rgba(249,115,22,0.50); }
+          70%  { box-shadow: 0 0 0 18px rgba(249,115,22,0.00); }
+          100% { box-shadow: 0 0 0 0px  rgba(249,115,22,0.00); }
+        }
+
+        /* Cards + content slide up + fade in on page load */
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateY(24px); }
+          to   { opacity: 1; transform: translateY(0);    }
+        }
+      `}</style>
     </div>
   );
 }

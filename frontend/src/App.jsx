@@ -25,24 +25,24 @@
 //   3. Add a <Route path="..." element={<ProtectedRoute><YourPage /></ProtectedRoute>} />
 // ============================================================
 
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 
 // ─── Public pages ─────────────────────────────────────────────
 // The Login page also handles Signup — it's the single entry point
-import LoginPage  from "./pages/landing-page/Login";
+import LoginPage from "./pages/landing-page/Login";
 import Onboarding from "./pages/Onboarding";
 
 // ─── Protected pages ──────────────────────────────────────────
-import Home        from "./pages/Home";
-import Account     from "./pages/Account";
-import Settings    from "./pages/Settings";
-import BikeDetail  from "./pages/BikeDetail";
+import Account from "./pages/Account";
+import BikeDetail from "./pages/BikeDetail";
+import Community from "./pages/Community";
+import Home from "./pages/Home";
+import Live from "./pages/Live";
 import Marketplace from "./pages/Marketplace";
-import Live        from "./pages/Live";
-import Messages    from "./pages/Messages";
-import Search      from "./pages/Search";
-import Community   from "./pages/Community";
+import Messages from "./pages/Messages";
+import Search from "./pages/Search";
+import Settings from "./pages/Settings";
 
 // ─── Route guard ──────────────────────────────────────────────
 // Redirects: unauthenticated → /, not onboarded → /onboarding

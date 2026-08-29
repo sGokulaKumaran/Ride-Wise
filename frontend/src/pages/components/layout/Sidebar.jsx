@@ -1,19 +1,19 @@
 // ============================================================
-// 📌 Sidebar — Left navigation for RideWise (desktop only)
+// 📌 Sidebar — Minimal left navigation for RideWise
 //
-// LAYOUT (top to bottom):
-//   Logo → Nav items → AccountMenu (profile dropdown)
+// INTENTIONALLY SIMPLE:
+//   This sidebar only shows what's actually built and useful right now.
+//   Future features (Riders feed, Map, etc.) will be added here later.
 //
-// NAV ITEMS:
-//   🏠 Home | 🔍 Find Riders | 🏍️ My Rides | 👥 Community
-//   💬 Messages (with badge) | 🗺️ Map | ⚙ Settings
+// CURRENT ITEMS:
+//   🏍️ Logo → navigates to /home
+//   🏠 Home → /home (active route highlighted)
+//   👥 Riders → placeholder, no action (shows "SOON" badge)
 //
-// ACTIVE STATE:
-//   The current route is highlighted using location.pathname comparison.
-//
-// AccountMenu (bottom):
-//   Shows avatar + username + email. Click to open a dropdown
-//   with My Profile, My Rides, Settings, and Logout.
+// BOTTOM:
+//   AccountMenu → shows avatar + name + email.
+//   Click it to open a dropdown with: My Profile | Settings | Log out.
+//   (Settings is only accessible via this dropdown — NOT a standalone nav item)
 // ============================================================
 
 import { useNavigate, useLocation } from "react-router-dom";
@@ -23,77 +23,69 @@ export default function Sidebar({ tc }) {
   const navigate  = useNavigate();
   const location  = useLocation();
 
-  // ── Navigation menu items ────────────────────────────────────
-  // badge: optional red notification count
-  const menuItems = [
-    { icon: "fa-home",       label: "Home",         path: "/home"        },
-    { icon: "fa-search",     label: "Find Riders",  path: "/find-riders" },
-    { icon: "fa-motorcycle", label: "My Rides",     path: "/my-rides"    },
-    { icon: "fa-users",      label: "Community",    path: "/community"   },
-    { icon: "fa-comments",   label: "Messages",     path: "/messages",  badge: 3 },
-    { icon: "fa-map",        label: "Map",          path: "/map"         },
-  ];
+  const isHome = location.pathname === "/home";
 
   return (
-    <aside className={`hidden lg:flex fixed left-0 top-0 h-screen w-64 flex-col p-4 border-r ${tc.divider} bg-black/40 backdrop-blur-xl z-40`}>
-
+    <aside
+      className={`hidden lg:flex fixed left-0 top-0 h-screen w-64 flex-col p-4 border-r ${tc.divider} bg-black/40 backdrop-blur-xl z-40`}
+    >
       {/* ── Logo ──────────────────────────────────────────────── */}
       <div
         onClick={() => navigate("/home")}
-        className="flex items-center gap-3 px-4 py-4 cursor-pointer hover:scale-105 transition-transform"
+        className="flex items-center gap-3 px-4 py-4 cursor-pointer group"
       >
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${tc.button} text-sm`}>
+        <div
+          className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 group-hover:scale-110 group-hover:rotate-3 ${tc.button} text-sm`}
+        >
           <i className="fa fa-motorcycle" />
         </div>
-        <span className="text-xl font-black">
-          Ride<span className="opacity-60">Wise</span>
+        <span className="text-xl font-black tracking-tight">
+          Ride<span className="opacity-50">Wise</span>
         </span>
       </div>
 
-      {/* ── Main nav items ────────────────────────────────────── */}
-      <nav className="flex-1 mt-6 space-y-1">
-        {menuItems.map((item) => {
-          // Highlight when the path matches exactly
-          const isActive = location.pathname === item.path;
+      {/* ── Navigation ────────────────────────────────────────── */}
+      <nav className="flex-1 mt-8 space-y-2">
 
-          return (
-            <button
-              key={item.label}
-              onClick={() => navigate(item.path)}
-              className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all hover:scale-[1.02] ${
-                isActive
-                  ? `${tc.button}` // active = filled button style
-                  : `hover:bg-white/10 ${tc.text}`
-              }`}
-            >
-              <i className={`fa ${item.icon} text-lg w-6 text-center`} />
-              <span className="font-semibold flex-1 text-left">{item.label}</span>
-              {/* Notification badge */}
-              {item.badge && (
-                <span className="px-2 py-0.5 bg-red-500 rounded-full text-xs font-bold text-white animate-pulse">
-                  {item.badge}
-                </span>
-              )}
-            </button>
-          );
-        })}
-
-        {/* ── Settings quick link (bottom of nav, before AccountMenu) ── */}
+        {/* Home — active nav item */}
         <button
-          onClick={() => navigate("/settings")}
-          className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all hover:scale-[1.02] ${
-            location.pathname === "/settings"
-              ? `${tc.button}`
-              : `hover:bg-white/10 ${tc.text}`
+          onClick={() => navigate("/home")}
+          className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl font-semibold transition-all duration-200 hover:scale-[1.02] ${
+            isHome
+              ? `${tc.button} shadow-lg`          // active = filled
+              : `hover:bg-white/10 ${tc.text}`    // inactive = ghost
           }`}
         >
-          <i className="fa fa-cog text-lg w-6 text-center" />
-          <span className="font-semibold flex-1 text-left">Settings</span>
+          <i className={`fa fa-home text-lg w-5 text-center`} />
+          <span className="flex-1 text-left">Home</span>
         </button>
+
+        {/* Riders — placeholder (feature coming soon, no action) */}
+        {/* Rendered as a div (not button) so it's not focusable/clickable */}
+        <div
+          className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl select-none ${tc.text}`}
+          style={{ opacity: 0.45, cursor: "default" }}
+          title="Coming soon"
+        >
+          <i className="fa fa-users text-lg w-5 text-center" />
+          <span className="font-semibold flex-1 text-left">Riders</span>
+          {/* SOON badge */}
+          <span
+            className="text-[9px] font-black tracking-[0.15em] px-2 py-0.5 rounded-full"
+            style={{
+              background: "rgba(249,115,22,0.15)",
+              color: "rgb(251,146,60)",
+              border: "1px solid rgba(249,115,22,0.25)",
+            }}
+          >
+            SOON
+          </span>
+        </div>
+
       </nav>
 
       {/* ── Account menu (profile + dropdown) at very bottom ─── */}
-      {/* AccountMenu reads user data from useAuth() internally */}
+      {/* Contains: My Profile, Settings, Log out */}
       <AccountMenu tc={tc} />
     </aside>
   );

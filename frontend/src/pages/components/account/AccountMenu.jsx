@@ -39,10 +39,10 @@ export default function AccountMenu({ tc }) {
   }, []);
 
   // ── Menu items ───────────────────────────────────────────────
+  // Settings is ONLY accessible via this dropdown (not in the sidebar nav)
   const menuItems = [
-    { icon: "fa-user",       label: "My Profile",  action: () => navigate("/account")   },
-    { icon: "fa-motorcycle", label: "My Rides",    action: () => navigate("/my-rides")  },
-    { icon: "fa-cog",        label: "Settings",    action: () => navigate("/settings")  },
+    { icon: "fa-user",  label: "My Profile", action: () => navigate("/account")  },
+    { icon: "fa-cog",   label: "Settings",   action: () => navigate("/settings") },
   ];
 
   // ── Handle logout: close menu, then call logout ──────────────
