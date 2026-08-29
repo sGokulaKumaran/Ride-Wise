@@ -1,99 +1,45 @@
 // ============================================================
-// 🚀 App.jsx — Root component + Router setup
-//
-// RESPONSIBILITIES:
-//   1. Wrap the entire app in <AuthProvider> so every page and
-//      component can call useAuth()
-//   2. Set up React Router with all routes
-//   3. Guard protected routes with <ProtectedRoute> which checks
-//      isAuthenticated and isFullyOnboarded from AuthContext
-//   4. Redirect unbuilt/future routes to existing pages
-//
-// FLOW:
-//   /           → Login/Signup (public)
-//   /onboarding → Profile details (public, but only reached after signup)
-//   /home       → Rider Dashboard (protected)
-//   /account    → Profile page (protected)
-//   /settings   → Settings (protected)
-//   /community  → Community (protected)
-//   /messages   → Messages (protected)
-//   ... (other existing pages remain protected too)
-//
-// ADDING NEW PAGES:
-//   1. Create your page in src/pages/
-//   2. Import it here
-//   3. Add a <Route path="..." element={<ProtectedRoute><YourPage /></ProtectedRoute>} />
+// 🚀 App.jsx — Root component
 // ============================================================
 
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 
 // ─── Public pages ─────────────────────────────────────────────
-// The Login page also handles Signup — it's the single entry point
 import LoginPage from "./pages/landing-page/Login";
 import Onboarding from "./pages/Onboarding";
 
 // ─── Protected pages ──────────────────────────────────────────
 import Account from "./pages/Account";
-
 import Home from "./pages/Home";
-
 import Settings from "./pages/Settings";
+import Riders from "./pages/Riders";   // ← NEW
 
 // ─── Route guard ──────────────────────────────────────────────
-// Redirects: unauthenticated → /, not onboarded → /onboarding
 import ProtectedRoute from "./pages/components/shared/ProtectedRoute";
 
 export default function App() {
   return (
-    // AuthProvider must be the outermost wrapper so ProtectedRoute
-    // can call useAuth() inside the router context
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-
-          {/* ════════════════════════════════════════════════
-              PUBLIC ROUTES — no auth required
-          ════════════════════════════════════════════════ */}
-
-          {/* Login / Signup combined page (the app entry point) */}
-          <Route path="/" element={<LoginPage />} />
-
-          {/* Onboarding details page: username, mobile, address */}
-          {/* Reached after signup. Also accessible if user hasn't onboarded yet. */}
+          {/* Public routes */}
+          <Route path="/"           element={<LoginPage />} />
           <Route path="/onboarding" element={<Onboarding />} />
 
-          {/* ════════════════════════════════════════════════
-              PROTECTED ROUTES — require login + onboarding
-              All wrapped in <ProtectedRoute> which handles redirects
-          ════════════════════════════════════════════════ */}
+          {/* Protected routes */}
+          <Route path="/home"     element={<ProtectedRoute><Home /></ProtectedRoute>} />
+          <Route path="/riders"   element={<ProtectedRoute><Riders /></ProtectedRoute>} />
+          <Route path="/account"  element={<ProtectedRoute><Account /></ProtectedRoute>} />
+          <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
 
-          {/* Rider dashboard — the main page after login */}
-          <Route path="/home"        element={<ProtectedRoute><Home /></ProtectedRoute>} />
+          {/* Redirects for old/related routes */}
+          <Route path="/saved"   element={<Navigate to="/home" replace />} />
+          <Route path="/profile" element={<Navigate to="/account" replace />} />
+          <Route path="/login"   element={<Navigate to="/" replace />} />
 
-          {/* User profile / account page */}
-          <Route path="/account"     element={<ProtectedRoute><Account /></ProtectedRoute>} />
-
-          {/* App settings */}
-          <Route path="/settings"    element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-
-
-          {/* Saved items → home */}
-          <Route path="/saved"       element={<Navigate to="/home" replace />} />
-
-          {/* Old /profile → /account */}
-          <Route path="/profile"     element={<Navigate to="/account" replace />} />
-
-          {/* Old /login route → / (login is now the root) */}
-          <Route path="/login"       element={<Navigate to="/" replace />} />
-
-          
-
-          {/* ════════════════════════════════════════════════
-              404 CATCH-ALL → landing page
-          ════════════════════════════════════════════════ */}
+          {/* 404 catch-all */}
           <Route path="*" element={<Navigate to="/" replace />} />
-
         </Routes>
       </BrowserRouter>
     </AuthProvider>

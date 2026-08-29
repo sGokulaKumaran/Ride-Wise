@@ -62,25 +62,18 @@ export default function Sidebar({ tc }) {
 
         {/* Riders — placeholder (feature coming soon, no action) */}
         {/* Rendered as a div (not button) so it's not focusable/clickable */}
-        <div
-          className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl select-none ${tc.text}`}
-          style={{ opacity: 0.45, cursor: "default" }}
-          title="Coming soon"
-        >
-          <i className="fa fa-users text-lg w-5 text-center" />
-          <span className="font-semibold flex-1 text-left">Riders</span>
-          {/* SOON badge */}
-          <span
-            className="text-[9px] font-black tracking-[0.15em] px-2 py-0.5 rounded-full"
-            style={{
-              background: "rgba(249,115,22,0.15)",
-              color: "rgb(251,146,60)",
-              border: "1px solid rgba(249,115,22,0.25)",
-            }}
-          >
-            SOON
-          </span>
-        </div>
+        {/* Riders — active nav link */}
+<button
+  onClick={() => navigate("/riders")}
+  className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl font-semibold transition-all duration-200 hover:scale-[1.02] ${
+    location.pathname === "/riders"
+      ? `${tc.button} shadow-lg`
+      : `hover:bg-white/10 ${tc.text}`
+  }`}
+>
+  <i className="fa fa-users text-lg w-5 text-center" />
+  <span className="flex-1 text-left">Riders</span>
+</button>
 
       </nav>
 
