@@ -35,13 +35,9 @@ import Onboarding from "./pages/Onboarding";
 
 // ─── Protected pages ──────────────────────────────────────────
 import Account from "./pages/Account";
-import BikeDetail from "./pages/BikeDetail";
-import Community from "./pages/Community";
+
 import Home from "./pages/Home";
-import Live from "./pages/Live";
-import Marketplace from "./pages/Marketplace";
-import Messages from "./pages/Messages";
-import Search from "./pages/Search";
+
 import Settings from "./pages/Settings";
 
 // ─── Route guard ──────────────────────────────────────────────
@@ -81,41 +77,6 @@ export default function App() {
           {/* App settings */}
           <Route path="/settings"    element={<ProtectedRoute><Settings /></ProtectedRoute>} />
 
-          {/* Marketplace for bikes / gear */}
-          <Route path="/marketplace" element={<ProtectedRoute><Marketplace /></ProtectedRoute>} />
-
-          {/* Live ride streams */}
-          <Route path="/live"        element={<ProtectedRoute><Live /></ProtectedRoute>} />
-
-          {/* Direct messages */}
-          <Route path="/messages"    element={<ProtectedRoute><Messages /></ProtectedRoute>} />
-
-          {/* Search results */}
-          <Route path="/search"      element={<ProtectedRoute><Search /></ProtectedRoute>} />
-
-          {/* Community feed */}
-          <Route path="/community"   element={<ProtectedRoute><Community /></ProtectedRoute>} />
-
-          {/* Individual bike detail page */}
-          <Route path="/bike/:id"    element={<ProtectedRoute><BikeDetail /></ProtectedRoute>} />
-
-          {/* ════════════════════════════════════════════════
-              FUTURE ROUTES — placeholder redirects
-              These will be real pages once their features are built.
-              Replace Navigate with the actual page component when ready.
-          ════════════════════════════════════════════════ */}
-
-          {/* Find Riders page → redirects to community for now */}
-          <Route path="/find-riders" element={<Navigate to="/community" replace />} />
-
-          {/* My Rides page → redirects to home for now */}
-          <Route path="/my-rides"    element={<Navigate to="/home" replace />} />
-
-          {/* Map page → redirects to home for now */}
-          <Route path="/map"         element={<Navigate to="/home" replace />} />
-
-          {/* Plan Ride → home */}
-          <Route path="/plan-ride"   element={<Navigate to="/home" replace />} />
 
           {/* Saved items → home */}
           <Route path="/saved"       element={<Navigate to="/home" replace />} />
@@ -126,14 +87,7 @@ export default function App() {
           {/* Old /login route → / (login is now the root) */}
           <Route path="/login"       element={<Navigate to="/" replace />} />
 
-          {/* Share ride → home */}
-          <Route path="/share"       element={<Navigate to="/home" replace />} />
-
-          {/* Sell → marketplace */}
-          <Route path="/sell"        element={<Navigate to="/marketplace" replace />} />
-
-          {/* Individual ride → home for now */}
-          <Route path="/ride/:id"    element={<Navigate to="/home" replace />} />
+          
 
           {/* ════════════════════════════════════════════════
               404 CATCH-ALL → landing page
