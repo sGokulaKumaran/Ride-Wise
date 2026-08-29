@@ -29,8 +29,8 @@ const GROUPS = [
 export default function Community() {
   const navigate = useNavigate();
   const { theme, setTheme, tc } = useTheme();
-  const [tab, setTab] = useState("nearby");
   const [groups, setGroups] = useState(GROUPS);
+  const [tab, setTab] = useState("nearby");
 
   const commandsMap = { dark: () => setTheme("dark"), light: () => setTheme("light"), warm: () => setTheme("warm"), midnight: () => setTheme("midnight"), home: () => navigate("/home") };
   const { voiceMode, startVoice } = useVoice(commandsMap);
@@ -42,6 +42,7 @@ export default function Community() {
   return (
     <div className={`relative min-h-screen w-full overflow-x-hidden ${tc.bg} ${tc.text}`}>
       <Sidebar tc={tc} />
+      
       <TopBar theme={theme} setTheme={setTheme} tc={tc} voiceMode={voiceMode} startVoice={startVoice} />
       <MobileNav tc={tc} />
 

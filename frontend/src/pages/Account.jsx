@@ -1,0 +1,273 @@
+// ============================================================
+// 👤 Account — User profile page
+// Route: /account (protected — requires login + onboarding)
+//
+// SECTIONS:
+//   1. Cover banner (gradient)
+//   2. Avatar + username + join date (overlaps the cover)
+//   3. Edit Profile / Save / Cancel buttons
+//   4. Stats row: Rides · Followers · Following
+//   5. Profile details card (editable: username, mobile, address; read-only: email)
+//   6. Account actions: Log out
+//
+// EDIT MODE:
+//   Clicking "Edit Profile" switches text fields to inputs.
+//   Clicking "Save" calls updateProfile() from AuthContext.
+//   Clicking "Cancel" reverts all local edits.
+//
+// BACKEND-READY:
+//   updateProfile() in AuthContext does the save.
+//   When backend is ready, replace that function's body with an API call.
+//   This page doesn't need to change.
+// ============================================================
+
+import { useState } from "react";
+import { useTheme } from "./hooks/useTheme";
+import { useAuth } from "../context/AuthContext";
+import Sidebar from "./components/layout/Sidebar";
+import TopBar from "./components/layout/TopBar";
+import MobileNav from "./components/layout/MobileNav";
+
+export default function Account() {
+  const { theme, setTheme, tc } = useTheme();
+  const { user, avatarLetter, updateProfile, logout } = useAuth();
+
+  // ── Edit mode state ──────────────────────────────────────────
+  const [editing,  setEditing]  = useState(false);
+
+  // Local editable copies of profile fields
+  const [username, setUsername] = useState(user?.username || "");
+  const [mobile,   setMobile]   = useState(user?.mobile   || "");
+  const [address,  setAddress]  = useState(user?.address  || "");
+  const [saving,   setSaving]   = useState(false);
+  const [error,    setError]    = useState("");
+
+  // ── Save changes ─────────────────────────────────────────────
+  const handleSave = async () => {
+    if (!username.trim()) {
+      setError("Username cannot be empty.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await updateProfile({ username: username.trim(), mobile, address });
+      setEditing(false);
+    } catch (err) {
+      setError(err.message || "Failed to save. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── Cancel — revert local edits to current user data ─────────
+  const handleCancel = () => {
+    setUsername(user?.username || "");
+    setMobile(user?.mobile   || "");
+    setAddress(user?.address  || "");
+    setError("");
+    setEditing(false);
+  };
+
+  // ── Mock stats (replace with API data later) ─────────────────
+  const stats = [
+    { label: "Rides",     value: "12",  icon: "fa-motorcycle" },
+    { label: "Followers", value: "248", icon: "fa-users"      },
+    { label: "Following", value: "183", icon: "fa-user-plus"  },
+  ];
+
+  // ── Reusable inline field component ─────────────────────────
+  // Renders an input when editing=true, plain text otherwise
+  const Field = ({ label, value, editValue, onChange, type = "text", multiline = false }) => (
+    <div>
+      <label className={`text-xs font-bold tracking-wider mb-1.5 block ${tc.sub}`}>
+        {label}
+      </label>
+      {editing ? (
+        multiline ? (
+          <textarea
+            value={editValue}
+            onChange={(e) => onChange(e.target.value)}
+            rows={3}
+            className={`w-full px-4 py-3 rounded-xl border-2 outline-none focus:ring-2 focus:ring-orange-500/30 resize-none transition-all ${tc.input}`}
+          />
+        ) : (
+          <input
+            type={type}
+            value={editValue}
+            onChange={(e) => onChange(e.target.value)}
+            className={`w-full px-4 py-3 rounded-xl border-2 outline-none focus:ring-2 focus:ring-orange-500/30 transition-all ${tc.input}`}
+          />
+        )
+      ) : (
+        <p className="font-semibold">{value || <span className={`italic ${tc.sub}`}>Not set</span>}</p>
+      )}
+    </div>
+  );
+
+  return (
+    <div className={`relative min-h-screen w-full overflow-x-hidden ${tc.bg} ${tc.text}`}>
+      <Sidebar tc={tc} />
+      <TopBar theme={theme} setTheme={setTheme} tc={tc} />
+      <MobileNav tc={tc} />
+
+      <main className="lg:ml-64 pt-20 px-4 pb-28 lg:pb-8">
+        <div className="max-w-3xl mx-auto">
+
+          {/* ── Cover banner ──────────────────────────────────── */}
+          <div className="relative h-44 md:h-56 rounded-3xl overflow-hidden mb-16">
+            <div className="absolute inset-0 bg-gradient-to-br from-orange-500 via-pink-500 to-purple-600" />
+            {/* Decorative pattern overlay */}
+            <div className="absolute inset-0 opacity-20"
+              style={{
+                backgroundImage: "radial-gradient(circle, white 1px, transparent 1px)",
+                backgroundSize: "24px 24px",
+              }}
+            />
+          </div>
+
+          {/* ── Avatar + name (overlaps the cover) ────────────── */}
+          <div className="px-4 -mt-16 mb-6 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+            <div className="flex flex-col md:flex-row md:items-end gap-4">
+              {/* Large avatar circle */}
+              <div className="w-28 h-28 md:w-32 md:h-32 rounded-3xl bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center font-black text-white text-5xl ring-4 ring-black/50 shadow-2xl">
+                {avatarLetter}
+              </div>
+
+              <div className="md:pb-2">
+                <h1 className="text-3xl md:text-4xl font-black">
+                  {user?.username || "Rider"}
+                </h1>
+                <p className={`text-sm ${tc.sub}`}>
+                  @{user?.username || "you"} · Member since{" "}
+                  {new Date(user?.createdAt || Date.now()).toLocaleDateString("en", {
+                    month: "long",
+                    year:  "numeric",
+                  })}
+                </p>
+              </div>
+            </div>
+
+            {/* Edit / Save / Cancel buttons */}
+            <div className="flex gap-2 md:pb-2">
+              {!editing ? (
+                <button
+                  id="edit-profile-btn"
+                  onClick={() => setEditing(true)}
+                  className={`px-5 py-2.5 rounded-full font-bold transition-all hover:scale-105 ${tc.button}`}
+                >
+                  <i className="fa fa-pen mr-2" />
+                  Edit Profile
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={handleCancel}
+                    className={`px-5 py-2.5 rounded-full font-bold border transition-all hover:scale-105 ${tc.card}`}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSave}
+                    disabled={saving}
+                    className={`px-5 py-2.5 rounded-full font-bold transition-all hover:scale-105 disabled:opacity-50 bg-gradient-to-r from-orange-500 to-pink-500 text-white`}
+                  >
+                    {saving
+                      ? <><i className="fa fa-spinner fa-spin mr-2" />Saving…</>
+                      : <><i className="fa fa-check mr-2" />Save</>
+                    }
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Error message (edit mode) */}
+          {error && (
+            <div className="mb-4 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm flex items-center gap-2">
+              <i className="fa fa-exclamation-circle" /> {error}
+            </div>
+          )}
+
+          {/* ── Stats row ────────────────────────────────────── */}
+          <div className="grid grid-cols-3 gap-3 mb-5">
+            {stats.map((s) => (
+              <div
+                key={s.label}
+                className={`rounded-2xl border p-4 text-center transition-all hover:scale-[1.02] ${tc.card}`}
+              >
+                <i className={`fa ${s.icon} text-xl text-orange-400 mb-1.5 block`} />
+                <p className="text-2xl font-black">{s.value}</p>
+                <p className={`text-xs ${tc.sub}`}>{s.label}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* ── Profile details card ─────────────────────────── */}
+          <div className={`rounded-2xl border p-6 mb-4 ${tc.card}`}>
+            <h2 className="text-lg font-black mb-5 flex items-center gap-2">
+              <i className="fa fa-id-card text-orange-400" />
+              Profile details
+            </h2>
+
+            <div className="space-y-5">
+
+              {/* Username (editable) */}
+              <Field
+                label="USERNAME"
+                value={user?.username ? `@${user.username}` : null}
+                editValue={username}
+                onChange={setUsername}
+              />
+
+              {/* Email (read-only — set at signup, changed via backend later) */}
+              <div>
+                <label className={`text-xs font-bold tracking-wider mb-1.5 block ${tc.sub}`}>
+                  EMAIL <span className="text-orange-400/70 font-normal">(read-only)</span>
+                </label>
+                <p className="font-semibold">{user?.email || "—"}</p>
+              </div>
+
+              {/* Mobile (editable) */}
+              <Field
+                label="MOBILE"
+                value={user?.mobile}
+                editValue={mobile}
+                onChange={setMobile}
+                type="tel"
+              />
+
+              {/* Address (editable, multiline) */}
+              <Field
+                label="CITY / ADDRESS"
+                value={user?.address}
+                editValue={address}
+                onChange={setAddress}
+                multiline
+              />
+            </div>
+          </div>
+
+          {/* ── Account actions (danger zone) ─────────────────── */}
+          <div className={`rounded-2xl border p-6 ${tc.card}`}>
+            <h2 className="text-lg font-black mb-1 flex items-center gap-2">
+              <i className="fa fa-shield-halved text-orange-400" />
+              Account actions
+            </h2>
+            <p className={`text-xs ${tc.sub} mb-4`}>
+              Logging out keeps all your data saved. You can log back in any time.
+            </p>
+            <button
+              onClick={logout}
+              className="px-5 py-2.5 rounded-full font-bold bg-red-500/15 text-red-400 border border-red-500/30 transition-all hover:scale-105 hover:bg-red-500/25"
+            >
+              <i className="fa fa-right-from-bracket mr-2" />
+              Log out
+            </button>
+          </div>
+
+        </div>
+      </main>
+    </div>
+  );
+}

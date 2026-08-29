@@ -16,7 +16,7 @@ export default function BikeCard({ bike, tc }) {
       {/* Header */}
       <div className="flex items-center justify-between p-4 pb-2">
         <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${tc.badge}`}>
-          🏍️ MARKETPLACE
+          🏍️ MARKETPLAC
         </span>
         <span className={`text-xs ${tc.sub}`}>Featured</span>
       </div>

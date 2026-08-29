@@ -1,6 +1,7 @@
 // ============================================================
 // 👥 Suggestions — Right sidebar: Nearby Riders + Groups
 // Custom for RideWise — geo-based rider discovery + groups
+// THis is the main right sidebar its show the suggetions
 // ============================================================
 
 export default function Suggestions({ tc }) {
