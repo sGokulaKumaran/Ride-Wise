@@ -1,23 +1,18 @@
-// ============================================================
-// 🎨 useTheme HOOK — Centralized theme management
-// Handles: time-based auto-detection, manual switching, persistence
-// Usage: Import this hook in any component to access theme state
-// ============================================================
-
 import { useState, useEffect } from "react";
 
 export const themes = {
+  // Each theme is a bundle of Tailwind classes
   dark: {
-    bg: "bg-black",
-    text: "text-white",
-    sub: "text-gray-400",
-    card: "bg-white/5 border-white/10 text-white",
+    bg: "bg-black",                          // Page background
+    text: "text-white",                      // Main text color
+    sub: "text-gray-400",                    // Secondary text
+    card: "bg-white/5 border-white/10 text-white",  // Card styling
     input: "bg-white/5 border-white/15 text-white placeholder-gray-500",
-    button: "bg-white text-black",
+    button: "bg-white text-black",           // Primary buttons
     record: "bg-white/10 border border-white/20",
-    glow: "rgba(255,255,255,0.15)",
-    particle: "bg-white",
-    accent: "from-white to-gray-400",
+    glow: "rgba(255,255,255,0.15)",          // For mouse glow effects
+    particle: "bg-white",                    // Floating particles
+    accent: "from-white to-gray-400",        // Gradient text
     divider: "border-white/10",
     badge: "bg-gradient-to-r from-orange-500 to-pink-500 text-white",
     cardHover: "hover:bg-white/10",
@@ -69,25 +64,26 @@ export const themes = {
   },
 };
 
-// Hook for using theme globally
 export function useTheme() {
-  // Load saved theme from localStorage (or detect by time)
+  // Load saved theme OR auto-detect by time
   const [theme, setTheme] = useState(() => {
-    const saved = localStorage.getItem("ridewise-theme");
-    if (saved && themes[saved]) return saved;
-    
-    // Auto-detect based on current hour
+    try {
+      const saved = localStorage.getItem("ridewise-theme");
+      if (saved && themes[saved]) return saved;
+    } catch (_) {}
+    // Auto-detect: morning=warm, day=light, evening=dark, night=midnight
     const hour = new Date().getHours();
-    if (hour >= 6 && hour < 12) return "warm";       // Morning
-    if (hour >= 12 && hour < 18) return "light";     // Afternoon
-    if (hour >= 18 && hour < 22) return "dark";      // Evening
-    return "midnight";                                // Night
+    if (hour >= 6 && hour < 12) return "warm";
+    if (hour >= 12 && hour < 18) return "light";
+    if (hour >= 18 && hour < 22) return "dark";
+    return "midnight";
   });
 
   // Save theme to localStorage whenever it changes
   useEffect(() => {
-    localStorage.setItem("ridewise-theme", theme);
+    try { localStorage.setItem("ridewise-theme", theme); } catch (_) {}
   }, [theme]);
 
   return { theme, setTheme, tc: themes[theme], allThemes: themes };
+  // tc = "theme classes" — the bundle for current theme
 }

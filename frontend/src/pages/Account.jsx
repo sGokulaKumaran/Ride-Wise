@@ -21,19 +21,82 @@
 //   This page doesn't need to change.
 // ============================================================
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import MobileNav from "./components/layout/MobileNav";
 import Sidebar from "./components/layout/Sidebar";
 import TopBar from "./components/layout/TopBar";
 import { useTheme } from "./hooks/useTheme";
 
+// ============================================================
+// 📝 Field — Reusable editable text field component
+// ============================================================
+//
+// WHY THIS LIVES OUTSIDE Account():
+// ─────────────────────────────────
+// In the previous version, this component was defined INSIDE the
+// Account() function. That meant every time Account() re-rendered
+// (which happens on every keystroke, because setUsername etc. are
+// called), a BRAND NEW Field function was created. To React, that
+// looks like a completely different component type — so React
+// unmounts the old <input> and mounts a new one. The browser drops
+// focus and resets the cursor position → you can only type ONE
+// character at a time.
+//
+// By moving Field to module scope, it has a stable identity across
+// renders. React reconciles it as the SAME component, keeps the
+// <input> mounted, and preserves focus + cursor position while// typing. ✅
+//
+// PROPS:
+//   label — uppercase label shown above the field
+//   value      — display value when NOT editing
+//   editValue  — controlled value of the input/textarea
+//   onChange   — stable setter (e.g. setUsername) from the parent
+//   editing — whether the input is shown (true) or plain text (false)
+//   type       — input type: "text", "tel", "email", etc.
+//   multiline  — if true, render a <textarea> instead of <input>
+//   tc — theme class object (for colors)
+// ============================================================
+function Field({ label, value, editValue, onChange, editing, type = "text", multiline = false, tc }) {
+  return (
+    <div>
+      {/* Field label */}
+      <label className={`text-xs font-bold tracking-wider mb-1.5 block ${tc.sub}`}>
+        {label}
+      </label>
+
+      {/* Edit mode → show input / textarea  |  View mode → show plain text */}
+      {editing ? (
+        multiline ? (
+          <textarea
+            value={editValue}
+            onChange={(e) => onChange(e.target.value)}
+            rows={3}
+            className={`w-full px-4 py-3 rounded-xl border-2 outline-none focus:ring-2 focus:ring-orange-500/30 resize-none transition-all ${tc.input}`}
+          />
+        ) : (
+          <input
+            type={type}
+            value={editValue}
+            onChange={(e) => onChange(e.target.value)}
+            className={`w-full px-4 py-3 rounded-xl border-2 outline-none focus:ring-2 focus:ring-orange-500/30 transition-all ${tc.input}`}
+          />
+        )
+      ) : (
+        <p className="font-semibold">
+          {value || <span className={`italic ${tc.sub}`}>Not set</span>}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function Account() {
   const { theme, setTheme, tc } = useTheme();
   const { user, avatarLetter, updateProfile, logout } = useAuth();
 
   // ── Edit mode state ──────────────────────────────────────────
-  const [editing,  setEditing]  = useState(false);
+  const [editing, setEditing] = useState(false);
 
   // Local editable copies of profile fields
   const [username, setUsername] = useState(user?.username || "");
@@ -41,6 +104,16 @@ export default function Account() {
   const [address,  setAddress]  = useState(user?.address  || "");
   const [saving,   setSaving]   = useState(false);
   const [error,    setError]    = useState("");
+
+  // ── FIX: Re-sync local state whenever user object updates ────
+  // Without this, when AuthContext restores the user from localStorage
+  // AFTER this component mounts, our local form fields stay empty
+  // and the user can't type anything.
+  useEffect(() => {
+    setUsername(user?.username || "");
+    setMobile(user?.mobile     || "");
+    setAddress(user?.address || "");
+  }, [user]);
 
   // ── Save changes ─────────────────────────────────────────────
   const handleSave = async () => {
@@ -63,8 +136,8 @@ export default function Account() {
   // ── Cancel — revert local edits to current user data ─────────
   const handleCancel = () => {
     setUsername(user?.username || "");
-    setMobile(user?.mobile   || "");
-    setAddress(user?.address  || "");
+    setMobile(user?.mobile || "");
+    setAddress(user?.address   || "");
     setError("");
     setEditing(false);
   };
@@ -75,35 +148,6 @@ export default function Account() {
     { label: "Followers", value: "248", icon: "fa-users"      },
     { label: "Following", value: "183", icon: "fa-user-plus"  },
   ];
-
-  // ── Reusable inline field component ─────────────────────────
-  // Renders an input when editing=true, plain text otherwise
-  const Field = ({ label, value, editValue, onChange, type = "text", multiline = false }) => (
-    <div>
-      <label className={`text-xs font-bold tracking-wider mb-1.5 block ${tc.sub}`}>
-        {label}
-      </label>
-      {editing ? (
-        multiline ? (
-          <textarea
-            value={editValue}
-            onChange={(e) => onChange(e.target.value)}
-            rows={3}
-            className={`w-full px-4 py-3 rounded-xl border-2 outline-none focus:ring-2 focus:ring-orange-500/30 resize-none transition-all ${tc.input}`}
-          />
-        ) : (
-          <input
-            type={type}
-            value={editValue}
-            onChange={(e) => onChange(e.target.value)}
-            className={`w-full px-4 py-3 rounded-xl border-2 outline-none focus:ring-2 focus:ring-orange-500/30 transition-all ${tc.input}`}
-          />
-        )
-      ) : (
-        <p className="font-semibold">{value || <span className={`italic ${tc.sub}`}>Not set</span>}</p>
-      )}
-    </div>
-  );
 
   return (
     <div className={`relative min-h-screen w-full overflow-x-hidden ${tc.bg} ${tc.text}`}>
@@ -212,12 +256,14 @@ export default function Account() {
 
             <div className="space-y-5">
 
-              {/* Username (editable) */}
+              {/* Username (editable) — setUsername is a stable React setter */}
               <Field
                 label="USERNAME"
                 value={user?.username ? `@${user.username}` : null}
                 editValue={username}
                 onChange={setUsername}
+                editing={editing}
+                tc={tc}
               />
 
               {/* Email (read-only — set at signup, changed via backend later) */}
@@ -234,7 +280,9 @@ export default function Account() {
                 value={user?.mobile}
                 editValue={mobile}
                 onChange={setMobile}
+                editing={editing}
                 type="tel"
+                tc={tc}
               />
 
               {/* Address (editable, multiline) */}
@@ -243,7 +291,9 @@ export default function Account() {
                 value={user?.address}
                 editValue={address}
                 onChange={setAddress}
+                editing={editing}
                 multiline
+                tc={tc}
               />
             </div>
           </div>

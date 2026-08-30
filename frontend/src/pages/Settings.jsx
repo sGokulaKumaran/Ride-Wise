@@ -18,7 +18,6 @@
 //   await axios.put('/api/user/settings', { theme, notifications, ... })
 //   You can add a debounced auto-save or an explicit "Save" button.
 // ============================================================
-
 import { useState } from "react";
 import { useTheme } from "./hooks/useTheme";
 import Sidebar from "./components/layout/Sidebar";
@@ -26,13 +25,17 @@ import TopBar from "./components/layout/TopBar";
 import MobileNav from "./components/layout/MobileNav";
 
 // ── Small reusable toggle component ─────────────────────────
+// Renders a label + description on the left, a switch on the right.
+// "checked" controls the visual state; "onChange" fires when clicked.
 function Toggle({ checked, onChange, label, sub, tc }) {
   return (
     <div className="flex items-center justify-between py-3">
+      {/* Left side: text */}
       <div>
         <p className="font-semibold text-sm">{label}</p>
         {sub && <p className={`text-xs mt-0.5 ${tc.sub}`}>{sub}</p>}
       </div>
+      {/* Right side: switch */}
       <button
         role="switch"
         aria-checked={checked}
@@ -52,6 +55,7 @@ function Toggle({ checked, onChange, label, sub, tc }) {
 }
 
 // ── Small reusable section header ────────────────────────────
+// Icon box + title, used to start each settings section.
 function SectionHeader({ icon, title, tc }) {
   return (
     <div className="flex items-center gap-2 mb-1">
@@ -64,6 +68,7 @@ function SectionHeader({ icon, title, tc }) {
 }
 
 export default function Settings() {
+  // Pull current theme + setter from the global theme hook
   const { theme, setTheme, tc, allThemes } = useTheme();
 
   // ── Accessibility settings (local state for now) ─────────────
@@ -96,7 +101,6 @@ export default function Settings() {
 
       <main className="lg:ml-64 pt-20 px-4 pb-28 lg:pb-8">
         <div className="max-w-2xl mx-auto">
-
           {/* ── Page header ──────────────────────────────────── */}
           <div className="mb-7">
             <h1 className="text-3xl font-black mb-1">⚙️ Settings</h1>
@@ -108,8 +112,9 @@ export default function Settings() {
           ══════════════════════════════════════════════════ */}
           <div className={`rounded-2xl border p-5 mb-4 ${tc.card}`}>
             <SectionHeader icon="fa-palette" title="Appearance" tc={tc} />
-            <p className={`text-xs ${tc.sub} mb-4`}>Choose a theme or let RideWise auto-select based on time of day.</p>
-
+            <p className={`text-xs ${tc.sub} mb-4`}>
+              Choose a theme or let RideWise auto-select based on time of day.
+            </p>
             {/* Theme grid */}
             <div className="grid grid-cols-2 gap-2.5">
               {themeOptions.map((t) => (
@@ -159,7 +164,6 @@ export default function Settings() {
             </div>
 
             <div className={`border-t ${tc.divider}`} />
-
             <Toggle
               checked={reduceMotion}
               onChange={setReduceMotion}
@@ -185,7 +189,6 @@ export default function Settings() {
             <p className={`text-xs ${tc.sub} mb-2`}>
               Choose which updates you want to receive.
             </p>
-
             <Toggle
               checked={notifyRides}
               onChange={setNotifyRides}
@@ -219,7 +222,6 @@ export default function Settings() {
             <p className={`text-xs ${tc.sub} mb-2`}>
               Control who can see your profile and activity.
             </p>
-
             <Toggle
               checked={profilePublic}
               onChange={setProfilePublic}
@@ -241,7 +243,6 @@ export default function Settings() {
           <div className={`text-center text-xs ${tc.sub} py-4`}>
             RideWise v0.1.0 · Frontend-only prototype
           </div>
-
         </div>
       </main>
     </div>

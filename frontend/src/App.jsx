@@ -1,44 +1,45 @@
-// ============================================================
-// 🚀 App.jsx — Root component
-// ============================================================
-
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+// BrowserRouter: enables URL-based navigation
+// Routes: container for all route definitions
+// Route: one URL pattern → one component
+// Navigate: redirect component
+
 import { AuthProvider } from "./context/AuthContext";
+// Wraps the entire app — makes auth state available everywhere
 
-// ─── Public pages ─────────────────────────────────────────────
-import LoginPage from "./pages/landing-page/Login";
-import Onboarding from "./pages/Onboarding";
+import LoginPage from "./pages/landing-page/Login";   // Public — entry point
+import Onboarding from "./pages/Onboarding";          // Public — between signup and home
 
-// ─── Protected pages ──────────────────────────────────────────
-import Account from "./pages/Account";
-import Home from "./pages/Home";
-import Settings from "./pages/Settings";
-import Riders from "./pages/Riders";   // ← NEW
+import Account from "./pages/Account";   // Protected
+import Home from "./pages/Home";         // Protected
+import Settings from "./pages/Settings"; // Protected
+import Riders from "./pages/Riders";     // Protected (NEW)
 
-// ─── Route guard ──────────────────────────────────────────────
 import ProtectedRoute from "./pages/components/shared/ProtectedRoute";
+// The "security guard" — checks auth before allowing access
 
 export default function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          {/* Public routes */}
+    <AuthProvider>           {/* Step 1: Provide auth context to entire app */}
+      <BrowserRouter>        {/* Step 2: Enable client-side routing */}
+        <Routes>             {/* Step 3: Define all routes */}
+          
+          {/* ─── PUBLIC ROUTES (no login required) ─── */}
           <Route path="/"           element={<LoginPage />} />
           <Route path="/onboarding" element={<Onboarding />} />
-
-          {/* Protected routes */}
+          
+          {/* ─── PROTECTED ROUTES (login + onboarding required) ─── */}
           <Route path="/home"     element={<ProtectedRoute><Home /></ProtectedRoute>} />
           <Route path="/riders"   element={<ProtectedRoute><Riders /></ProtectedRoute>} />
           <Route path="/account"  element={<ProtectedRoute><Account /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-
-          {/* Redirects for old/related routes */}
+          
+          {/* ─── REDIRECTS (old URLs → new) ─── */}
           <Route path="/saved"   element={<Navigate to="/home" replace />} />
           <Route path="/profile" element={<Navigate to="/account" replace />} />
           <Route path="/login"   element={<Navigate to="/" replace />} />
-
-          {/* 404 catch-all */}
+          
+          {/* ─── 404 CATCH-ALL ─── */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

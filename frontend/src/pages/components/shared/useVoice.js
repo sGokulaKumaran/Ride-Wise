@@ -1,34 +1,29 @@
 // ============================================================
 // 🎤 useVoice HOOK — Voice command recognition
-// Uses Web Speech API (works in Chrome/Edge, partial Safari)
-// Commands: flat map { keyword: fn }
-// Returns: { voiceMode, startVoice, voiceSupported }
 // ============================================================
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 
 export function useVoice(commands = {}) {
   const [voiceMode, setVoiceMode] = useState(false);
+  const [recognition, setRecognition] = useState(null);
 
   const startVoice = useCallback(() => {
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
-
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       alert("Voice not supported on this browser. Try Chrome or Edge.");
       return;
     }
 
-    const recognition = new SpeechRecognition();
-    recognition.lang = "en-US";
-    recognition.continuous = false;
-    recognition.interimResults = false;
+    const rec = new SpeechRecognition();
+    rec.lang = "en-US";
+    rec.continuous = false;
+    rec.interimResults = false;
 
-    recognition.onresult = (event) => {
+    rec.onresult = (event) => {
       const text = event.results[0][0].transcript.toLowerCase().trim();
       console.log("🎤 Heard:", text);
 
-      // commands is a flat map: { keyword: fn }
       for (const [keyword, fn] of Object.entries(commands)) {
         if (text.includes(keyword)) {
           fn();
@@ -37,18 +32,28 @@ export function useVoice(commands = {}) {
       }
     };
 
-    recognition.onend = () => setVoiceMode(false);
-    recognition.onerror = () => setVoiceMode(false);
+    rec.onend = () => setVoiceMode(false);
+    rec.onerror = () => setVoiceMode(false);
 
-    recognition.start();
+    rec.start();
+    setRecognition(rec);
     setVoiceMode(true);
 
     // Auto-stop after 6 seconds
     setTimeout(() => {
-      try { recognition.stop(); } catch (e) { /* already stopped */ }
+      try { rec.stop(); } catch (e) { /* already stopped */ }
       setVoiceMode(false);
     }, 6000);
   }, [commands]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (recognition) {
+        try { recognition.stop(); } catch (_) {}
+      }
+    };
+  }, [recognition]);
 
   return {
     voiceMode,

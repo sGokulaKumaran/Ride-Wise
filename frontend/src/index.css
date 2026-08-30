@@ -1,40 +1,28 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@tailwind base;      /* Tailwind's reset styles */
+@tailwind components;/* Reusable component classes */
+@tailwind utilities; /* Utility classes (flex, p-4, etc.) */
 
-/* ─── Global Base ──────────────────────────────────────────── */
-* {
-  box-sizing: border-box;
-}
-
-html {
-  scroll-behavior: smooth;
-}
-
-body {
+* { box-sizing: border-box; }   /* Include padding in width calculations */
+html { scroll-behavior: smooth; } /* Smooth anchor scrolling */
+body {                            /* Default font + smooth text rendering */
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* ─── Hide Scrollbars (for story row, sidebar, etc.) ────────── */
-.scrollbar-hide {
+.scrollbar-hide {                    /* Hide scrollbars but keep scrolling */
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;
-}
+.scrollbar-hide::-webkit-scrollbar { display: none; }
 
-/* ─── Smooth transitions for theme switching ─────────────────── */
-*, *::before, *::after {
+*, *::before, *::after {            /* Theme switching transitions */
   transition-property: background-color, border-color, color;
   transition-duration: 300ms;
   transition-timing-function: ease;
 }
 
-/* ─── Exclude transitions on interactive elements ────────────── */
-button, a, input, textarea {
+button, a, input, textarea {         /* Interactive elements transition too */
   transition-property: background-color, border-color, color, transform, box-shadow, opacity;
   transition-duration: 200ms;
 }

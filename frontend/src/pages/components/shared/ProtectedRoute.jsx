@@ -13,21 +13,18 @@
 //     not isFullyOnboarded → redirect to /onboarding (details page)
 //   both true             → render children normally
 // ============================================================
-
-import { Navigate } from "react-router-dom";
-import { useAuth } from "../../../context/AuthContext";
+import { Navigate } from "react-router-dom";   // For redirects
+import { useAuth } from "../../../context/AuthContext";  // Get auth state
 
 export default function ProtectedRoute({ children }) {
   const { isAuthenticated, isFullyOnboarded, loading } = useAuth();
 
-  // ── While restoring auth from localStorage, show a loader ───
-  // Without this, already-logged-in users would see a brief flash
-  // of the login page before the redirect happens.
+  // ── CHECK 1: Still checking localStorage? Show spinner ──
+  // Without this, logged-in users would see a flash of login page
   if (loading) {
     return (
       <div className="min-h-screen w-full flex items-center justify-center bg-black">
         <div className="text-white text-center">
-          {/* Animated logo */}
           <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center animate-pulse shadow-2xl shadow-orange-500/40">
             <i className="fa fa-motorcycle text-xl text-white" />
           </div>
@@ -39,16 +36,16 @@ export default function ProtectedRoute({ children }) {
     );
   }
 
-  // ── Not logged in → redirect to landing / login page ────────
+  // ── CHECK 2: Not logged in? → redirect to / (login page) ──
   if (!isAuthenticated) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/" replace />;  // replace = don't add to history
   }
 
-  // ── Logged in but hasn't completed onboarding → send there ──
+  // ── CHECK 3: Logged in but no username? → go to onboarding ──
   if (!isFullyOnboarded) {
     return <Navigate to="/onboarding" replace />;
   }
 
-  // ── All conditions met → render the protected page ──────────
+  // ── ALL CLEAR: Show the protected page ──
   return children;
 }
