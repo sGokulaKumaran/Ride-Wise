@@ -1,12 +1,17 @@
 // ============================================================
 // 🔐 AuthContext — Global authentication state manager
 //
-// FIX: Also writes every account to "ridewise-all-accounts"
-// so other features (like Riders) can see ALL signed-up users.
+// CRITICAL FIX:
+// - signup now matches the call site: signup(email, password)
+//   - Every signup/login also writes to "ridewise-all-accounts"
+//     so other users can find them in Riders search & Near Riders
+//   - updateProfile merges fields and refreshes the shared list
+//   - user.id is ALWAYS set so ridersApi.js can track connections
 // ============================================================
 
 import { createContext, useContext, useEffect, useState } from "react";
 
+// Shared list key — readable by ridersApi.js
 const ACCOUNTS_LIST_KEY = "ridewise-all-accounts";
 
 const AuthContext = createContext(null);
@@ -17,17 +22,43 @@ export function useAuth() {
   return ctx;
 }
 
-// Helper: add or update an account in the shared list
+// ── INTERNAL: save/update account in shared list ──
 function saveToAccountsList(user) {
-  if (!user || !user.email) return;
+ if (!user || !user.email) return;
   const list = JSON.parse(localStorage.getItem(ACCOUNTS_LIST_KEY) || "[]");
   const idx = list.findIndex((u) => u.email === user.email);
-  if (idx >= 0) {
-    list[idx] = { ...list[idx], ...user };
-  } else {
-    list.push(user);
-  }
+  if (idx >= 0) list[idx] = { ...list[idx], ...user };
+  else list.push(user);
   localStorage.setItem(ACCOUNTS_LIST_KEY, JSON.stringify(list));
+}
+
+// ── INTERNAL: remove account from shared list (on logout/deletion) ──
+function removeFromAccountsList(email) {
+  if (!email) return;
+  const list = JSON.parse(localStorage.getItem(ACCOUNTS_LIST_KEY) || "[]");
+  const filtered = list.filter((u) => u.email !== email);
+  localStorage.setItem(ACCOUNTS_LIST_KEY, JSON.stringify(filtered));
+}
+
+// ── INTERNAL: generate a unique user id ──
+function makeUserId() {
+  return "u_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+}
+
+// ── INTERNAL: build a complete user object with all expected fields ──
+function makeUser(overrides = {}) {
+  return {
+    id:        overrides.id        || makeUserId(),
+    email:     overrides.email     || "",
+    username:  overrides.username  || "",
+    mobile:    overrides.mobile    || "",
+    address:   overrides.address   || "",
+    avatar:    overrides.avatar    || "",
+    createdAt: overrides.createdAt || new Date().toISOString(),
+    // Optional lat/lng — populated if you add geocoding later
+    lat:       overrides.lat       ?? null,
+    lng:       overrides.lng       ?? null,
+  };
 }
 
 export function AuthProvider({ children }) {
@@ -36,7 +67,7 @@ export function AuthProvider({ children }) {
   const [isFullyOnboarded, setIsFullyOnboarded] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Restore session on mount
+  // ── Restore session on mount ──
   useEffect(() => {
     try {
       const savedUser  = localStorage.getItem("ridewise-user");
@@ -44,9 +75,12 @@ export function AuthProvider({ children }) {
       const savedBoard = localStorage.getItem("ridewise-onboarded");
 
       if (savedUser && savedAuth === "true") {
-        setUser(JSON.parse(savedUser));
+        const parsed = JSON.parse(savedUser);
+        // Make sure restored user has an id — backfill if missing
+        if (!parsed.id) parsed.id = makeUserId();
+        setUser(parsed);
         setIsAuthenticated(true);
-        setIsFullyOnboarded(savedBoard === "true");
+        setIsFullyOnboarded(savedBoard === "true" && Boolean(parsed.username));
       }
     } catch (_) {
       localStorage.removeItem("ridewise-user");
@@ -58,56 +92,59 @@ export function AuthProvider({ children }) {
   }, []);
 
   // ── SIGNUP ──
+  // Called as: signup(email, password) ← matches Login.jsx call site
   const signup = async (email, password) => {
     await new Promise((r) => setTimeout(r, 400));
+
     if (!email || !password) throw new Error("Email and password are required.");
     if (password.length < 6) throw new Error("Password must be at least 6 characters.");
 
-    const newUser = {
-      id: "u_" + Date.now(),
-      email,
-      username: "",
-      mobile: "",
-      address: "",
-      avatar: "",
-      createdAt: new Date().toISOString(),
-    };
+    const cleanEmail = email.trim().toLowerCase();
 
-    // Per-account record
-    localStorage.setItem(`ridewise-account-${email}`, JSON.stringify({
-      email, password, user: newUser,
+    const newUser = makeUser({ email: cleanEmail });
+
+    // 1) Save to per-account record (used for login verification)
+    localStorage.setItem(`ridewise-account-${cleanEmail}`, JSON.stringify({
+      email: cleanEmail,
+      password,
+      user: newUser,
     }));
 
-    // ✅ Shared list — so other users can find this one
+    // 2) Save to SHARED list — so Riders search & Near Riders can see them
     saveToAccountsList(newUser);
 
+    // 3) Set auth state
     localStorage.setItem("ridewise-user", JSON.stringify(newUser));
     localStorage.setItem("ridewise-authenticated", "true");
     localStorage.setItem("ridewise-onboarded", "false");
+
     setUser(newUser);
     setIsAuthenticated(true);
     setIsFullyOnboarded(false);
+
+ return newUser;
   };
 
   // ── LOGIN ──
+  // Called as: login(email, password)
   const login = async (email, password) => {
     await new Promise((r) => setTimeout(r, 400));
+
     if (!email || !password) throw new Error("Email and password are required.");
 
-    const stored = localStorage.getItem(`ridewise-account-${email}`);
+    const cleanEmail = email.trim().toLowerCase();
+    const stored = localStorage.getItem(`ridewise-account-${cleanEmail}`);
     if (!stored) throw new Error("No account found with this email.");
 
     const account = JSON.parse(stored);
     if (account.password !== password) throw new Error("Incorrect password.");
 
-    const restoredUser = account.user || {
-      id: "u_" + Date.now(),
-      email,
-      username: "",
-      mobile: "",
-      address: "",
-      createdAt: new Date().toISOString(),
-    };
+    // Ensure user has id (for accounts created before this fix)
+    const restoredUser = account.user || makeUser({ email: cleanEmail });
+    if (!restoredUser.id) restoredUser.id = makeUserId();
+
+    // Refresh shared list so newer fields (like username, address) are visible
+    saveToAccountsList(restoredUser);
 
     localStorage.setItem("ridewise-user", JSON.stringify(restoredUser));
     localStorage.setItem("ridewise-authenticated", "true");
@@ -117,19 +154,18 @@ export function AuthProvider({ children }) {
     setIsAuthenticated(true);
     setIsFullyOnboarded(Boolean(restoredUser.username));
 
-    // ✅ Make sure shared list has this user
-    saveToAccountsList(restoredUser);
+    return restoredUser;
   };
 
   // ── UPDATE PROFILE ──
+  // Called as: updateProfile({ username, mobile, address, ... })
   const updateProfile = async (patch) => {
     await new Promise((r) => setTimeout(r, 300));
     if (!user) throw new Error("Not logged in");
 
     const updated = { ...user, ...patch };
 
-    localStorage.setItem("ridewise-user", JSON.stringify(updated));
-
+    // Update per-account record
     if (updated.email) {
       const stored = localStorage.getItem(`ridewise-account-${updated.email}`);
       if (stored) {
@@ -139,11 +175,15 @@ export function AuthProvider({ children }) {
       }
     }
 
-    // ✅ Update shared list
+    // Update shared list — CRITICAL for Riders feature
     saveToAccountsList(updated);
 
+    // Update active session
+    localStorage.setItem("ridewise-user", JSON.stringify(updated));
     setUser(updated);
-    if (patch.username) {
+
+    // Mark onboarded if username was just set
+    if (patch.username && patch.username.trim()) {
       localStorage.setItem("ridewise-onboarded", "true");
       setIsFullyOnboarded(true);
     }
@@ -152,14 +192,18 @@ export function AuthProvider({ children }) {
   };
 
   // ── LOGOUT ──
+  // NOTE: We DO NOT remove the account from the shared list —
+ // so other users can still find/connect with them.
   const logout = () => {
+    // Don't remove from ACCOUNTS_LIST_KEY so they remain searchable
+    // removeFromAccountsList(user?.email);  // intentionally disabled
+
     setUser(null);
     setIsAuthenticated(false);
     setIsFullyOnboarded(false);
     localStorage.removeItem("ridewise-user");
     localStorage.removeItem("ridewise-authenticated");
     localStorage.removeItem("ridewise-onboarded");
-    // Note: account record and shared list entry stay
   };
 
   const avatarLetter =
@@ -179,7 +223,7 @@ export function AuthProvider({ children }) {
         logout,
       }}
     >
-      {children}
+ {children}
     </AuthContext.Provider>
   );
 }
