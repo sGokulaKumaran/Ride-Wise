@@ -1,28 +1,19 @@
 package vehicle.ridewise.entity;
 
-// Connection entity — represents rider-to-rider connections
 import jakarta.persistence.*;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "connections")  // Table name
-@Data
-@NoArgsConstructor
-@AllArgsConstructor
+@Table(name = "connections")
 public class Connection {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // The user who added the connection
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    // The rider being connected to
     @Column(name = "connected_user_id", nullable = false)
     private Long connectedUserId;
 
@@ -33,4 +24,16 @@ public class Connection {
     protected void onCreate() {
         createdAt = LocalDateTime.now();
     }
+
+    // ---- Getters ----
+    public Long getId()                  { return id; }
+    public Long getUserId()              { return userId; }
+    public Long getConnectedUserId()     { return connectedUserId; }
+    public LocalDateTime getCreatedAt()  { return createdAt; }
+
+    // ---- Setters ----
+    public void setId(Long id)                         { this.id = id; }
+    public void setUserId(Long userId)                 { this.userId = userId; }
+    public void setConnectedUserId(Long connectedUserId) { this.connectedUserId = connectedUserId; }
+    public void setCreatedAt(LocalDateTime createdAt)  { this.createdAt = createdAt; }
 }

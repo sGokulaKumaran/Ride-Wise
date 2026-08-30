@@ -1,7 +1,7 @@
 package vehicle.ridewise.controller;
 
-import com.ridewise.dto.UserResponse;
-import com.ridewise.service.RidersService;
+import vehicle.ridewise.dto.UserResponse;
+import vehicle.ridewise.service.RidersService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -10,11 +10,12 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/riders")
-@CrossOrigin(origins = "http://localhost:5173")
+@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:3000"})
 public class RidersController {
 
     @Autowired
     private RidersService ridersService;
+
     // GET /api/riders/search?query=alice&userId=1
     @GetMapping("/search")
     public ResponseEntity<List<UserResponse>> search(

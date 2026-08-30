@@ -1,12 +1,13 @@
 package vehicle.ridewise.service;
 
-import com.ridewise.dto.UserResponse;
-import com.ridewise.entity.Connection;
-import com.ridewise.entity.User;
-import com.ridewise.repository.ConnectionRepository;
-import com.ridewise.repository.UserRepository;
+import vehicle.ridewise.dto.UserResponse;
+import vehicle.ridewise.entity.Connection;
+import vehicle.ridewise.entity.User;
+import vehicle.ridewise.repository.ConnectionRepository;
+import vehicle.ridewise.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -40,10 +41,7 @@ public class RidersService {
 
     // Get all connections (full user objects) for a user
     public List<UserResponse> getConnections(Long userId) {
-        // Step 1: Get IDs of connected users
         List<Long> ids = connectionRepository.findConnectedUserIds(userId);
-
-        // Step 2: Fetch full user objects for those IDs
         List<User> users = userRepository.findAllById(ids);
         return users.stream().map(this::toResponse).collect(Collectors.toList());
     }
@@ -51,7 +49,7 @@ public class RidersService {
     // Add a rider to connections
     public boolean addRider(Long userId, Long riderId) {
         if (connectionRepository.existsByUserIdAndConnectedUserId(userId, riderId)) {
-            return false;  // Already connected
+            return false; // Already connected
         }
         Connection conn = new Connection();
         conn.setUserId(userId);
@@ -61,9 +59,10 @@ public class RidersService {
     }
 
     // Remove a rider from connections
+    @Transactional
     public boolean removeRider(Long userId, Long riderId) {
         if (!connectionRepository.existsByUserIdAndConnectedUserId(userId, riderId)) {
-            return false;  // Not connected
+            return false; // Not connected
         }
         connectionRepository.deleteByUserIdAndConnectedUserId(userId, riderId);
         return true;

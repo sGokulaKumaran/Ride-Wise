@@ -1,8 +1,6 @@
 package vehicle.ridewise.repository;
 
-// Repository = interface to talk to the database
-// Spring auto-implements all these methods at runtime
-import com.ridewise.entity.User;
+import vehicle.ridewise.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -20,18 +18,18 @@ public interface UserRepository extends JpaRepository<User, Long> {
     // Search users by username OR email (for Add Rider search)
     // Excludes the current user so you don't find yourself
     @Query("SELECT u FROM User u WHERE u.id != :currentUserId AND " +
-            "(LOWER(u.username) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-            "LOWER(u.email) LIKE LOWER(CONCAT('%', :query, '%')))")
+           "(LOWER(u.username) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+           "LOWER(u.email) LIKE LOWER(CONCAT('%', :query, '%')))")
     List<User> searchUsers(@Param("query") String query, @Param("currentUserId") Long currentUserId);
 
     // Find users within a lat/lng radius (for Near Riders)
-    // Uses Haversine formula in SQL —50 km radius
+    // Uses Haversine formula in SQL — 50 km radius
     @Query(value = "SELECT * FROM users WHERE id != :userId AND lat IS NOT NULL " +
-            "AND lng IS NOT NULL AND " +
-            "(6371 * acos(cos(radians(:lat)) * cos(radians(lat)) * " +
-            "cos(radians(lng) - radians(:lng)) + sin(radians(:lat)) * " +
-            "sin(radians(lat)))) <= :radiusKm",
-            nativeQuery = true)
+                   "AND lng IS NOT NULL AND " +
+                   "(6371 * acos(cos(radians(:lat)) * cos(radians(lat)) * " +
+                   "cos(radians(lng) - radians(:lng)) + sin(radians(:lat)) * " +
+                   "sin(radians(lat)))) <= :radiusKm",
+           nativeQuery = true)
     List<User> findNearbyUsers(@Param("userId") Long userId,
                                @Param("lat") Double lat,
                                @Param("lng") Double lng,

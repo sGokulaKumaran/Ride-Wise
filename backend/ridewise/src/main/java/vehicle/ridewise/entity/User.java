@@ -1,41 +1,58 @@
 package vehicle.ridewise.entity;
 
-// User entity — represents the "users" table in the database
 import jakarta.persistence.*;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
 import java.time.LocalDateTime;
 
-@Entity // Marks this as a database table
-@Table(name = "users")  // Table name in DB
-@Data  // Lombok: auto-generates getters, setters, toString, equals, hashCode
-@NoArgsConstructor  // Lombok: generates no-args constructor
-@AllArgsConstructor  // Lombok: generates all-args constructor
+@Entity
+@Table(name = "users")
 public class User {
-    @Id  // Primary key
-    @GeneratedValue(strategy = GenerationType.IDENTITY)  // Auto-increment
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    @Column(unique = true, nullable = false)  // Email must be unique
+
+    @Column(unique = true, nullable = false)
     private String email;
 
-    @Column(nullable = false)  // Password cannot be null
-    private String password;  // Will store BCrypt-hashed password
+    @Column(nullable = false)
+    private String password; // BCrypt-hashed
 
-    @Column(unique = true)  // Username unique if provided
+    @Column(unique = true)
     private String username;
 
     private String mobile;
     private String address;
 
-    // Location fields for "Near Riders" feature
-    private Double lat;  // Latitude
-    private Double lng;  // Longitude @Column(name = "created_at", nullable = false)
+    private Double lat;
+    private Double lng;
+
+    @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
-    // Auto-set createdAt before saving to DB
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
     }
+
+    // ---- Getters ----
+    public Long getId()                  { return id; }
+    public String getEmail()             { return email; }
+    public String getPassword()          { return password; }
+    public String getUsername()          { return username; }
+    public String getMobile()            { return mobile; }
+    public String getAddress()           { return address; }
+    public Double getLat()               { return lat; }
+    public Double getLng()               { return lng; }
+    public LocalDateTime getCreatedAt()  { return createdAt; }
+
+    // ---- Setters ----
+    public void setId(Long id)                         { this.id = id; }
+    public void setEmail(String email)                 { this.email = email; }
+    public void setPassword(String password)           { this.password = password; }
+    public void setUsername(String username)           { this.username = username; }
+    public void setMobile(String mobile)               { this.mobile = mobile; }
+    public void setAddress(String address)             { this.address = address; }
+    public void setLat(Double lat)                     { this.lat = lat; }
+    public void setLng(Double lng)                     { this.lng = lng; }
+    public void setCreatedAt(LocalDateTime createdAt)  { this.createdAt = createdAt; }
 }

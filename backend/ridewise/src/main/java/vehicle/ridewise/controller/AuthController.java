@@ -1,15 +1,15 @@
 package vehicle.ridewise.controller;
 
-import com.ridewise.dto.AuthRequest;
-import com.ridewise.dto.UserResponse;
-import com.ridewise.service.AuthService;
+import vehicle.ridewise.dto.AuthRequest;
+import vehicle.ridewise.dto.UserResponse;
+import vehicle.ridewise.service.AuthService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-@RestController  // = @Controller + @ResponseBody (returns JSON instead of HTML)
-@RequestMapping("/api/auth")  // All endpoints here start with /api/auth
-@CrossOrigin(origins = "http://localhost:5173")  // Allow frontend
+@RestController
+@RequestMapping("/api/auth")
+@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:3000"})
 public class AuthController {
 
     @Autowired

@@ -1,21 +1,23 @@
 package vehicle.ridewise.service;
 
-import com.ridewise.dto.AuthRequest;
-import com.ridewise.dto.UserResponse;
-import com.ridewise.entity.User;
-import com.ridewise.repository.UserRepository;
+import vehicle.ridewise.dto.AuthRequest;
+import vehicle.ridewise.dto.UserResponse;
+import vehicle.ridewise.entity.User;
+import vehicle.ridewise.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import java.util.Optional;
 
-@Service // Marks this as a Spring service (business logic layer)
+@Service
 public class AuthService {
-    @Autowired  // Spring auto-injects UserRepository
+
+    @Autowired
     private UserRepository userRepository;
 
     @Autowired
-    private PasswordEncoder passwordEncoder;  // BCrypt bean (defined in SecurityConfig)
+    private PasswordEncoder passwordEncoder; // BCrypt bean (defined in SecurityConfig)
+
     // Sign up a new user
     public UserResponse signup(AuthRequest request) {
         // Check if email already exists
@@ -28,20 +30,19 @@ public class AuthService {
         user.setEmail(request.getEmail());
         // Hash the password with BCrypt — never store plain text!
         user.setPassword(passwordEncoder.encode(request.getPassword()));
-        // Save to database
+
         User saved = userRepository.save(user);
-        // Convert entity → DTO (no password in response)
         return toResponse(saved);
     }
 
     // Login user
     public UserResponse login(AuthRequest request) {
-        // Find user by email
         Optional<User> userOpt = userRepository.findByEmail(request.getEmail());
 
         if (userOpt.isEmpty()) {
             throw new RuntimeException("No account found with this email");
         }
+
         User user = userOpt.get();
 
         // Verify password (compares hashed versions)
@@ -56,6 +57,7 @@ public class AuthService {
     public UserResponse updateProfile(Long userId, AuthRequest request) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
+
         // Update only the fields that were provided
         if (request.getUsername() != null) user.setUsername(request.getUsername());
         if (request.getMobile() != null)   user.setMobile(request.getMobile());

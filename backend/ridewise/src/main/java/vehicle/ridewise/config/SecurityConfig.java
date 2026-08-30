@@ -9,7 +9,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
-@EnableWebSecurity  // Enables Spring Security
+@EnableWebSecurity
 public class SecurityConfig {
 
     // Bean for password hashing (BCrypt)
@@ -23,8 +23,9 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                .csrf(csrf -> csrf.disable())  // Disable CSRF for API            .authorizeHttpRequests(auth -> auth
-                .anyRequest().permitAll()  // Allow all endpoints
+            .csrf(csrf -> csrf.disable())
+            .authorizeHttpRequests(auth -> auth
+                .anyRequest().permitAll()
             );
         return http.build();
     }

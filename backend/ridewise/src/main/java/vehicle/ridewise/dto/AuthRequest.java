@@ -1,14 +1,24 @@
 package vehicle.ridewise.dto;
 
-// DTO = Data Transfer Object
-// Used for receiving signup/login requests from the frontend
-import lombok.Data;
-
-@Data
+// DTO for receiving signup/login/profile requests from the frontend
 public class AuthRequest {
     private String email;
     private String password;
-    private String username; // Used for profile updates
-    private String mobile;     // Used for profile updates
-    private String address;    // Used for profile updates
+    private String username;
+    private String mobile;
+    private String address;
+
+    // ---- Getters ----
+    public String getEmail()    { return email; }
+    public String getPassword() { return password; }
+    public String getUsername() { return username; }
+    public String getMobile()   { return mobile; }
+    public String getAddress()  { return address; }
+
+    // ---- Setters ----
+    public void setEmail(String email)       { this.email = email; }
+    public void setPassword(String password) { this.password = password; }
+    public void setUsername(String username) { this.username = username; }
+    public void setMobile(String mobile)     { this.mobile = mobile; }
+    public void setAddress(String address)   { this.address = address; }
 }

@@ -1,6 +1,6 @@
 package vehicle.ridewise.repository;
 
-import com.ridewise.entity.Connection;
+import vehicle.ridewise.entity.Connection;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
