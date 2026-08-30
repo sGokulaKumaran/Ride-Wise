@@ -1,80 +1,58 @@
 // ============================================================
 // 🔐 AuthContext — Global authentication state manager
 //
-// CRITICAL FIXES:
-//   1. Fixed indentation/brace bugs in saveToAccountsList
-//   2. signup now always creates a complete user via makeUser()
-//   3. updateProfile handles missing per-account record gracefully
-//   4. logout no longer leaks partial state
-//   5. makeUser guarantees a valid id for all users
+// BACKEND CONNECTED:
+//   signup       → POST /api/auth/signup
+//   login        → POST /api/auth/login
+//   updateProfile → PATCH /api/auth/profile/{userId}
+//
+// SESSION PERSISTENCE:
+//   The UserResponse returned by the backend is saved to
+//   localStorage so the user stays logged in on refresh.
+//   The actual source-of-truth for credentials lives in the
+//   backend H2 / PostgreSQL database.
+//
+// NOTES:
+//   - user.id is now a Long (number) from the backend — no more
+//     "u_<timestamp>_<random>" string IDs.
+//   - Passwords are BCrypt-hashed on the backend; we never store
+//     them in localStorage.
 // ============================================================
 
 import { createContext, useContext, useEffect, useState } from "react";
-// createContext: makes a "company-wide announcement system"
-// useContext: lets components "tune in" to announcements
-// useState: stores changing data
-// useEffect: runs side effects (like reading localStorage)
-
-const ACCOUNTS_LIST_KEY = "ridewise-all-accounts";
-// Shared list of all users — so Riders search can find them
 
 const AuthContext = createContext(null);
-// The actual announcement system (starts as null)
 
+// ── Custom hook used by every component that needs auth ──
 export function useAuth() {
-  // Custom hook — any component can call this to access auth state
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth must be used within <AuthProvider>");
   return ctx;
 }
 
-// ── INTERNAL HELPER: save user to shared list ──
-function saveToAccountsList(user) {
-  if (!user || !user.email) return;  // Safety check
-  const list = JSON.parse(localStorage.getItem(ACCOUNTS_LIST_KEY) || "[]");
-  const idx = list.findIndex((u) => u.email === user.email);
-  if (idx >= 0) list[idx] = { ...list[idx], ...user };  // Update existing
-  else list.push(user);                                  // Add new
-  localStorage.setItem(ACCOUNTS_LIST_KEY, JSON.stringify(list));
-}
-
-// ── INTERNAL HELPER: remove from shared list ──
-function removeFromAccountsList(email) {
-  if (!email) return;
-  const list = JSON.parse(localStorage.getItem(ACCOUNTS_LIST_KEY) || "[]");
-  const filtered = list.filter((u) => u.email !== email);
-  localStorage.setItem(ACCOUNTS_LIST_KEY, JSON.stringify(filtered));
-}
-
-// ── INTERNAL HELPER: generate unique user ID ──
-function makeUserId() {
-  return "u_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
-  // Example: "u_1703123456789_a3kf2j"
-}
-
-// ── INTERNAL HELPER: build complete user object ──
-function makeUser(overrides = {}) {
-  return {
-    id:        overrides.id        || makeUserId(),
-    email:     overrides.email     || "",
-    username:  overrides.username  || "",
-    mobile:    overrides.mobile    || "",
-    address:   overrides.address   || "",
-    avatar:    overrides.avatar    || "",
-    createdAt: overrides.createdAt || new Date().toISOString(),
-    lat:       overrides.lat       ?? null,  // For "Near Riders" feature
-    lng:       overrides.lng       ?? null,
-  };
+// ── Helper: throw a readable error from a non-2xx response ──
+async function handleResponse(res) {
+  if (res.ok) return res.json();
+  // Try to parse a message from the backend error body
+  let msg = `Server error (${res.status})`;
+  try {
+    const body = await res.json();
+    if (body?.message) msg = body.message;
+    else if (typeof body === "string") msg = body;
+  } catch (_) {
+    // body wasn't JSON — keep the generic message
+  }
+  throw new Error(msg);
 }
 
 export function AuthProvider({ children }) {
-  // ── STATE (the "whiteboard" of current auth info) ──
-  const [user, setUser] = useState(null);                  // Current user object
-  const [isAuthenticated, setIsAuthenticated] = useState(false);  // Logged in?
-  const [isFullyOnboarded, setIsFullyOnboarded] = useState(false); // Has username?
-  const [loading, setLoading] = useState(true);            // Still checking localStorage?
+  // ── STATE ──
+  const [user,             setUser]             = useState(null);
+  const [isAuthenticated,  setIsAuthenticated]  = useState(false);
+  const [isFullyOnboarded, setIsFullyOnboarded] = useState(false);
+  const [loading,          setLoading]          = useState(true);
 
-  // ── RESTORE SESSION ON APP LOAD ──
+  // ── RESTORE SESSION FROM LOCALSTORAGE ON APP LOAD ──
   useEffect(() => {
     try {
       const savedUser  = localStorage.getItem("ridewise-user");
@@ -83,7 +61,6 @@ export function AuthProvider({ children }) {
 
       if (savedUser && savedAuth === "true") {
         const parsed = JSON.parse(savedUser);
-        if (!parsed.id) parsed.id = makeUserId();  // Backfill missing ID
         setUser(parsed);
         setIsAuthenticated(true);
         setIsFullyOnboarded(savedBoard === "true" && Boolean(parsed.username));
@@ -94,36 +71,28 @@ export function AuthProvider({ children }) {
       localStorage.removeItem("ridewise-authenticated");
       localStorage.removeItem("ridewise-onboarded");
     } finally {
-      setLoading(false);  // Always tell ProtectedRoute "done checking"
+      setLoading(false);
     }
-  }, []);  // Empty array = run ONCE on mount
+  }, []);
 
-  // ── SIGNUP ──
+  // ── SIGNUP — POST /api/auth/signup ──
   const signup = async (email, password) => {
-    await new Promise((r) => setTimeout(r, 400));  // Simulate network delay
-
     if (!email || !password) throw new Error("Email and password are required.");
-    if (password.length < 6) throw new Error("Password must be at least 6 characters.");
+    if (password.length < 6)  throw new Error("Password must be at least 6 characters.");
 
-    const cleanEmail = email.trim().toLowerCase();
-    const newUser = makeUser({ email: cleanEmail });
+    const res = await fetch("/api/auth/signup", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ email: email.trim().toLowerCase(), password }),
+    });
 
-    // 1) Save to per-account record (for future login)
-    localStorage.setItem(`ridewise-account-${cleanEmail}`, JSON.stringify({
-      email: cleanEmail,
-      password,
-      user: newUser,
-    }));
+    const newUser = await handleResponse(res);
+    // newUser is a UserResponse: { id, email, username, mobile, address, lat, lng, createdAt }
 
-    // 2) Save to shared list (so others can find them)
-    saveToAccountsList(newUser);
-
-    // 3) Set session keys
-    localStorage.setItem("ridewise-user", JSON.stringify(newUser));
+    localStorage.setItem("ridewise-user",          JSON.stringify(newUser));
     localStorage.setItem("ridewise-authenticated", "true");
-    localStorage.setItem("ridewise-onboarded", "false");
+    localStorage.setItem("ridewise-onboarded",     "false");
 
-    // 4) Update React state
     setUser(newUser);
     setIsAuthenticated(true);
     setIsFullyOnboarded(false);
@@ -131,61 +100,46 @@ export function AuthProvider({ children }) {
     return newUser;
   };
 
-  // ── LOGIN ──
+  // ── LOGIN — POST /api/auth/login ──
   const login = async (email, password) => {
-    await new Promise((r) => setTimeout(r, 400));
-
     if (!email || !password) throw new Error("Email and password are required.");
 
-    const cleanEmail = email.trim().toLowerCase();
-    const stored = localStorage.getItem(`ridewise-account-${cleanEmail}`);
-    if (!stored) throw new Error("No account found with this email.");
+    const res = await fetch("/api/auth/login", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ email: email.trim().toLowerCase(), password }),
+    });
 
-    const account = JSON.parse(stored);
-    if (account.password !== password) throw new Error("Incorrect password.");
+    const loggedInUser = await handleResponse(res);
 
-    const restoredUser = account.user || makeUser({ email: cleanEmail });
-    if (!restoredUser.id) restoredUser.id = makeUserId();
-
-    saveToAccountsList(restoredUser);  // Refresh shared list with latest info
-
-    localStorage.setItem("ridewise-user", JSON.stringify(restoredUser));
+    localStorage.setItem("ridewise-user",          JSON.stringify(loggedInUser));
     localStorage.setItem("ridewise-authenticated", "true");
-    localStorage.setItem("ridewise-onboarded", restoredUser.username ? "true" : "false");
+    localStorage.setItem("ridewise-onboarded",     loggedInUser.username ? "true" : "false");
 
-    setUser(restoredUser);
+    setUser(loggedInUser);
     setIsAuthenticated(true);
-    setIsFullyOnboarded(Boolean(restoredUser.username));
+    setIsFullyOnboarded(Boolean(loggedInUser.username));
 
-    return restoredUser;
+    return loggedInUser;
   };
 
-  // ── UPDATE PROFILE ──
+  // ── UPDATE PROFILE — PATCH /api/auth/profile/{userId} ──
   const updateProfile = async (patch) => {
-    await new Promise((r) => setTimeout(r, 300));
     if (!user) throw new Error("Not logged in");
 
-    const updated = { ...user, ...patch };  // Merge new fields
+    const res = await fetch(`/api/auth/profile/${user.id}`, {
+      method:  "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify(patch),
+      // patch can include: { username, mobile, address }
+    });
 
-    // Update per-account record
-    if (updated.email) {
-      const accountKey = `ridewise-account-${updated.email}`;
-      const stored = localStorage.getItem(accountKey);
-      if (stored) {
-        try {
-          const account = JSON.parse(stored);
-          account.user = updated;
-          localStorage.setItem(accountKey, JSON.stringify(account));
-        } catch (err) {
-          console.error("Failed to update per-account record:", err);
-        }
-      }
-    }
+    const updated = await handleResponse(res);
+    // Merge: keep anything the backend echoed back, fall back to local copy
+    const merged = { ...user, ...updated };
 
-    saveToAccountsList(updated);  // Update shared list
-
-    localStorage.setItem("ridewise-user", JSON.stringify(updated));
-    setUser(updated);
+    localStorage.setItem("ridewise-user", JSON.stringify(merged));
+    setUser(merged);
 
     // Mark as onboarded if username was just set
     if (patch.username && patch.username.trim()) {
@@ -193,7 +147,7 @@ export function AuthProvider({ children }) {
       setIsFullyOnboarded(true);
     }
 
-    return updated;
+    return merged;
   };
 
   // ── LOGOUT ──
@@ -204,10 +158,9 @@ export function AuthProvider({ children }) {
     localStorage.removeItem("ridewise-user");
     localStorage.removeItem("ridewise-authenticated");
     localStorage.removeItem("ridewise-onboarded");
-    // Note: NOT removed from ACCOUNTS_LIST_KEY so others can still find them
   };
 
-  // ── COMPUTED: avatar letter (first letter of username or email) ──
+  // ── COMPUTED: avatar letter ──
   const avatarLetter =
     (user?.username?.[0] || user?.email?.[0] || "R").toUpperCase();
 

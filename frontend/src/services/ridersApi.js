@@ -1,47 +1,35 @@
 // ============================================================
-// 👥 ridersApi — Mock API for the Riders feature
+// 👥 ridersApi — Real API calls to the Spring Boot backend
 //
-// All these functions read/write localStorage.
-// When you add a backend, replace the bodies with fetch() calls.
+// All functions call /api/riders/* which is proxied by Vite
+// to http://localhost:8080 during development.
+//
+// ENDPOINT MAP (from RidersController.java):
+//   GET  /api/riders/search?query=&userId=   → searchRiders
+//   GET  /api/riders/nearby?userId=          → getNearRiders
+//   GET  /api/riders/connections?userId=     → getConnectionsFull
+//   POST /api/riders/add    { userId, riderId } → addRider
+//   POST /api/riders/remove { userId, riderId } → removeRider
+//
+// NOTES:
+//   - userId is a Long (number) — matches the backend DB id
+//   - Every function throws on non-2xx so callers can catch errors
 // ============================================================
 
-const ACCOUNTS_KEY = "ridewise-all-accounts";
-const CONNECTIONS_KEY = "ridewise-connections";
-
-// ── INTERNAL: read all accounts ──
-function getAllAccounts() {
+// ── Shared helper: parse response or throw a readable error ──
+async function handleResponse(res) {
+  if (res.ok) return res.json();
+  let msg = `Server error (${res.status})`;
   try {
-    return JSON.parse(localStorage.getItem(ACCOUNTS_KEY) || "[]");
-  } catch (_) {
-    return [];
-  }
+    const body = await res.json();
+    if (body?.message) msg = body.message;
+    else if (typeof body === "string") msg = body;
+  } catch (_) {/* body wasn't JSON */}
+  throw new Error(msg);
 }
 
-// ── INTERNAL: read connections for a user ──
-function getConnections(userId) {
-  if (!userId) return [];
-  try {
-    const all = JSON.parse(localStorage.getItem(CONNECTIONS_KEY) || "{}");
-    return all[userId] || [];
-  } catch (_) {
-    return [];
-  }
-}
-
-// ── INTERNAL: write connections for a user ──
-function setConnections(userId, list) {
-  if (!userId) return;
-  try {
-    const all = JSON.parse(localStorage.getItem(CONNECTIONS_KEY) || "{}");
-    all[userId] = list;
-    localStorage.setItem(CONNECTIONS_KEY, JSON.stringify(all));
-  } catch (err) {
-    console.error("Failed to save connections:", err);
-  }
-}
-
-// ── INTERNAL: Haversine distance in km ──
-function distanceKm(lat1, lng1, lat2, lng2) {
+// ── Haversine distance in km (still used client-side for "Near" badge) ──
+export function distanceKm(lat1, lng1, lat2, lng2) {
   const toRad = (v) => (v * Math.PI) / 180;
   const R = 6371;
   const dLat = toRad(lat2 - lat1);
@@ -52,86 +40,74 @@ function distanceKm(lat1, lng1, lat2, lng2) {
   return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// ── PUBLIC API ──
-
-// searchRiders(query, currentUserId)
+// ── searchRiders(query, currentUserId) ──
+// Returns UserResponse[] — users whose username or email contains the query.
 export async function searchRiders(query, currentUserId) {
-  await new Promise((r) => setTimeout(r, 300));
-
-  const q = (query || "").trim().toLowerCase();
+  const q = (query || "").trim();
   if (!q) return [];
 
-  return getAllAccounts().filter((u) => {
-    if (u.id === currentUserId) return false;
-    const username = (u.username || "").toLowerCase();
-    const email = (u.email || "").toLowerCase();
-    return username.includes(q) || email.includes(q);
-  });
+  const params = new URLSearchParams({ query: q, userId: currentUserId });
+  const res = await fetch(`/api/riders/search?${params}`);
+  return handleResponse(res);
 }
 
-// addRider(userId, riderId)
+// ── addRider(userId, riderId) ──
+// Returns { success: true/false }
 export async function addRider(userId, riderId) {
-  await new Promise((r) => setTimeout(r, 250));
   if (!userId || !riderId) return { success: false, error: "Missing IDs" };
-  if (userId === riderId) return { success: false, error: "Cannot add yourself" };
+  if (userId === riderId)  return { success: false, error: "Cannot add yourself" };
 
-  const list = getConnections(userId);
-  if (list.includes(riderId)) return { success: false, error: "Already in your connections" };
-
-  list.push(riderId);
-  setConnections(userId, list);
-  return { success: true };
+  const res = await fetch("/api/riders/add", {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ userId, riderId }),
+  });
+  return handleResponse(res);
+  // Backend returns: { success: true } or { success: false }
 }
 
-// removeRider(userId, riderId)
+// ── removeRider(userId, riderId) ──
+// Returns { success: true/false }
 export async function removeRider(userId, riderId) {
-  await new Promise((r) => setTimeout(r, 250));
   if (!userId || !riderId) return { success: false, error: "Missing IDs" };
 
-  const list = getConnections(userId);
-  if (!list.includes(riderId)) return { success: false, error: "Not in connections" };
-
-  setConnections(userId, list.filter((id) => id !== riderId));
-  return { success: true };
+  const res = await fetch("/api/riders/remove", {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ userId, riderId }),
+  });
+  return handleResponse(res);
 }
 
-// getConnectionsFull(userId)
+// ── getConnectionsFull(userId) ──
+// Returns UserResponse[] — full user objects for all connections.
 export async function getConnectionsFull(userId) {
-  await new Promise((r) => setTimeout(r, 200));
   if (!userId) return [];
-  const ids = getConnections(userId);
-  return getAllAccounts().filter((u) => ids.includes(u.id));
+  const params = new URLSearchParams({ userId });
+  const res = await fetch(`/api/riders/connections?${params}`);
+  return handleResponse(res);
 }
 
-// getNearRiders(userId)
+// ── getNearRiders(userId) ──
+// Returns UserResponse[] — riders within 50 km, sorted by distance.
+// The backend calculates distance using the user's stored lat/lng.
 export async function getNearRiders(userId) {
-  await new Promise((r) => setTimeout(r, 300));
-
-  const all = getAllAccounts();
-  const me = all.find((u) => u.id === userId);
-  if (!me) return [];
-
-  const myLat = me.lat ?? 13.0827;
-  const myLng = me.lng ?? 80.2707;
-  const RADIUS_KM = 50;
-
-  return all
-    .filter((u) => u.id !== userId)
-    .filter((u) => u.lat != null && u.lng != null)
-    .map((u) => ({
-      ...u,
-      distance: distanceKm(myLat, myLng, u.lat, u.lng),
-    }))
-    .filter((u) => u.distance <= RADIUS_KM)
-    .sort((a, b) => a.distance - b.distance);
+  if (!userId) return [];
+  const params = new URLSearchParams({ userId });
+  const res = await fetch(`/api/riders/nearby?${params}`);
+  return handleResponse(res);
 }
 
-// isConnected(userId, riderId)
-export function isConnected(userId, riderId) {
-  return getConnections(userId).includes(riderId);
+// ── isConnected(userId, riderId) ──
+// Synchronous check using the cached connections list.
+// Call getConnectionsFull first and pass the result here for accuracy.
+export function isConnected(connectionsIds, riderId) {
+  return connectionsIds.includes(riderId);
 }
 
-// getAllRidersCount()
+// ── getAllRidersCount() ──
+// Not directly supported by backend — kept as a no-op placeholder.
+// Remove or replace with a real endpoint when the feature is needed.
 export function getAllRidersCount() {
-  return getAllAccounts().filter((u) => u.email).length;
+  return 0;
 }

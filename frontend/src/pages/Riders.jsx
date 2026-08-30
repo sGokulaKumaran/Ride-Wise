@@ -20,7 +20,6 @@ import {
   removeRider,
   getConnectionsFull,
   getNearRiders,
-  isConnected,
 } from "../services/ridersApi";
 
 export default function Riders() {
@@ -39,6 +38,9 @@ export default function Riders() {
   const [toast,         setToast]         = useState("");
 
   const currentUserId = user?.id;
+
+  // Derive a Set of connected IDs from the connections list for O(1) lookup
+  const connectedIds = new Set(connections.map((c) => c.id));
 
   // ── Reload connections ──
   const reloadConnections = async () => {
@@ -102,23 +104,31 @@ export default function Riders() {
 
   const handleAdd = async (rider) => {
     if (!currentUserId) return;
-    const res = await addRider(currentUserId, rider.id);
-    if (res.success) {
-      showToast(`✅ Added @${rider.username || rider.email.split("@")[0]}`);
-      await reloadConnections();
-    } else {
-      showToast(`⚠️ ${res.error}`);
+    try {
+      const res = await addRider(currentUserId, rider.id);
+      if (res.success) {
+        showToast(`✅ Added @${rider.username || rider.email.split("@")[0]}`);
+        await reloadConnections();
+      } else {
+        showToast(`⚠️ Already in your connections`);
+      }
+    } catch (e) {
+      showToast(`❌ ${e.message || "Failed to add rider"}`);
     }
   };
 
   const handleRemove = async (rider) => {
     if (!currentUserId) return;
-    const res = await removeRider(currentUserId, rider.id);
-    if (res.success) {
-      showToast(`🗑️ Removed @${rider.username || rider.email.split("@")[0]}`);
-      await reloadConnections();
-    } else {
-      showToast(`⚠️ ${res.error}`);
+    try {
+      const res = await removeRider(currentUserId, rider.id);
+      if (res.success) {
+        showToast(`🗑️ Removed @${rider.username || rider.email.split("@")[0]}`);
+        await reloadConnections();
+      } else {
+        showToast(`⚠️ Not in your connections`);
+      }
+    } catch (e) {
+      showToast(`❌ ${e.message || "Failed to remove rider"}`);
     }
   };
 
@@ -150,15 +160,15 @@ export default function Riders() {
           )}
         </div>
 
-        {showAdd && !isConnected(currentUserId, rider.id) && (
-<button
+        {showAdd && !connectedIds.has(rider.id) && (
+          <button
             onClick={() => handleAdd(rider)}
             className={`px-3 py-1.5 rounded-full text-xs font-bold ${tc.button} hover:scale-105 active:scale-95 transition-transform shrink-0`}
           >
             <i className="fa fa-plus mr-1"></i>Add
           </button>
         )}
-        {showAdd && isConnected(currentUserId, rider.id) && (
+        {showAdd && connectedIds.has(rider.id) && (
           <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-green-500/20 text-green-400 border border-green-500/30 shrink-0">
             ✓ Added
           </span>

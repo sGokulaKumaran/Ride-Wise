@@ -7,7 +7,18 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src') 
+      '@': path.resolve(__dirname, './src')
+    }
+  },
+  server: {
+    proxy: {
+      // Forward every /api/* call to the Spring Boot backend
+      '/api': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+        secure: false,
+      }
     }
   }
 })
+
