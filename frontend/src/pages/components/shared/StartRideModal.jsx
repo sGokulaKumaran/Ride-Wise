@@ -1,381 +1,365 @@
 // ============================================================
-// 🏁 StartRideModal — Full ride planning + tracking modal
+// 🏁 StartRideModal.jsx — Slide-up modal for starting/managing rides
 //
-// STATE MACHINE:
-//   "type"    → choose Solo or Group
-//   "setup"   → RideSetup (geocode + route + map preview)
-//   "active"  → RideMap + RideControls (live ride in progress)
-//   "history" → list of past rides (RideHistoryCard)
-//   "done"    → ride ended success screen
+// SCREENS (internal state machine):
+//   "home"    → two big cards: "New Ride" + "Ride History"
+//   "type"    → Solo card (active) + Group card (disabled/future)
+//   "setup"   → RideSetupFlow (3-step wizard)
 //
-// CONNECTIONS:
-//   - rideApi      (create, save, end rides)
-//   - routingApi   (geocode + route)
-//   - locationService (live GPS)
-//   - RideMap, RideSetup, RideControls, RideHistoryCard
+// This modal does NOT handle the active map.
+// When a ride is created here, it calls onRideCreated(ride)
+// so Home.jsx can mount the full-screen ActiveRideOverlay.
+//
+// PROPS:
+//   open            — boolean, controls visibility
+//   onClose         — called when modal is dismissed
+//   tc              — theme classes from useTheme()
+//   onRideCreated   — callback(ride) when user starts a new ride
+//   onOpenHistory   — callback() to open history panel
 // ============================================================
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../../../context/AuthContext";
-import { getActiveRide, getUserRides, clearActiveRide } from "../../../services/rideApi";
-import { useRideLocation } from "../../hooks/useRideLocation";
-import RideSetup from "../ride/RideSetup";
-import RideMap from "../ride/RideMap";
-import RideControls from "../ride/RideControls";
-import RideHistoryCard from "../ride/RideHistoryCard";
+import RideSetupFlow from "../ride/RideSetupFlow";
 
-// ── Which screen is visible inside the modal ──
-// "home" = default landing with "New Ride" + "History" buttons
-// "type" = pick Solo / Group
-// "setup" = RideSetup (enter from/to + calc route)
-// "active" = live map with controls
-// "history" = ride history list
-// "done" = success after ending a ride
-const SCREENS = {
-  HOME:    "home",
-  TYPE:    "type",
-  SETUP:   "setup",
-  ACTIVE:  "active",
-  HISTORY: "history",
-  DONE:    "done",
+// Internal screen names
+const SCREEN = {
+  HOME:  "home",
+  TYPE:  "type",
+  SETUP: "setup",
 };
 
-export default function StartRideModal({ open, onClose, tc }) {
+export default function StartRideModal({ open, onClose, tc, onRideCreated, onOpenHistory }) {
   const { user } = useAuth();
 
-  // ── Screen / flow state ──────────────────────────────────────
-  const [screen,    setScreen]    = useState(SCREENS.HOME);
-  const [rideType,  setRideType]  = useState("solo"); // "solo" | "group"
-  const [activeRide, setActiveRide] = useState(null); // currently active ride object
-  const [showMap,   setShowMap]   = useState(true);   // map visibility toggle
-  const [history,   setHistory]   = useState([]);     // past rides
+  // Which screen is currently shown inside the modal
+  const [screen,   setScreen]   = useState(SCREEN.HOME);
+  const [rideType, setRideType] = useState("solo");
 
-  // Live location (only runs when a ride is active)
-  const { location: myLocation } = useRideLocation(!!activeRide);
-
-  // ── Check for existing active ride on open ─────────────────
+  // Reset to home screen whenever the modal is opened fresh
   useEffect(() => {
-    if (!open || !user) return;
-    getActiveRide().then((ride) => {
-      if (ride) {
-        setActiveRide(ride);
-        setShowMap(true);
-        setScreen(SCREENS.ACTIVE);
-      } else {
-        setScreen(SCREENS.HOME);
-      }
-    });
-  }, [open, user]);
-
-  // ── Reset when modal closes ──────────────────────────────────
-  useEffect(() => {
-    if (!open) {
-      const t = setTimeout(() => {
-        if (!activeRide) setScreen(SCREENS.HOME);
-      }, 300);
-      return () => clearTimeout(t);
-    }
-  }, [open, activeRide]);
-
-  // ── Close on Escape ──────────────────────────────────────────
-  useEffect(() => {
-    const h = (e) => { if (e.key === "Escape") handleClose(); };
-    if (open) document.addEventListener("keydown", h);
-    return () => document.removeEventListener("keydown", h);
+    if (open) setScreen(SCREEN.HOME);
   }, [open]);
 
-  // ── Close handler — safe close (doesn't end the active ride) ──
-  const handleClose = useCallback(() => {
-    // Don't reset activeRide so the banner can still show
-    onClose();
-  }, [onClose]);
+  // Close on Escape key
+  useEffect(() => {
+    const handler = e => { if (e.key === "Escape") onClose(); };
+    if (open) document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [open, onClose]);
 
-  // ── Ride created by RideSetup ────────────────────────────────
+  // Handler: ride successfully created in the setup wizard
   const handleRideCreated = (ride) => {
-    setActiveRide(ride);
-    setShowMap(true);
-    setScreen(SCREENS.ACTIVE);
+    onClose();                 // close this modal
+    onRideCreated(ride);       // tell Home to open the full-screen map
   };
 
-  // ── Ride ended by RideControls ───────────────────────────────
-  const handleRideEnded = (updatedRide) => {
-    setActiveRide(null);
-    clearActiveRide();
-    setScreen(SCREENS.DONE);
-    // refresh history
-    if (user?.id) getUserRides(user.id).then(setHistory);
-  };
-
-  // ── Load history ─────────────────────────────────────────────
-  const loadHistory = async () => {
-    if (!user?.id) return;
-    const rides = await getUserRides(user.id);
-    setHistory(rides.reverse()); // newest first
-    setScreen(SCREENS.HISTORY);
+  // Handler: user clicked "Ride History" — open history panel
+  const handleHistory = () => {
+    onClose();         // close this modal
+    onOpenHistory();   // Home.jsx will open the history panel
   };
 
   if (!open) return null;
 
-  // ── Modal title per screen ───────────────────────────────────
-  const titleMap = {
-    [SCREENS.HOME]:    { icon: "fa-motorcycle",    title: "RideWise"          },
-    [SCREENS.TYPE]:    { icon: "fa-route",          title: "Choose Ride Type"  },
-    [SCREENS.SETUP]:   { icon: "fa-map-location-dot", title: `${rideType === "solo" ? "🏍️ Solo" : "👥 Group"} Ride Setup` },
-    [SCREENS.ACTIVE]:  { icon: "fa-location-crosshairs", title: "Ride in Progress" },
-    [SCREENS.HISTORY]: { icon: "fa-clock-rotate-left", title: "Ride History"   },
-    [SCREENS.DONE]:    { icon: "fa-flag-checkered",  title: "Ride Complete!"   },
-  };
-  const { icon: headerIcon, title: headerTitle } = titleMap[screen] || titleMap[SCREENS.HOME];
+  // ---- Header labels per screen ----
+  const headerLabel = {
+    [SCREEN.HOME]:  { icon: "fa-motorcycle",      title: "RideWise"          },
+    [SCREEN.TYPE]:  { icon: "fa-route",            title: "Choose Ride Type"  },
+    [SCREEN.SETUP]: { icon: "fa-map-location-dot", title: rideType === "solo" ? "Solo Ride Setup" : "Group Ride Setup" },
+  }[screen];
 
   return (
     <>
-      {/* ── Backdrop ──────────────────────────────────────────── */}
+      {/* ── BACKDROP ──────────────────────────────────────────── */}
       <div
-        className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4"
-        onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
+        onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+        style={{
+          position:       "fixed",
+          inset:          0,
+          background:     "rgba(0,0,0,0.75)",
+          backdropFilter: "blur(8px)",
+          zIndex:         8000,
+          display:        "flex",
+          alignItems:     "flex-end",           // slide up from bottom (mobile-native feel)
+          justifyContent: "center",
+          padding:        "0 0 0 0",
+        }}
       >
-        {/* ── Modal panel ─────────────────────────────────────── */}
+        {/* ── MODAL PANEL ───────────────────────────────────────── */}
         <div
-          className={`w-full max-w-md rounded-3xl border shadow-2xl shadow-black/70 overflow-hidden flex flex-col ${tc.card}`}
-          style={{ maxHeight: "90vh" }}
+          style={{
+            width:         "100%",
+            maxWidth:      "480px",
+            maxHeight:     "90vh",
+            background:    "linear-gradient(135deg, rgba(10,10,15,0.98), rgba(15,15,25,0.98))",
+            backdropFilter:"blur(24px)",
+            borderRadius:  "28px 28px 0 0",   // rounded top corners only (slides from bottom)
+            border:        "1px solid rgba(255,255,255,0.08)",
+            borderBottom:  "none",
+            overflow:      "hidden",
+            display:       "flex",
+            flexDirection: "column",
+            boxShadow:     "0 -20px 80px rgba(0,0,0,0.7)",
+            animation:     "slideUp 0.3s cubic-bezier(0.32,0.72,0,1)",
+          }}
         >
+          {/* ── DRAG HANDLE ─────────────────────────────────────── */}
+          {/* Visual hint that this is a bottom sheet */}
+          <div style={{
+            width: "40px", height: "4px", borderRadius: "2px",
+            background: "rgba(255,255,255,0.15)",
+            margin: "12px auto 0",
+            flexShrink: 0,
+          }} />
 
-          {/* ── Header ──────────────────────────────────────── */}
-          <div className={`flex items-center justify-between px-6 pt-5 pb-4 border-b ${tc.divider} shrink-0`}>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center shadow-lg shadow-orange-500/30">
-                <i className={`fa ${headerIcon} text-white text-sm`} />
+          {/* ── HEADER ──────────────────────────────────────────── */}
+          <div style={{
+            display:       "flex",
+            alignItems:    "center",
+            justifyContent:"space-between",
+            padding:       "16px 20px",
+            borderBottom:  "1px solid rgba(255,255,255,0.06)",
+            flexShrink:    0,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              {/* Back chevron when on type or setup screens */}
+              {screen !== SCREEN.HOME && (
+                <button
+                  onClick={() => setScreen(screen === SCREEN.SETUP ? SCREEN.TYPE : SCREEN.HOME)}
+                  style={{
+                    width: "32px", height: "32px", borderRadius: "50%",
+                    background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.1)",
+                    color: "rgba(255,255,255,0.8)", cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}
+                >
+                  <i className="fa fa-arrow-left" style={{ fontSize: "12px" }} />
+                </button>
+              )}
+              {/* Icon bubble */}
+              <div style={{
+                width: "38px", height: "38px", borderRadius: "12px",
+                background: "linear-gradient(135deg, #f97316, #ec4899)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                boxShadow: "0 4px 16px rgba(249,115,22,0.35)",
+              }}>
+                <i className={`fa ${headerLabel.icon}`} style={{ color: "white", fontSize: "15px" }} />
               </div>
-              <h2 className="font-black text-base">{headerTitle}</h2>
+              <span style={{ fontWeight: 900, fontSize: "16px" }}>{headerLabel.title}</span>
             </div>
+            {/* X close button */}
             <button
-              onClick={handleClose}
-              className={`w-8 h-8 rounded-full flex items-center justify-center transition-all hover:scale-110 ${tc.record} ${tc.sub}`}
+              onClick={onClose}
+              style={{
+                width: "32px", height: "32px", borderRadius: "50%",
+                background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.1)",
+                color: "rgba(255,255,255,0.6)", cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}
             >
-              <i className="fa fa-times text-xs" />
+              <i className="fa fa-times" style={{ fontSize: "13px" }} />
             </button>
           </div>
 
-          {/* ── Scrollable content area ─────────────────────── */}
-          <div className="overflow-y-auto flex-1">
+          {/* ── SCROLLABLE CONTENT ────────────────────────────────── */}
+          <div style={{ overflowY: "auto", flex: 1, padding: "20px" }}>
 
-            {/* ═══════════════════════════════════════════════
-                HOME SCREEN — choose action
-            ═══════════════════════════════════════════════ */}
-            {screen === SCREENS.HOME && (
-              <div className="p-6 space-y-3">
-                {/* Active ride resume banner */}
-                {activeRide && (
-                  <button
-                    onClick={() => { setShowMap(true); setScreen(SCREENS.ACTIVE); }}
-                    className="w-full flex items-center gap-3 p-4 rounded-2xl bg-green-500/10 border border-green-500/30 text-left hover:bg-green-500/15 transition-all"
-                  >
-                    <span className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-bold text-green-400 text-sm">Ride Active</p>
-                      <p className="text-xs opacity-60 truncate">
-                        {activeRide.from?.name?.split(",")[0]} → {activeRide.destination?.name?.split(",")[0]}
-                      </p>
-                    </div>
-                    <i className="fa fa-arrow-right text-green-400 text-sm" />
-                  </button>
-                )}
+            {/* ================================================
+                HOME screen — New Ride + History cards
+            ================================================ */}
+            {screen === SCREEN.HOME && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
 
-                {/* New Ride button */}
+                {/* NEW RIDE card */}
                 <button
-                  onClick={() => setScreen(SCREENS.TYPE)}
-                  className="w-full flex items-center gap-4 p-5 rounded-2xl bg-gradient-to-r from-orange-500/10 to-pink-500/10 border border-orange-500/20 text-left hover:border-orange-500/40 hover:scale-[1.01] transition-all"
+                  onClick={() => setScreen(SCREEN.TYPE)}
+                  style={{
+                    padding:        "20px",
+                    background:     "linear-gradient(135deg, rgba(249,115,22,0.12), rgba(236,72,153,0.08))",
+                    border:         "1.5px solid rgba(249,115,22,0.25)",
+                    borderRadius:   "20px",
+                    display:        "flex",
+                    alignItems:     "center",
+                    gap:            "16px",
+                    cursor:         "pointer",
+                    color:          "inherit",
+                    textAlign:      "left",
+                    width:          "100%",
+                    transition:     "transform 0.2s, border-color 0.2s",
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.01)"; e.currentTarget.style.borderColor = "rgba(249,115,22,0.5)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)";    e.currentTarget.style.borderColor = "rgba(249,115,22,0.25)"; }}
                 >
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center shadow-lg shadow-orange-500/30 shrink-0">
-                    <i className="fa fa-motorcycle text-white text-lg" />
+                  <div style={{
+                    width: "52px", height: "52px", borderRadius: "16px", flexShrink: 0,
+                    background: "linear-gradient(135deg, #f97316, #ec4899)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    boxShadow: "0 8px 24px rgba(249,115,22,0.35)",
+                  }}>
+                    <i className="fa fa-motorcycle" style={{ color: "white", fontSize: "22px" }} />
                   </div>
-                  <div>
-                    <p className="font-black">Start a New Ride</p>
-                    <p className="text-xs opacity-50 mt-0.5">Plan your route with geocoding + map</p>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontWeight: 900, fontSize: "16px", margin: "0 0 4px" }}>Start a New Ride</p>
+                    <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.45)", margin: 0 }}>
+                      Plan your route with geocoding + live map
+                    </p>
                   </div>
-                  <i className="fa fa-arrow-right text-orange-400 ml-auto" />
+                  <i className="fa fa-arrow-right" style={{ color: "#f97316", fontSize: "16px" }} />
                 </button>
 
-                {/* Ride History button */}
+                {/* RIDE HISTORY card */}
                 <button
-                  onClick={loadHistory}
-                  className={`w-full flex items-center gap-4 p-5 rounded-2xl border text-left hover:scale-[1.01] transition-all ${tc.card}`}
+                  onClick={handleHistory}
+                  style={{
+                    padding:        "20px",
+                    background:     "rgba(255,255,255,0.03)",
+                    border:         "1px solid rgba(255,255,255,0.08)",
+                    borderRadius:   "20px",
+                    display:        "flex",
+                    alignItems:     "center",
+                    gap:            "16px",
+                    cursor:         "pointer",
+                    color:          "inherit",
+                    textAlign:      "left",
+                    width:          "100%",
+                    transition:     "transform 0.2s, background 0.2s",
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.01)"; e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)";    e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }}
                 >
-                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${tc.record}`}>
-                    <i className="fa fa-clock-rotate-left text-lg opacity-70" />
+                  <div style={{
+                    width: "52px", height: "52px", borderRadius: "16px", flexShrink: 0,
+                    background: "rgba(255,255,255,0.07)",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    <i className="fa fa-clock-rotate-left" style={{ color: "rgba(255,255,255,0.6)", fontSize: "20px" }} />
                   </div>
-                  <div>
-                    <p className="font-black">Ride History</p>
-                    <p className="text-xs opacity-50 mt-0.5">View all your past rides + routes</p>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontWeight: 900, fontSize: "16px", margin: "0 0 4px" }}>Ride History</p>
+                    <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.45)", margin: 0 }}>
+                      View, reopen or delete past rides
+                    </p>
                   </div>
-                  <i className="fa fa-arrow-right opacity-40 ml-auto" />
+                  <i className="fa fa-arrow-right" style={{ color: "rgba(255,255,255,0.3)", fontSize: "16px" }} />
                 </button>
               </div>
             )}
 
-            {/* ═══════════════════════════════════════════════
-                TYPE SCREEN — solo or group
-            ═══════════════════════════════════════════════ */}
-            {screen === SCREENS.TYPE && (
-              <div className="p-6 space-y-3">
-                <p className={`text-sm mb-2 ${tc.sub}`}>How are you riding today?</p>
+            {/* ================================================
+                TYPE screen — Solo or Group
+            ================================================ */}
+            {screen === SCREEN.TYPE && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.4)", margin: "0 0 4px" }}>
+                  How are you riding today?
+                </p>
 
-                {/* Solo */}
+                {/* SOLO — active */}
                 <button
-                  onClick={() => { setRideType("solo"); setScreen(SCREENS.SETUP); }}
-                  className="w-full flex items-start gap-4 p-4 rounded-2xl border-2 border-orange-500/30 bg-orange-500/5 text-left hover:border-orange-500/60 hover:scale-[1.01] transition-all"
+                  onClick={() => { setRideType("solo"); setScreen(SCREEN.SETUP); }}
+                  style={{
+                    padding:      "20px",
+                    background:   "linear-gradient(135deg, rgba(249,115,22,0.1), rgba(234,179,8,0.08))",
+                    border:       "1.5px solid rgba(249,115,22,0.3)",
+                    borderRadius: "20px",
+                    display:      "flex",
+                    alignItems:   "center",
+                    gap:          "16px",
+                    cursor:       "pointer",
+                    color:        "inherit",
+                    textAlign:    "left",
+                    width:        "100%",
+                    transition:   "transform 0.2s",
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.transform = "scale(1.01)"}
+                  onMouseLeave={e => e.currentTarget.style.transform = "scale(1)"}
                 >
-                  <div className="w-12 h-12 rounded-2xl bg-orange-500/20 border border-orange-500/30 flex items-center justify-center text-2xl shrink-0">
+                  <div style={{
+                    width: "52px", height: "52px", borderRadius: "16px", flexShrink: 0,
+                    background: "linear-gradient(135deg, #f97316, #ca8a04)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: "24px",
+                  }}>
                     🏍️
                   </div>
-                  <div>
-                    <p className="font-black text-orange-400">Solo Ride</p>
-                    <p className="text-xs opacity-50 mt-1">Just you and the road. Plan your own route and go.</p>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontWeight: 900, fontSize: "16px", color: "#fb923c", margin: "0 0 4px" }}>Solo Ride</p>
+                    <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.45)", margin: 0 }}>
+                      Just you. Plan your route and hit the road.
+                    </p>
                   </div>
+                  <i className="fa fa-arrow-right" style={{ color: "#f97316" }} />
                 </button>
 
-                {/* Group */}
-                <button
-                  onClick={() => { setRideType("group"); setScreen(SCREENS.SETUP); }}
-                  className="w-full flex items-start gap-4 p-4 rounded-2xl border-2 border-blue-500/30 bg-blue-500/5 text-left hover:border-blue-500/60 hover:scale-[1.01] transition-all"
-                >
-                  <div className="w-12 h-12 rounded-2xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-2xl shrink-0">
+                {/* GROUP — disabled (future feature) */}
+                <div style={{
+                  padding:      "20px",
+                  background:   "rgba(255,255,255,0.02)",
+                  border:       "1px solid rgba(255,255,255,0.06)",
+                  borderRadius: "20px",
+                  display:      "flex",
+                  alignItems:   "center",
+                  gap:          "16px",
+                  opacity:      0.4,           // visually dimmed
+                  cursor:       "not-allowed", // shows the "no" cursor on hover
+                  pointerEvents: "none",       // disables all mouse interaction
+                }}>
+                  <div style={{
+                    width: "52px", height: "52px", borderRadius: "16px", flexShrink: 0,
+                    background: "rgba(255,255,255,0.06)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: "24px",
+                  }}>
                     👥
                   </div>
-                  <div>
-                    <p className="font-black text-blue-400">Group Ride</p>
-                    <p className="text-xs opacity-50 mt-1">Ride with friends. Members see each other on the map live.</p>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                      <p style={{ fontWeight: 900, fontSize: "16px", margin: 0 }}>Group Ride</p>
+                      {/* "Coming Soon" badge */}
+                      <span style={{
+                        padding: "2px 8px", borderRadius: "50px",
+                        background: "rgba(255,255,255,0.08)",
+                        border: "1px solid rgba(255,255,255,0.12)",
+                        fontSize: "9px", fontWeight: 700, textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                      }}>
+                        Coming Soon
+                      </span>
+                    </div>
+                    <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.45)", margin: 0 }}>
+                      Ride with friends. Live map for all members.
+                    </p>
                   </div>
-                </button>
-
-                {/* Back */}
-                <button
-                  onClick={() => setScreen(SCREENS.HOME)}
-                  className={`w-full py-3 text-sm opacity-50 hover:opacity-80 transition-opacity`}
-                >
-                  <i className="fa fa-arrow-left mr-2" />Back
-                </button>
-              </div>
-            )}
-
-            {/* ═══════════════════════════════════════════════
-                SETUP SCREEN — from / destination / route
-            ═══════════════════════════════════════════════ */}
-            {screen === SCREENS.SETUP && (
-              <div className="p-6">
-                <RideSetup
-                  rideType={rideType}
-                  userId={user?.id}
-                  onRideCreated={handleRideCreated}
-                  onCancel={() => setScreen(SCREENS.TYPE)}
-                />
-              </div>
-            )}
-
-            {/* ═══════════════════════════════════════════════
-                ACTIVE SCREEN — live map + controls
-            ═══════════════════════════════════════════════ */}
-            {screen === SCREENS.ACTIVE && activeRide && (
-              <div className="p-6 space-y-3">
-                {/* Live indicator */}
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                  <span className="font-bold text-green-400">Ride Active</span>
-                  <span className={`text-xs ml-auto ${tc.sub}`}>
-                    {activeRide.from?.name?.split(",")[0]} → {activeRide.destination?.name?.split(",")[0]}
-                  </span>
-                </div>
-
-                {/* Map toggle */}
-                {showMap ? (
-                  <RideMap
-                    ride={activeRide}
-                    myLocation={myLocation}
-                    height="300px"
-                  />
-                ) : (
-                  <button
-                    onClick={() => setShowMap(true)}
-                    className="w-full py-8 rounded-2xl border border-white/10 bg-white/5 text-center hover:bg-white/8 transition-all"
-                  >
-                    <i className="fa fa-map text-3xl opacity-30 block mb-2" />
-                    <span className="text-sm opacity-50">Tap to show map</span>
-                  </button>
-                )}
-
-                <RideControls
-                  ride={activeRide}
-                  onCloseMap={() => setShowMap(false)}
-                  onRideEnded={handleRideEnded}
-                />
-
-                {/* GPS status */}
-                {myLocation && (
-                  <p className="text-[10px] text-center opacity-30">
-                    📍 GPS active · {myLocation.lat.toFixed(4)}, {myLocation.lng.toFixed(4)}
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* ═══════════════════════════════════════════════
-                HISTORY SCREEN
-            ═══════════════════════════════════════════════ */}
-            {screen === SCREENS.HISTORY && (
-              <div className="p-6 space-y-3">
-                <button
-                  onClick={() => setScreen(SCREENS.HOME)}
-                  className={`flex items-center gap-1.5 text-xs opacity-50 hover:opacity-80 mb-1 transition-opacity`}
-                >
-                  <i className="fa fa-arrow-left" />Back
-                </button>
-
-                {history.length === 0 ? (
-                  <div className="text-center py-12">
-                    <div className="text-5xl mb-4">🛣️</div>
-                    <p className="font-bold opacity-60">No rides yet</p>
-                    <p className="text-xs opacity-40 mt-1">Your completed rides will appear here.</p>
-                  </div>
-                ) : (
-                  history.map((ride) => (
-                    <RideHistoryCard key={ride.id} ride={ride} />
-                  ))
-                )}
-              </div>
-            )}
-
-            {/* ═══════════════════════════════════════════════
-                DONE SCREEN — success
-            ═══════════════════════════════════════════════ */}
-            {screen === SCREENS.DONE && (
-              <div className="p-6 text-center py-10">
-                <div className="w-20 h-20 mx-auto mb-5 rounded-full bg-green-500/15 border border-green-500/30 flex items-center justify-center">
-                  <i className="fa fa-flag-checkered text-3xl text-green-400" />
-                </div>
-                <h3 className="text-2xl font-black mb-2">Ride Complete! 🏁</h3>
-                <p className={`text-sm mb-6 ${tc.sub}`}>
-                  Your ride has been saved to history.
-                </p>
-                <div className="flex gap-3">
-                  <button
-                    onClick={loadHistory}
-                    className="flex-1 py-3 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 font-bold text-sm transition-all"
-                  >
-                    <i className="fa fa-clock-rotate-left mr-2" />View History
-                  </button>
-                  <button
-                    onClick={() => setScreen(SCREENS.TYPE)}
-                    className="flex-1 py-3 rounded-xl bg-gradient-to-r from-orange-500 to-pink-500 text-white font-bold text-sm hover:scale-[1.02] transition-all"
-                  >
-                    <i className="fa fa-motorcycle mr-2" />New Ride
-                  </button>
                 </div>
               </div>
             )}
 
-          </div>{/* end scrollable */}
+            {/* ================================================
+                SETUP screen — 3-step wizard
+            ================================================ */}
+            {screen === SCREEN.SETUP && (
+              <RideSetupFlow
+                rideType={rideType}
+                userId={user?.id}
+                onRideCreated={handleRideCreated}
+                onCancel={() => setScreen(SCREEN.TYPE)}
+                tc={tc}
+              />
+            )}
+
+          </div>
         </div>
       </div>
+
+      {/* Slide-up animation keyframe */}
+      <style>{`
+        @keyframes slideUp {
+          from { transform: translateY(100%); }
+          to   { transform: translateY(0); }
+        }
+      `}</style>
     </>
   );
 }

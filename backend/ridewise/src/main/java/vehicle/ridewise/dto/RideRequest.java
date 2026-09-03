@@ -1,0 +1,105 @@
+package vehicle.ridewise.dto; // Package declaration
+
+public class RideRequest { // Define class
+
+    private Long userId; // User ID field
+    private String fromName; // Origin name field
+    private Double fromLat; // Origin latitude field
+    private Double fromLng; // Origin longitude field
+    private String destinationName; // Destination name field
+    private Double destinationLat; // Destination latitude field
+    private Double destinationLng; // Destination longitude field
+    private String routeCoordinates; // Route coordinates field
+    private Double distanceMeters; // Distance field
+    private Double durationSeconds; // Duration field
+    private String rideType; // Ride type field
+
+    // Getters and setters
+    public Long getUserId() { // Get userId
+        return userId; // Return userId
+    } // End getter
+
+    public void setUserId(Long userId) { // Set userId
+        this.userId = userId; // Assign userId
+    } // End setter
+
+    public String getFromName() { // Get fromName
+        return fromName; // Return fromName
+    } // End getter
+
+    public void setFromName(String fromName) { // Set fromName
+        this.fromName = fromName; // Assign fromName
+    } // End setter
+
+    public Double getFromLat() { // Get fromLat
+        return fromLat; // Return fromLat
+    } // End getter
+
+    public void setFromLat(Double fromLat) { // Set fromLat
+        this.fromLat = fromLat; // Assign fromLat
+    } // End setter
+
+    public Double getFromLng() { // Get fromLng
+        return fromLng; // Return fromLng
+    } // End getter
+
+    public void setFromLng(Double fromLng) { // Set fromLng
+        this.fromLng = fromLng; // Assign fromLng
+    } // End setter
+
+    public String getDestinationName() { // Get destinationName
+        return destinationName; // Return destinationName
+    } // End getter
+
+    public void setDestinationName(String destinationName) { // Set destinationName
+        this.destinationName = destinationName; // Assign destinationName
+    } // End setter
+
+    public Double getDestinationLat() { // Get destinationLat
+        return destinationLat; // Return destinationLat
+    } // End getter
+
+    public void setDestinationLat(Double destinationLat) { // Set destinationLat
+        this.destinationLat = destinationLat; // Assign destinationLat
+    } // End setter
+
+    public Double getDestinationLng() { // Get destinationLng
+        return destinationLng; // Return destinationLng
+    } // End getter
+
+    public void setDestinationLng(Double destinationLng) { // Set destinationLng
+        this.destinationLng = destinationLng; // Assign destinationLng
+    } // End setter
+
+    public String getRouteCoordinates() { // Get routeCoordinates
+        return routeCoordinates; // Return routeCoordinates
+    } // End getter
+
+    public void setRouteCoordinates(String routeCoordinates) { // Set routeCoordinates
+        this.routeCoordinates = routeCoordinates; // Assign routeCoordinates
+    } // End setter
+
+    public Double getDistanceMeters() { // Get distanceMeters
+        return distanceMeters; // Return distanceMeters
+    } // End getter
+
+    public void setDistanceMeters(Double distanceMeters) { // Set distanceMeters
+        this.distanceMeters = distanceMeters; // Assign distanceMeters
+    } // End setter
+
+    public Double getDurationSeconds() { // Get durationSeconds
+        return durationSeconds; // Return durationSeconds
+    } // End getter
+
+    public void setDurationSeconds(Double durationSeconds) { // Set durationSeconds
+        this.durationSeconds = durationSeconds; // Assign durationSeconds
+    } // End setter
+
+    public String getRideType() { // Get rideType
+        return rideType; // Return rideType
+    } // End getter
+
+    public void setRideType(String rideType) { // Set rideType
+        this.rideType = rideType; // Assign rideType
+    } // End setter
+} // End of class
