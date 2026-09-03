@@ -79,7 +79,8 @@ export function AuthProvider({ children }) {
   const signup = async (email, password) => {
     if (!email || !password) throw new Error("Email and password are required.");
     if (password.length < 6)  throw new Error("Password must be at least 6 characters.");
-
+    
+    //Its awake the backend of the signup controller in the authController
     const res = await fetch("/api/auth/signup", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
@@ -89,9 +90,9 @@ export function AuthProvider({ children }) {
     const newUser = await handleResponse(res);
     // newUser is a UserResponse: { id, email, username, mobile, address, lat, lng, createdAt }
 
-    localStorage.setItem("ridewise-user",          JSON.stringify(newUser));
+    localStorage.setItem("ridewise-user", JSON.stringify(newUser));
     localStorage.setItem("ridewise-authenticated", "true");
-    localStorage.setItem("ridewise-onboarded",     "false");
+    localStorage.setItem("ridewise-onboarded", "false");
 
     setUser(newUser);
     setIsAuthenticated(true);
@@ -125,7 +126,7 @@ export function AuthProvider({ children }) {
 
   // ── UPDATE PROFILE — PATCH /api/auth/profile/{userId} ──
   const updateProfile = async (patch) => {
-    if (!user) throw new Error("Not logged in");
+    if (!user) throw new Error("Not logged in");// for safty check
 
     const res = await fetch(`/api/auth/profile/${user.id}`, {
       method:  "PATCH",
@@ -163,6 +164,8 @@ export function AuthProvider({ children }) {
   // ── COMPUTED: avatar letter ──
   const avatarLetter =
     (user?.username?.[0] || user?.email?.[0] || "R").toUpperCase();
+    // first its check the username if not then its check email
+    //even that also not then its use R default value
 
   return (
     <AuthContext.Provider value={{
