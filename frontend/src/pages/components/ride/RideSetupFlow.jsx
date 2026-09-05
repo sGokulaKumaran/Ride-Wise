@@ -73,6 +73,8 @@ export default function RideSetupFlow({ rideType, userId, onRideCreated, onCance
   // ====================================================================
   // FROM — "Use Current Location" button handler
   // ====================================================================
+
+  //THis is the main thing to access the gps of the devcie from browser
   const handleUseGps = async () => {
     setLoading(true);
     setError("");

@@ -20,7 +20,7 @@ const BASE = "/api/rides";
 // LOCALSTORAGE FALLBACK KEY
 // Used when the backend is not running (dev convenience)
 // ---------------------------------------------------------------------------
-const LS_KEY = "ridewise-rides-local";
+const LS_KEY = "ridewise-rides-local";// this is the name of the web Local Storage a key for the value of the web storage
 
 // ---------------------------------------------------------------------------
 // Helper: load rides from localStorage (used as fallback cache)
@@ -198,4 +198,45 @@ export async function getRide(rideId) {
     },
     () => lsLoad().find(r => String(r.id) === String(rideId)) || null
   );
+}
+
+// ============================================================
+// UPDATE USER LOCATION — store a GPS position update on the backend
+//
+// Called on every GPS tick while a ride is active.
+// The backend records position history so we can:
+//   • Show the traveled path in ride history
+//   • Support future route deviation detection
+//   • Support group ride live location sharing
+//
+// POST /api/rides/{rideId}/location
+// Body: { lat, lng, timestamp }
+//
+// This is "fire-and-forget" — if backend is unreachable we log and
+// silently skip. GPS dot and route trimming still work client-side.
+// ============================================================
+export async function updateUserLocation(rideId, lat, lng) {
+  try {
+    // Build the location update payload with an ISO timestamp
+    const payload = {
+      lat,                                // decimal degrees (e.g. 13.0827)
+      lng,                                // decimal degrees (e.g. 80.2707)
+      timestamp: new Date().toISOString(), // when this fix was captured
+    };
+
+    const res = await fetch(`${BASE}/${rideId}/location`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify(payload),
+    });
+
+    // Log non-2xx responses but don't throw — this is non-critical
+    if (!res.ok) {
+      console.warn(`[rideApi] Location update returned HTTP ${res.status}`);
+    }
+  } catch (err) {
+    // Backend offline or network error — silently continue.
+    // All client-side map features still work without this call.
+    console.warn("[rideApi] updateUserLocation skipped (backend unreachable):", err.message);
+  }
 }
