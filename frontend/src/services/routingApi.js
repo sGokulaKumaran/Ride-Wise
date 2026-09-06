@@ -7,10 +7,13 @@
 // ROUTING    : Calculates the road route between two lat/lng
 //              points using OSRM (free routing engine).
 //              Returns coordinates as [[lng, lat], ...] (GeoJSON order).
+//              Also returns turn-by-turn steps when steps=true is used.
 //
 // GEO MATH   : haversineDistance — straight-line distance between
 //              two lat/lng points (used for popup remaining-km display
 //              and for snapping the user to the nearest route point).
+//              bearingBetween — compass bearing A→B (used to rotate the
+//              GPS marker to face the direction of travel).
 //
 // FORMAT HELPERS: formatDistance / formatDuration convert
 //              raw meters/seconds into human-readable strings.
@@ -83,6 +86,7 @@ export async function geocode(query) {
 //     coordinates: [[lng, lat], [lng, lat], ...],  ← GeoJSON order (lng first)
 //     distance: 150000,    ← metres (number)
 //     duration: 5400,      ← seconds (number)
+//     steps: [...]         ← parsed turn-by-turn maneuver steps
 //   }
 //   OR throws an Error if no route is found.
 //
@@ -101,8 +105,9 @@ export async function getRoute(from, to) {
   // OSRM URL format: /route/v1/driving/{lng1},{lat1};{lng2},{lat2}
   // overview=full    → return the complete route geometry (not simplified)
   // geometries=geojson → coordinates as [[lng,lat],...] array
+  // steps=true       → include turn-by-turn maneuver steps for navigation
   const coords = `${from.lng},${from.lat};${to.lng},${to.lat}`;
-  const url = `${OSRM}/${coords}?overview=full&geometries=geojson`;
+  const url = `${OSRM}/${coords}?overview=full&geometries=geojson&steps=true`;
 
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Routing request failed (HTTP ${res.status})`);
@@ -116,11 +121,124 @@ export async function getRoute(from, to) {
 
   const route = data.routes[0]; // The best route is always the first element
 
+  // Flatten all steps from all route legs into a single array
+  const rawSteps = route.legs?.flatMap(leg => leg.steps || []) || [];
+
   return {
     coordinates: route.geometry.coordinates, // [[lng, lat], ...]
     distance:    route.distance,             // total metres
     duration:    route.duration,             // total seconds
+    steps:       parseRouteSteps(rawSteps),  // UI-ready turn-by-turn steps
   };
+}
+
+// ============================================================
+// PARSE ROUTE STEPS — convert raw OSRM step objects into
+// clean, UI-ready instruction objects.
+//
+// Each output step:
+//   {
+//     instruction: "Turn left onto Main Street",
+//     distance: 350,          ← metres for this step
+//     duration: 42,           ← seconds for this step
+//     icon: "fa-turn-left",   ← Font Awesome 6 icon class
+//     maneuverType: "turn",
+//     maneuverModifier: "left",
+//     location: [lng, lat],   ← coordinate where this maneuver starts
+//   }
+// ============================================================
+export function parseRouteSteps(rawSteps) {
+  return rawSteps.map(step => {
+    const maneuver = step.maneuver || {};
+    const type     = maneuver.type     || "";
+    const modifier = maneuver.modifier || "";
+    const name     = step.name || "";
+
+    return {
+      instruction:      buildInstruction(type, modifier, name),
+      distance:         step.distance  || 0,
+      duration:         step.duration  || 0,
+      icon:             getManeuverIcon(type, modifier),
+      maneuverType:     type,
+      maneuverModifier: modifier,
+      location:         maneuver.location || null,  // [lng, lat]
+    };
+  });
+}
+
+// ============================================================
+// BUILD INSTRUCTION — human-readable sentence from OSRM maneuver
+// ============================================================
+function buildInstruction(type, modifier, streetName) {
+  const on = streetName ? ` onto ${streetName}` : "";
+
+  switch (type) {
+    case "depart":
+      return streetName ? `Head on ${streetName}` : "Start your journey";
+    case "arrive":
+      return "You have arrived at your destination";
+    case "turn": {
+      const dir = modifier === "slight left"  ? "Slight left"
+                : modifier === "slight right" ? "Slight right"
+                : modifier === "sharp left"   ? "Sharp left"
+                : modifier === "sharp right"  ? "Sharp right"
+                : modifier === "left"         ? "Turn left"
+                : modifier === "right"        ? "Turn right"
+                : modifier === "uturn"        ? "Make a U-turn"
+                : "Turn";
+      return `${dir}${on}`;
+    }
+    case "new name":
+      return streetName ? `Continue onto ${streetName}` : "Continue";
+    case "merge":
+      return `Merge${modifier ? " " + modifier : ""}${on}`;
+    case "fork": {
+      const side = modifier.includes("left")  ? "left"
+                 : modifier.includes("right") ? "right" : "";
+      return side ? `Keep ${side}${on}` : `Stay on route${on}`;
+    }
+    case "end of road":
+      return modifier.includes("left")  ? `Turn left${on}`
+           : modifier.includes("right") ? `Turn right${on}` : `Continue${on}`;
+    case "roundabout":
+    case "rotary": {
+      const exit = type === "roundabout" ? undefined : undefined; // exit number in step.maneuver.exit
+      return exit ? `Take exit ${exit} from the roundabout${on}` : `Take the roundabout${on}`;
+    }
+    case "continue":
+      return `Continue straight${on}`;
+    case "on ramp":
+      return `Take the ramp${on}`;
+    case "off ramp":
+      return `Take the exit${on}`;
+    default:
+      return streetName ? `Continue on ${streetName}` : "Continue";
+  }
+}
+
+// ============================================================
+// GET MANEUVER ICON — returns a Font Awesome 6 class for the step
+// ============================================================
+export function getManeuverIcon(type, modifier = "") {
+  if (type === "arrive")                          return "fa-flag-checkered";
+  if (type === "depart")                          return "fa-location-dot";
+  if (type === "roundabout" || type === "rotary") return "fa-rotate-right";
+  if (type === "merge")                           return "fa-code-merge";
+  if (type === "on ramp")                         return "fa-arrow-up-right-from-square";
+  if (type === "off ramp")                        return "fa-arrow-turn-down";
+  if (type === "fork") {
+    return modifier.includes("left") ? "fa-turn-left" : "fa-turn-right";
+  }
+  if (type === "turn" || type === "end of road" || type === "new name") {
+    if (modifier === "uturn")        return "fa-rotate-left";
+    if (modifier === "sharp left")   return "fa-turn-left";
+    if (modifier === "left")         return "fa-turn-left";
+    if (modifier === "slight left")  return "fa-arrow-up-left";
+    if (modifier === "sharp right")  return "fa-turn-right";
+    if (modifier === "right")        return "fa-turn-right";
+    if (modifier === "slight right") return "fa-arrow-up-right";
+  }
+  return "fa-arrow-up"; // straight / continue / unknown
 }
 
 // ============================================================
@@ -161,6 +279,50 @@ export function haversineDistance(lat1, lng1, lat2, lng2) {
 }
 
 // ============================================================
+// BEARING BETWEEN — compass bearing from point A → point B
+//
+// Returns degrees 0–360 (0 = North, 90 = East, 180 = South, 270 = West)
+// Used to rotate the GPS marker arrow to face the direction of travel.
+// ============================================================
+export function bearingBetween(lat1, lng1, lat2, lng2) {
+  const toRad = deg => (deg * Math.PI) / 180;
+  const toDeg = rad => (rad * 180) / Math.PI;
+
+  const dLng = toRad(lng2 - lng1);
+  const y    = Math.sin(dLng) * Math.cos(toRad(lat2));
+  const x    =
+    Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
+    Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLng);
+
+  return (toDeg(Math.atan2(y, x)) + 360) % 360;
+}
+
+// ============================================================
+// FIND ACTIVE STEP — returns the index of the upcoming step
+// that is closest (in distance) to the user's current position.
+//
+// Used by the navigation panel to highlight the next maneuver.
+// ============================================================
+export function findActiveStep(steps, userLat, userLng) {
+  if (!steps?.length || userLat == null || userLng == null) return 0;
+
+  let nearest = 0;
+  let minDist  = Infinity;
+
+  steps.forEach((step, i) => {
+    const loc = step.location; // [lng, lat]
+    if (!loc) return;
+    const d = haversineDistance(userLat, userLng, loc[1], loc[0]);
+    if (d < minDist) {
+      minDist  = d;
+      nearest  = i;
+    }
+  });
+
+  return nearest;
+}
+
+// ============================================================
 // FORMAT DISTANCE — meters → human-readable string
 //
 // Examples:  850    → "850 m"
@@ -187,4 +349,12 @@ export function formatDuration(seconds) {
   if (h === 0) return `${m} min`;
   if (m === 0) return `${h} h`;
   return `${h} h ${m} min`;
+}
+
+// ============================================================
+// FORMAT SPEED — m/s → km/h string
+// ============================================================
+export function formatSpeed(mps) {
+  if (mps == null || mps < 0) return "0";
+  return Math.round(mps * 3.6).toString(); // convert m/s to km/h
 }

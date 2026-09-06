@@ -1,28 +1,24 @@
 // ============================================================
-// 🗺️ ActiveRideOverlay.jsx — Full-screen map overlay for active rides
+// 🗺️ ActiveRideOverlay.jsx — Navigation-Mode Map Overlay
 //
-// This is the "Google Maps-like" full-screen experience shown when
-// a ride is in progress. It covers the entire viewport.
+// This is the full-screen Google Maps-style navigation experience
+// shown when a ride is in progress. Covers the entire viewport.
 //
 // ── FEATURES ──────────────────────────────────────────────
 //   ✅ Full-screen MapLibre map with OSM tiles
-//   ✅ Live GPS tracking — blue pulsing dot moves with the user
+//   ✅ Live GPS tracking — blue pulsing BEARING ARROW moves + rotates
 //   ✅ Dynamic blue route line — shrinks as user progresses
+//   ✅ NEXT MANEUVER BAR — Google Maps-style top instruction banner
+//      showing the current turn instruction + distance to it
+//   ✅ SPEED DISPLAY — current speed in km/h (bottom-left HUD chip)
+//   ✅ DIRECTIONS PANEL — tap list icon to see all route steps
+//      with the active step highlighted and auto-scrolled into view
 //   ✅ Minimize button — shrinks to a floating widget
-//   ✅ Close button — hides the map, ride stays alive in the background
-//   ✅ End Ride button — permanently ends the ride
-//   ✅ Bottom bar: LIVE remaining distance + ETA from current GPS position
-//      (falls back to total route stats if GPS is unavailable)
+//   ✅ Close button — hides the map, ride stays alive
+//   ✅ End Ride button — permanently ends the ride (two-click confirm)
+//   ✅ Bottom bar: LIVE remaining distance + ETA + ride type
 //   ✅ GPS error banner when location permission is denied
-//
-// ── REMAINING DISTANCE / ETA LOGIC ───────────────────────
-//   Every GPS tick we recalculate:
-//     • remainingDist = haversineDistance(user → destination)
-//     • remainingTime = remainingDist / avgSpeed
-//       (avgSpeed = totalDistance / totalDuration from the saved ride)
-//   These live values are shown in the bottom bar.
-//   The same values are also passed to RideMap so the destination
-//   popup can display up-to-date remaining info.
+//   ✅ Camera-follow mode via RideMap's built-in follow logic
 //
 // ── PROPS ─────────────────────────────────────────────────
 //   ride    — active ride object (from backend / localStorage)
@@ -31,107 +27,125 @@
 // ============================================================
 
 import { useState, useEffect, useRef } from "react";
-import RideMap from "./RideMap";
+import RideMap         from "./RideMap";
+import DirectionsPanel from "./DirectionsPanel";
 import { watchLocation } from "../../../services/locationService";
-import { formatDistance, formatDuration, haversineDistance } from "../../../services/routingApi";
+import {
+  formatDistance,
+  formatDuration,
+  haversineDistance,
+  findActiveStep,
+} from "../../../services/routingApi";
 import { updateUserLocation } from "../../../services/rideApi";
+
+// ── Parse steps — ride.routeSteps is stored as JSON string in DB ──
+function parseSteps(ride) {
+  if (!ride) return [];
+  if (Array.isArray(ride.routeSteps)) return ride.routeSteps;
+  if (typeof ride.routeSteps === "string") {
+    try { return JSON.parse(ride.routeSteps); } catch { return []; }
+  }
+  return [];
+}
 
 export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
   // ── Live GPS state ──
-  // myLocation is updated by the GPS watcher every few seconds (throttled)
   const [myLocation,    setMyLocation]   = useState(null);
   const [gpsError,      setGpsError]     = useState(null);
 
-  // ── Live remaining stats (recalculated on every GPS tick) ──
-  // These replace the static total distance/duration in the bottom bar.
+  // ── Live remaining stats ──
   const [remainingDist, setRemainingDist] = useState(null); // metres
   const [remainingTime, setRemainingTime] = useState(null); // seconds
 
-  // ── UI state ──
-  const [minimized,  setMinimized]  = useState(false); // true = show floating chip
-  const [confirmEnd, setConfirmEnd] = useState(false); // true = confirm modal visible
-  const [ending,     setEnding]     = useState(false); // true = end request in flight
+  // ── Navigation step state ──
+  const [steps,       setSteps]       = useState(() => parseSteps(ride));
+  const [activeStep,  setActiveStep]  = useState(0);
 
-  // ── GPS watcher stop function — stored in ref to avoid stale closures ──
+  // ── UI state ──
+  const [minimized,       setMinimized]       = useState(false);
+  const [confirmEnd,      setConfirmEnd]       = useState(false);
+  const [ending,          setEnding]           = useState(false);
+  const [showDirections,  setShowDirections]   = useState(false);
+
   const stopGpsRef = useRef(null);
 
+  // Parse steps whenever ride changes
+  useEffect(() => {
+    setSteps(parseSteps(ride));
+  }, [ride]);
+
+  // ── Current step derived values ──
+  const currentStep    = steps[activeStep];
+  const nextStep       = steps[activeStep + 1];
+  const isLastStep     = activeStep >= steps.length - 1;
+
   // ====================================================================
-  // START GPS when overlay mounts; STOP when it unmounts
+  // START GPS when overlay mounts; STOP on unmount
   // ====================================================================
   useEffect(() => {
-    // ── Start continuous position tracking ──
     const stop = watchLocation(
       (loc) => {
-        setMyLocation(loc);  // update the blue dot on the map
-        setGpsError(null);   // clear any previous error
+        setMyLocation(loc);
+        setGpsError(null);
 
-        // ── Recalculate remaining distance + ETA on every GPS tick ──
+        // ── Remaining distance + ETA ──
         if (ride?.destinationLat && ride?.destinationLng) {
-          // Straight-line distance from user to destination (metres)
           const distM = haversineDistance(
             loc.lat, loc.lng,
             ride.destinationLat, ride.destinationLng
           );
           setRemainingDist(distM);
-
-          // Estimate remaining time using the original average speed:
-          //   avgSpeed (m/s) = totalDistance / totalDuration
-          //   remainingTime  = remainingDistance / avgSpeed
-          if (ride.distanceMeters && ride.durationSeconds && ride.distanceMeters > 0) {
-            const avgSpeed   = ride.distanceMeters / ride.durationSeconds; // m/s
-            const remTimeSec = distM / avgSpeed;                           // seconds
-            setRemainingTime(remTimeSec);
+          if (ride.distanceMeters > 0 && ride.durationSeconds > 0) {
+            const avgSpeed   = ride.distanceMeters / ride.durationSeconds;
+            setRemainingTime(distM / avgSpeed);
           }
         }
 
-        // ── Persist user position to backend for tracking/history ──
-        // This is fire-and-forget; errors are logged but not surfaced to user
+        // ── Find which navigation step is currently active ──
+        setActiveStep(prev => {
+          const steps = parseSteps(ride);
+          if (!steps.length) return prev;
+          const next = findActiveStep(steps, loc.lat, loc.lng);
+          // Only advance forward — never go backward
+          return next >= prev ? next : prev;
+        });
+
+        // ── Persist user position to backend ──
         if (ride?.id) {
           updateUserLocation(ride.id, loc.lat, loc.lng).catch(err => {
             console.warn("[ActiveRideOverlay] location update failed:", err.message);
           });
         }
       },
-      (err) => {
-        // GPS error (e.g. user denied permission) — show banner
-        setGpsError(err.message);
-      }
+      (err) => setGpsError(err.message)
     );
 
-    stopGpsRef.current = stop; // store so cleanup can call it
-
-    // Cleanup: stop GPS when overlay unmounts or ride ends
-    return () => {
-      stop();
-    };
-  }, []); // empty deps = run only once on mount
+    stopGpsRef.current = stop;
+    return () => stop();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ====================================================================
-  // END RIDE handler — two-click confirm pattern to prevent accidental ends
+  // END RIDE handler (two-click confirm)
   // ====================================================================
   const handleEndRide = async () => {
-    if (!confirmEnd) {
-      // First click: show the confirmation buttons
-      setConfirmEnd(true);
-      return;
-    }
-    // Second click (confirmed): end the ride
+    if (!confirmEnd) { setConfirmEnd(true); return; }
     setEnding(true);
     setConfirmEnd(false);
-    stopGpsRef.current?.(); // stop GPS tracking before ending
-    await onEnd();          // parent (Home.jsx) updates DB + resets state
+    stopGpsRef.current?.();
+    await onEnd();
     setEnding(false);
   };
 
   const cancelEnd = () => setConfirmEnd(false);
 
+  // ── Derive current step distance (to next maneuver) ──
+  const stepDist = currentStep?.distance || 0;
+
   // ====================================================================
-  // MINIMIZED state — show a small floating status chip
-  // The chip shows the route summary and a tap target to restore the map
+  // MINIMIZED state — floating chip
   // ====================================================================
   if (minimized) {
     return (
-      // Fixed chip at the bottom-center, above any navigation bar
       <div
         style={{
           position:       "fixed",
@@ -144,49 +158,36 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
           gap:            "12px",
           background:     "linear-gradient(135deg, rgba(10,10,10,0.95), rgba(20,20,30,0.95))",
           backdropFilter: "blur(20px)",
-          border:         "1px solid rgba(66,133,244,0.4)", // Google Maps blue border
+          border:         "1px solid rgba(66,133,244,0.4)",
           borderRadius:   "50px",
           padding:        "10px 20px",
           boxShadow:      "0 8px 40px rgba(0,0,0,0.6), 0 0 20px rgba(66,133,244,0.15)",
           cursor:         "pointer",
           whiteSpace:     "nowrap",
         }}
-        onClick={() => setMinimized(false)} // tap chip to restore full-screen map
+        onClick={() => setMinimized(false)}
       >
-        {/* Animated live dot */}
         <span style={{
           width: "10px", height: "10px", borderRadius: "50%",
-          background:  "#22c55e",
-          animation:   "pulse 2s ease-in-out infinite",
-          flexShrink:  0,
+          background: "#22c55e", animation: "pulse 2s ease-in-out infinite", flexShrink: 0,
         }} />
-
-        {/* Route summary */}
         <span style={{ color: "white", fontWeight: 700, fontSize: "13px" }}>
-          {(ride.fromName || "From").split(",")[0]}
-          {" → "}
-          {(ride.destinationName || "Destination").split(",")[0]}
+          {(ride.fromName || "From").split(",")[0]} → {(ride.destinationName || "Destination").split(",")[0]}
         </span>
-
-        {/* Remaining distance chip (if GPS is available) */}
         {remainingDist != null && (
           <span style={{
-            background:  "rgba(66,133,244,0.2)",
-            border:      "1px solid rgba(66,133,244,0.4)",
-            borderRadius:"50px",
-            padding:     "2px 8px",
-            color:       "#60a5fa",
-            fontSize:    "11px",
-            fontWeight:  700,
+            background:   "rgba(66,133,244,0.2)",
+            border:       "1px solid rgba(66,133,244,0.4)",
+            borderRadius: "50px",
+            padding:      "2px 8px",
+            color:        "#60a5fa",
+            fontSize:     "11px",
+            fontWeight:   700,
           }}>
             {formatDistance(remainingDist)}
           </span>
         )}
-
-        {/* Map icon */}
         <i className="fa fa-map" style={{ color: "#4285F4", fontSize: "14px" }} />
-
-        {/* Keyframe for the live dot animation */}
         <style>{`@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(1.3)} }`}</style>
       </div>
     );
@@ -198,129 +199,271 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
   return (
     <div style={{
       position:      "fixed",
-      inset:         0,           // shorthand for top:0, right:0, bottom:0, left:0
-      zIndex:        9000,        // above all page content
+      inset:         0,
+      zIndex:        9000,
       display:       "flex",
       flexDirection: "column",
-      background:    "#000",      // fallback while map tiles load
+      background:    "#000",
     }}>
 
       {/* ============================================================
-          TOP BAR — route label + control buttons
+          NEXT MANEUVER BAR — Google Maps-style navigation instruction
           ============================================================ */}
       <div style={{
         position:       "absolute",
         top:            0, left: 0, right: 0,
-        zIndex:         10,           // above the map canvas
-        display:        "flex",
-        alignItems:     "center",
-        justifyContent: "space-between",
-        padding:        "16px",
-        // Gradient so buttons are readable over any map tile background
-        background:     "linear-gradient(to bottom, rgba(0,0,0,0.75) 0%, transparent 100%)",
+        zIndex:         20,
+        padding:        "12px 16px 8px",
+        background:     "linear-gradient(to bottom, rgba(0,0,0,0.88) 0%, transparent 100%)",
+        pointerEvents:  "none",
       }}>
+        {/* ── Row 1: Next turn instruction ── */}
+        {currentStep && (
+          <div style={{
+            display:        "flex",
+            alignItems:     "center",
+            gap:            "12px",
+            background:     "rgba(15,15,26,0.92)",
+            backdropFilter: "blur(16px)",
+            border:         "1px solid rgba(255,255,255,0.08)",
+            borderRadius:   "16px",
+            padding:        "12px 16px",
+            marginBottom:   "8px",
+            boxShadow:      "0 4px 24px rgba(0,0,0,0.5)",
+            pointerEvents:  "auto",
+          }}>
 
-        {/* Left: route route label pill */}
-        <div style={{
-          background:     "rgba(0,0,0,0.6)",
-          backdropFilter: "blur(12px)",
-          border:         "1px solid rgba(255,255,255,0.1)",
-          borderRadius:   "50px",
-          padding:        "8px 16px",
-          display:        "flex",
-          alignItems:     "center",
-          gap:            "8px",
-        }}>
-          {/* Live green dot — animated with the same "pulse" keyframe */}
-          <span style={{
-            width: "8px", height: "8px", borderRadius: "50%",
-            background:  "#22c55e",
-            animation:   "pulse 2s ease-in-out infinite",
-            flexShrink:  0,
-          }} />
-          <span style={{ color: "white", fontWeight: 700, fontSize: "13px" }}>
-            {(ride.fromName || "From").split(",")[0]}
-            {" → "}
-            {(ride.destinationName || "Destination").split(",")[0]}
-          </span>
-        </div>
-
-        {/* Right: Minimize + Close buttons */}
-        <div style={{ display: "flex", gap: "8px" }}>
-
-          {/* Minimize — keeps the ride alive, shows the floating chip */}
-          <button
-            onClick={() => setMinimized(true)}
-            title="Minimize map"
-            style={{
-              width: "40px", height: "40px",
-              borderRadius:   "50%",
-              background:     "rgba(0,0,0,0.6)",
-              backdropFilter: "blur(12px)",
-              border:         "1px solid rgba(255,255,255,0.15)",
-              color:          "white",
-              cursor:         "pointer",
+            {/* Maneuver icon circle */}
+            <div style={{
+              width:          "48px",
+              height:         "48px",
+              borderRadius:   "14px",
+              background:     "linear-gradient(135deg, rgba(66,133,244,0.3), rgba(66,133,244,0.15))",
+              border:         "1.5px solid rgba(66,133,244,0.4)",
               display:        "flex",
               alignItems:     "center",
               justifyContent: "center",
-              fontSize:       "14px",
-            }}
-          >
-            <i className="fa fa-minus" />
-          </button>
+              flexShrink:     0,
+            }}>
+              <i
+                className={`fa ${currentStep.icon}`}
+                style={{ color: "#4285F4", fontSize: "20px" }}
+              />
+            </div>
 
-          {/* Close — hides overlay; ride keeps running, chip appears next visit */}
-          <button
-            onClick={onClose}
-            title="Close map (ride stays active)"
-            style={{
-              width: "40px", height: "40px",
-              borderRadius:   "50%",
-              background:     "rgba(0,0,0,0.6)",
-              backdropFilter: "blur(12px)",
-              border:         "1px solid rgba(255,255,255,0.15)",
-              color:          "white",
-              cursor:         "pointer",
-              display:        "flex",
-              alignItems:     "center",
-              justifyContent: "center",
-              fontSize:       "14px",
-            }}
-          >
-            <i className="fa fa-times" />
-          </button>
-        </div>
+            {/* Instruction text + distance */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {/* Distance to next maneuver */}
+              {stepDist > 0 && (
+                <p style={{
+                  color:      "#4285F4",
+                  fontWeight: 900,
+                  fontSize:   "13px",
+                  margin:     "0 0 2px",
+                  letterSpacing: "0.5px",
+                }}>
+                  in {formatDistance(stepDist)}
+                </p>
+              )}
+              {/* Instruction */}
+              <p style={{
+                color:      "white",
+                fontWeight: 700,
+                fontSize:   "15px",
+                margin:     0,
+                lineHeight: "1.3",
+                overflow:   "hidden",
+                textOverflow:"ellipsis",
+                display:    "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical",
+              }}>
+                {currentStep.instruction}
+              </p>
+            </div>
+
+            {/* Right: control buttons */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px", pointerEvents: "auto" }}>
+              {/* Directions list toggle */}
+              <button
+                onClick={() => setShowDirections(v => !v)}
+                title="Show all directions"
+                style={{
+                  width:          "36px",
+                  height:         "36px",
+                  borderRadius:   "10px",
+                  background:     showDirections
+                    ? "linear-gradient(135deg, rgba(249,115,22,0.3), rgba(236,72,153,0.2))"
+                    : "rgba(255,255,255,0.08)",
+                  border:         showDirections
+                    ? "1px solid rgba(249,115,22,0.5)"
+                    : "1px solid rgba(255,255,255,0.12)",
+                  color:          showDirections ? "#f97316" : "white",
+                  cursor:         "pointer",
+                  display:        "flex",
+                  alignItems:     "center",
+                  justifyContent: "center",
+                  fontSize:       "13px",
+                  transition:     "background 0.2s, border 0.2s",
+                }}
+              >
+                <i className="fa fa-list" />
+              </button>
+              {/* Minimize */}
+              <button
+                onClick={() => setMinimized(true)}
+                title="Minimize"
+                style={{
+                  width:          "36px",
+                  height:         "36px",
+                  borderRadius:   "10px",
+                  background:     "rgba(255,255,255,0.08)",
+                  border:         "1px solid rgba(255,255,255,0.12)",
+                  color:          "white",
+                  cursor:         "pointer",
+                  display:        "flex",
+                  alignItems:     "center",
+                  justifyContent: "center",
+                  fontSize:       "12px",
+                }}
+              >
+                <i className="fa fa-minus" />
+              </button>
+              {/* Close */}
+              <button
+                onClick={onClose}
+                title="Close map"
+                style={{
+                  width:          "36px",
+                  height:         "36px",
+                  borderRadius:   "10px",
+                  background:     "rgba(255,255,255,0.08)",
+                  border:         "1px solid rgba(255,255,255,0.12)",
+                  color:          "white",
+                  cursor:         "pointer",
+                  display:        "flex",
+                  alignItems:     "center",
+                  justifyContent: "center",
+                  fontSize:       "13px",
+                }}
+              >
+                <i className="fa fa-times" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── If no steps yet (loading or no steps data) — show compact top bar ── */}
+        {!currentStep && (
+          <div style={{
+            display:        "flex",
+            alignItems:     "center",
+            justifyContent: "space-between",
+            background:     "rgba(0,0,0,0.65)",
+            backdropFilter: "blur(12px)",
+            border:         "1px solid rgba(255,255,255,0.1)",
+            borderRadius:   "50px",
+            padding:        "8px 16px",
+            pointerEvents:  "auto",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span style={{
+                width: "8px", height: "8px", borderRadius: "50%",
+                background: "#22c55e", animation: "pulse 2s ease-in-out infinite",
+              }} />
+              <span style={{ color: "white", fontWeight: 700, fontSize: "13px" }}>
+                {(ride.fromName || "From").split(",")[0]} → {(ride.destinationName || "Destination").split(",")[0]}
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button onClick={() => setMinimized(true)} style={topBtnStyle}>
+                <i className="fa fa-minus" />
+              </button>
+              <button onClick={onClose} style={topBtnStyle}>
+                <i className="fa fa-times" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ============================================================
-          MAP CANVAS — fills the remaining space between top and bottom bars
-          RideMap handles GPS dot, blue route line, and dynamic trimming.
+          MAP CANVAS
           ============================================================ */}
       <div style={{ flex: 1, position: "relative" }}>
         <RideMap
           ride={ride}
           myLocation={myLocation}
-          isLive={true}            // enables dynamic route trimming
+          isLive={true}
         />
 
-        {/* GPS error banner — shown when location permission is denied */}
+        {/* GPS error banner */}
         {gpsError && (
           <div style={{
             position:       "absolute",
-            top:            "70px",
+            top:            "160px",
             left:           "50%",
             transform:      "translateX(-50%)",
-            background:     "rgba(239,68,68,0.9)",
+            background:     "rgba(239,68,68,0.92)",
             color:          "white",
             padding:        "8px 16px",
-            borderRadius:   "8px",
+            borderRadius:   "10px",
             fontSize:       "12px",
             backdropFilter: "blur(8px)",
             whiteSpace:     "nowrap",
             zIndex:         20,
+            boxShadow:      "0 4px 16px rgba(239,68,68,0.4)",
           }}>
             <i className="fa fa-triangle-exclamation" style={{ marginRight: "6px" }} />
             GPS: {gpsError}
+          </div>
+        )}
+
+        {/* ── Speed HUD chip (bottom-left) ── */}
+        {myLocation?.speed != null && myLocation.speed >= 0 && (
+          <div style={{
+            position:       "absolute",
+            bottom:         "170px",
+            left:           "16px",
+            zIndex:         20,
+            background:     "rgba(15,15,26,0.9)",
+            backdropFilter: "blur(12px)",
+            border:         "1px solid rgba(255,255,255,0.1)",
+            borderRadius:   "14px",
+            padding:        "10px 14px",
+            textAlign:      "center",
+            minWidth:       "60px",
+          }}>
+            <p style={{ color: "white", fontWeight: 900, fontSize: "20px", margin: 0, lineHeight: 1 }}>
+              {Math.round(myLocation.speed * 3.6)}
+            </p>
+            <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "9px", margin: "3px 0 0", textTransform: "uppercase", letterSpacing: "1px" }}>
+              km/h
+            </p>
+          </div>
+        )}
+
+        {/* ── Step progress indicator (bottom-right) ── */}
+        {steps.length > 0 && (
+          <div style={{
+            position:       "absolute",
+            bottom:         "170px",
+            right:          "16px",
+            zIndex:         20,
+            background:     "rgba(15,15,26,0.9)",
+            backdropFilter: "blur(12px)",
+            border:         "1px solid rgba(255,255,255,0.1)",
+            borderRadius:   "14px",
+            padding:        "10px 14px",
+            textAlign:      "center",
+            minWidth:       "60px",
+          }}>
+            <p style={{ color: "#4285F4", fontWeight: 900, fontSize: "16px", margin: 0, lineHeight: 1 }}>
+              {activeStep + 1}/{steps.length}
+            </p>
+            <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "9px", margin: "3px 0 0", textTransform: "uppercase", letterSpacing: "1px" }}>
+              Steps
+            </p>
           </div>
         )}
       </div>
@@ -332,8 +475,8 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
         position:   "absolute",
         bottom:     0, left: 0, right: 0,
         zIndex:     10,
-        background: "linear-gradient(to top, rgba(0,0,0,0.9) 0%, transparent 100%)",
-        padding:    "24px 16px 24px",
+        background: "linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.8) 60%, transparent 100%)",
+        padding:    "20px 16px 24px",
       }}>
 
         {/* ── Stats row ── */}
@@ -342,58 +485,49 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
           alignItems:     "center",
           justifyContent: "center",
           gap:            "24px",
-          marginBottom:   "16px",
+          marginBottom:   "14px",
         }}>
-
-          {/* Remaining Distance
-              If GPS is available → show live remaining distance.
-              Otherwise → fall back to total distance from saved ride. */}
+          {/* Remaining Distance */}
           <div style={{ textAlign: "center" }}>
-            <p style={{ color: "#4285F4", fontWeight: 900, fontSize: "20px", margin: 0 }}>
+            <p style={{ color: "#4285F4", fontWeight: 900, fontSize: "22px", margin: 0 }}>
               {remainingDist != null
-                ? formatDistance(remainingDist)      // live: from current GPS to dest
-                : formatDistance(ride.distanceMeters) // fallback: total route distance
-              }
+                ? formatDistance(remainingDist)
+                : formatDistance(ride.distanceMeters)}
             </p>
-            <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "10px", margin: 0, textTransform: "uppercase", letterSpacing: "1px" }}>
-              {/* Label changes based on whether we have GPS */}
+            <p style={{ color: "rgba(255,255,255,0.45)", fontSize: "10px", margin: 0, textTransform: "uppercase", letterSpacing: "1px" }}>
               {remainingDist != null ? "Remaining" : "Distance"}
             </p>
           </div>
 
-          <div style={{ width: "1px", height: "32px", background: "rgba(255,255,255,0.15)" }} />
+          <div style={{ width: "1px", height: "32px", background: "rgba(255,255,255,0.12)" }} />
 
-          {/* Remaining ETA
-              If GPS is available → live ETA based on remaining distance.
-              Otherwise → fall back to original estimated duration. */}
+          {/* ETA */}
           <div style={{ textAlign: "center" }}>
-            <p style={{ color: "white", fontWeight: 900, fontSize: "20px", margin: 0 }}>
+            <p style={{ color: "white", fontWeight: 900, fontSize: "22px", margin: 0 }}>
               {remainingTime != null
-                ? formatDuration(remainingTime)      // live ETA
-                : formatDuration(ride.durationSeconds) // fallback: total duration
-              }
+                ? formatDuration(remainingTime)
+                : formatDuration(ride.durationSeconds)}
             </p>
-            <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "10px", margin: 0, textTransform: "uppercase", letterSpacing: "1px" }}>
+            <p style={{ color: "rgba(255,255,255,0.45)", fontSize: "10px", margin: 0, textTransform: "uppercase", letterSpacing: "1px" }}>
               ETA
             </p>
           </div>
 
-          <div style={{ width: "1px", height: "32px", background: "rgba(255,255,255,0.15)" }} />
+          <div style={{ width: "1px", height: "32px", background: "rgba(255,255,255,0.12)" }} />
 
-          {/* Ride type emoji */}
+          {/* Ride type */}
           <div style={{ textAlign: "center" }}>
-            <p style={{ color: "white", fontWeight: 900, fontSize: "20px", margin: 0 }}>
+            <p style={{ color: "white", fontWeight: 900, fontSize: "22px", margin: 0 }}>
               {ride.rideType === "solo" ? "🏍️" : "👥"}
             </p>
-            <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "10px", margin: 0, textTransform: "uppercase", letterSpacing: "1px" }}>
+            <p style={{ color: "rgba(255,255,255,0.45)", fontSize: "10px", margin: 0, textTransform: "uppercase", letterSpacing: "1px" }}>
               {ride.rideType}
             </p>
           </div>
         </div>
 
-        {/* ── End Ride button (two-click confirm pattern) ── */}
+        {/* ── End Ride button (two-click confirm) ── */}
         {confirmEnd ? (
-          // Confirmation state — shows Cancel + Confirm buttons side by side
           <div style={{ display: "flex", gap: "8px" }}>
             <button
               onClick={cancelEnd}
@@ -434,12 +568,11 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
             </button>
           </div>
         ) : (
-          // Default: single End Ride button (first click → shows confirmation)
           <button
             onClick={handleEndRide}
             style={{
               width:          "100%",
-              padding:        "16px",
+              padding:        "15px",
               background:     "rgba(239,68,68,0.15)",
               border:         "1.5px solid rgba(239,68,68,0.5)",
               borderRadius:   "14px",
@@ -456,8 +589,39 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
         )}
       </div>
 
-      {/* Keyframe for the top-bar live dot animation */}
-      <style>{`@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(1.4)} }`}</style>
+      {/* ============================================================
+          DIRECTIONS PANEL — slide-up drawer with all steps
+          ============================================================ */}
+      {showDirections && (
+        <DirectionsPanel
+          steps={steps}
+          activeStep={activeStep}
+          onClose={() => setShowDirections(false)}
+          totalDist={ride.distanceMeters}
+          totalTime={ride.durationSeconds}
+          destName={(ride.destinationName || "Destination").split(",")[0]}
+        />
+      )}
+
+      <style>{`
+        @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(1.4)} }
+      `}</style>
     </div>
   );
 }
+
+// ── Shared small top-bar button style ──
+const topBtnStyle = {
+  width:          "36px",
+  height:         "36px",
+  borderRadius:   "50%",
+  background:     "rgba(0,0,0,0.6)",
+  backdropFilter: "blur(12px)",
+  border:         "1px solid rgba(255,255,255,0.15)",
+  color:          "white",
+  cursor:         "pointer",
+  display:        "flex",
+  alignItems:     "center",
+  justifyContent: "center",
+  fontSize:       "14px",
+};

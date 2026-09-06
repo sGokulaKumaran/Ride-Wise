@@ -187,6 +187,7 @@ export default function RideSetupFlow({ rideType, userId, onRideCreated, onCance
         destinationLng:  dest.lng,
         destinationName: dest.name,
         routeCoordinates: JSON.stringify(route.coordinates), // [[lng,lat], ...]
+        routeSteps:       route.steps || [],                 // turn-by-turn steps array
         distanceMeters:   route.distance,
         durationSeconds:  route.duration,
       });
@@ -219,13 +220,20 @@ export default function RideSetupFlow({ rideType, userId, onRideCreated, onCance
         destinationLng:   dest.lng,
         // Store coordinates as JSON string (our DB column type is TEXT)
         routeCoordinates: JSON.stringify(routeData.coordinates),
+        // Store turn-by-turn steps as JSON string for navigation
+        routeSteps:       JSON.stringify(routeData.steps || []),
         distanceMeters:   routeData.distance,
         durationSeconds:  routeData.duration,
         rideType:         rideType, // "solo"
       };
 
       // Save to backend (or localStorage fallback)
+      // Attach routeSteps directly to savedRide so navigation has them
+      // immediately (before the backend might strip unknown fields).
       const savedRide = await createRide(ridePayload);
+      if (!savedRide.routeSteps && routeData.steps?.length) {
+        savedRide.routeSteps = routeData.steps; // client-side attach for instant nav
+      }
 
       // Tell the parent (Home.jsx) to open the full-screen map for this ride
       onRideCreated(savedRide);
@@ -540,25 +548,26 @@ export default function RideSetupFlow({ rideType, userId, onRideCreated, onCance
 
           {/* Route stats */}
           <div style={{
-            display: "grid", gridTemplateColumns: "1fr 1fr 1fr",
-            gap: "8px",
+            display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr",
+            gap: "6px",
           }}>
             {[
               { label: "Distance", value: formatDistance(routeData?.distance), color: "#f97316" },
               { label: "Duration", value: formatDuration(routeData?.duration), color: "#fff" },
-              { label: "Type",     value: rideType,                             color: "#60a5fa" },
+              { label: "Turns",    value: String(routeData?.steps?.length || 0), color: "#60a5fa" },
+              { label: "Type",     value: rideType,                              color: "#34d399" },
             ].map(({ label, value, color }) => (
               <div
                 key={label}
                 style={{
-                  padding: "12px", borderRadius: "12px",
+                  padding: "10px 8px", borderRadius: "12px",
                   background: "rgba(255,255,255,0.04)",
                   border: "1px solid rgba(255,255,255,0.08)",
                   textAlign: "center",
                 }}
               >
-                <p style={{ color, fontWeight: 900, fontSize: "16px", margin: 0, textTransform: "capitalize" }}>{value}</p>
-                <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "10px", margin: 0, textTransform: "uppercase", letterSpacing: "1px", marginTop: "2px" }}>{label}</p>
+                <p style={{ color, fontWeight: 900, fontSize: "14px", margin: 0, textTransform: "capitalize" }}>{value}</p>
+                <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "9px", margin: 0, textTransform: "uppercase", letterSpacing: "1px", marginTop: "2px" }}>{label}</p>
               </div>
             ))}
           </div>
@@ -580,6 +589,115 @@ export default function RideSetupFlow({ rideType, userId, onRideCreated, onCance
               {(destCoords?.name || destText).split(",")[0]}
             </p>
           </div>
+
+          {/* First-step directions preview (first 4 steps) */}
+          {routeData?.steps?.length > 0 && (
+            <div style={{
+              borderRadius: "12px",
+              border: "1px solid rgba(255,255,255,0.07)",
+              overflow: "hidden",
+            }}>
+              {/* Header */}
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "10px 14px",
+                background: "rgba(66,133,244,0.08)",
+                borderBottom: "1px solid rgba(255,255,255,0.06)",
+              }}>
+                <i className="fa fa-list" style={{ color: "#4285F4", fontSize: "12px" }} />
+                <span style={{ color: "rgba(255,255,255,0.7)", fontSize: "11px", fontWeight: 700 }}>
+                  Turn-by-turn preview
+                </span>
+                <span style={{
+                  marginLeft: "auto",
+                  background: "rgba(66,133,244,0.2)",
+                  color: "#60a5fa",
+                  fontSize: "10px",
+                  fontWeight: 700,
+                  padding: "2px 8px",
+                  borderRadius: "50px",
+                }}>
+                  {routeData.steps.length} steps
+                </span>
+              </div>
+
+              {/* Step rows (first 4 only) */}
+              {routeData.steps.slice(0, 4).map((step, i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    padding: "9px 14px",
+                    borderBottom: i < 3 && i < routeData.steps.length - 1
+                      ? "1px solid rgba(255,255,255,0.04)"
+                      : "none",
+                    background: i === 0 ? "rgba(255,255,255,0.03)" : "transparent",
+                  }}
+                >
+                  <div style={{
+                    width: "28px",
+                    height: "28px",
+                    borderRadius: "8px",
+                    background: i === 0
+                      ? "rgba(66,133,244,0.2)"
+                      : "rgba(255,255,255,0.05)",
+                    border: `1px solid ${i === 0 ? "rgba(66,133,244,0.35)" : "rgba(255,255,255,0.08)"}`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}>
+                    <i
+                      className={`fa ${step.icon}`}
+                      style={{
+                        color:    i === 0 ? "#4285F4" : "rgba(255,255,255,0.4)",
+                        fontSize: "11px",
+                      }}
+                    />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{
+                      color: i === 0 ? "white" : "rgba(255,255,255,0.55)",
+                      fontSize: "11px",
+                      fontWeight: i === 0 ? 700 : 400,
+                      margin: 0,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}>
+                      {step.instruction}
+                    </p>
+                  </div>
+                  {step.distance > 0 && (
+                    <span style={{
+                      color: "rgba(255,255,255,0.3)",
+                      fontSize: "10px",
+                      flexShrink: 0,
+                    }}>
+                      {formatDistance(step.distance)}
+                    </span>
+                  )}
+                </div>
+              ))}
+
+              {/* "... and N more" if steps > 4 */}
+              {routeData.steps.length > 4 && (
+                <div style={{
+                  padding: "8px 14px",
+                  color: "rgba(255,255,255,0.3)",
+                  fontSize: "10px",
+                  textAlign: "center",
+                  background: "rgba(255,255,255,0.02)",
+                }}>
+                  + {routeData.steps.length - 4} more steps (shown during navigation)
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Error */}
           {error && <ErrorBox message={error} />}

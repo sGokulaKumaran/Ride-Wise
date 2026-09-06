@@ -7,29 +7,52 @@
 //   a backend or re-rendering React would be too expensive.
 //   This wrapper throttles updates to once every THROTTLE_MS.
 //
+// LOCATION OBJECT SHAPE:
+//   {
+//     lat:       number,   — latitude in decimal degrees
+//     lng:       number,   — longitude in decimal degrees
+//     accuracy:  number,   — accuracy radius in metres
+//     speed:     number|null, — speed in m/s (null if unavailable)
+//     heading:   number|null, — direction in degrees 0–360 (null if unavailable)
+//     timestamp: number,   — ms since epoch
+//   }
+//
 // EXPORTS:
-//   getCurrentLocation()          → Promise<{lat,lng,accuracy}>
-//   watchLocation(onUpdate, onError) → stop() function
+//   getCurrentLocation()               → Promise<LocationObj>
+//   watchLocation(onUpdate, onError)   → stop() function
 // ============================================================
 
 // ---------------------------------------------------------------------------
-// THROTTLE: minimum milliseconds between emitted location updates
-// 3000ms = update at most once every 3 seconds
-// You can lower this (e.g. 1000) for smoother tracking at the cost of battery
+// THROTTLE: minimum milliseconds between emitted location updates.
+// 2000ms = update at most once every 2 seconds — responsive enough for
+// navigation while still battery-friendly.
 // ---------------------------------------------------------------------------
-const THROTTLE_MS = 3000;
+const THROTTLE_MS = 2000;
 
 // ---------------------------------------------------------------------------
 // GPS options passed to the browser API
 // enableHighAccuracy: true  → use GPS chip (more accurate, uses more battery)
-// maximumAge: 5000          → accept cached positions up to 5 seconds old
+// maximumAge: 3000          → accept cached positions up to 3 seconds old
 // timeout: 10000            → give up if no fix in 10 seconds
 // ---------------------------------------------------------------------------
 const GPS_OPTIONS = {
   enableHighAccuracy: true,
-  maximumAge:         5000,
+  maximumAge:         3000,
   timeout:            10000,
 };
+
+// ── Internal helper to extract a clean location object from a GeolocationPosition ──
+function posToLocation(pos) {
+  return {
+    lat:       pos.coords.latitude,
+    lng:       pos.coords.longitude,
+    accuracy:  pos.coords.accuracy,
+    // speed / heading may be null on desktop browsers; always forward them
+    speed:     pos.coords.speed   ?? null,   // m/s (null if not available)
+    heading:   pos.coords.heading ?? null,   // degrees 0–360 (null if not available)
+    timestamp: pos.timestamp,
+  };
+}
 
 // ============================================================
 // getCurrentLocation — one-shot position fetch
@@ -37,21 +60,13 @@ const GPS_OPTIONS = {
 // ============================================================
 export function getCurrentLocation() {
   return new Promise((resolve, reject) => {
-    // Check if the browser supports geolocation at all
     if (!navigator.geolocation) {
       reject(new Error("Geolocation is not supported by this browser."));
       return;
     }
-
-    // Ask browser for the current position (one time only)
     navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({
-        lat:       pos.coords.latitude,   // decimal degrees, e.g. 13.0827
-        lng:       pos.coords.longitude,  // decimal degrees, e.g. 80.2707
-        accuracy:  pos.coords.accuracy,   // metres radius of uncertainty
-        timestamp: pos.timestamp,         // ms since epoch
-      }),
-      (err) => reject(err),   // e.g. user denied permission
+      (pos) => resolve(posToLocation(pos)),
+      (err)  => reject(err),
       GPS_OPTIONS
     );
   });
@@ -60,45 +75,32 @@ export function getCurrentLocation() {
 // ============================================================
 // watchLocation — continuous position tracking (with throttle)
 //
-// onUpdate(location) is called at most once every THROTTLE_MS
-// Returns a stop() function — call it to cancel tracking
+// onUpdate(location) is called at most once every THROTTLE_MS.
+// Returns a stop() function — call it to cancel tracking.
 // ============================================================
 export function watchLocation(onUpdate, onError) {
-  // Guard: check for support before subscribing
   if (!navigator.geolocation) {
     console.warn("[locationService] Geolocation not supported.");
     if (onError) onError(new Error("Geolocation not supported"));
-    return () => {}; // return no-op stop function
+    return () => {};
   }
 
-  let lastEmitTime = 0; // timestamp of last callback we actually fired
+  let lastEmitTime = 0;
 
-  // Subscribe to continuous position updates from the browser
   const watchId = navigator.geolocation.watchPosition(
     (pos) => {
       const now = Date.now();
-
-      // Throttle: skip this update if we just emitted one recently
       if (now - lastEmitTime < THROTTLE_MS) return;
-      lastEmitTime = now; // record when we last emitted
-
-      // Call the consumer with a clean location object
-      onUpdate({
-        lat:       pos.coords.latitude,
-        lng:       pos.coords.longitude,
-        accuracy:  pos.coords.accuracy,
-        timestamp: pos.timestamp,
-      });
+      lastEmitTime = now;
+      onUpdate(posToLocation(pos));
     },
     (err) => {
-      // Pass the error up to the consumer (e.g. show a banner in the UI)
       console.warn("[locationService] GPS error:", err.message);
       if (onError) onError(err);
     },
     GPS_OPTIONS
   );
 
-  // Return a stop function so the caller can unsubscribe
   return () => {
     navigator.geolocation.clearWatch(watchId);
   };
