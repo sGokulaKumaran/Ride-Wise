@@ -163,7 +163,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
           bottom:         "80px",
           left:           "50%",
           transform:      "translateX(-50%)",
-          zIndex:         9999,
+          zIndex:         9999, // this is the minimize
           display:        "flex",
           alignItems:     "center",
           gap:            "12px",
@@ -213,7 +213,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
     <div style={{
       position:      "fixed",
       inset:         0,
-      zIndex:        9000,
+      zIndex:        999,
       display:       "flex",
       flexDirection: "column",
       background:    "#000",
@@ -225,7 +225,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
       <div style={{
         position:       "absolute",
         top:            0, left: 0, right: 0,
-        zIndex:         20,
+        zIndex:         9999,
         padding:        "12px 16px 8px",
         background:     "linear-gradient(to bottom, rgba(0,0,0,0.88) 0%, transparent 100%)",
         pointerEvents:  "none",
@@ -484,7 +484,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
             position:       "absolute",
             bottom:         "170px",
             right:          "16px",
-            zIndex:         20,
+            zIndex:         999,
             background:     "rgba(15,15,26,0.9)",
             backdropFilter: "blur(12px)",
             border:         "1px solid rgba(255,255,255,0.1)",
@@ -509,7 +509,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
       <div style={{
         position:   "absolute",
         bottom:     0, left: 0, right: 0,
-        zIndex:     10,
+        zIndex:     999,
         background: "linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.8) 60%, transparent 100%)",
         padding:    "20px 16px 24px",
       }}>

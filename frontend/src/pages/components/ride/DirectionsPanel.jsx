@@ -41,7 +41,7 @@ export default function DirectionsPanel({
     <div style={{
       position:       "fixed",
       inset:          0,
-      zIndex:         9500,
+      zIndex:         9999,
       display:        "flex",
       flexDirection:  "column",
       justifyContent: "flex-end",
@@ -61,7 +61,7 @@ export default function DirectionsPanel({
       {/* ── Drawer ── */}
       <div style={{
         position:       "relative",
-        zIndex:         1,
+        zIndex:         1999,
         background:     "linear-gradient(180deg, #0f0f1a 0%, #0a0a14 100%)",
         borderRadius:   "24px 24px 0 0",
         maxHeight:      "72vh",

@@ -75,7 +75,6 @@ if (typeof document !== "undefined" && !document.getElementById("rw-leaflet-css"
   s.id = "rw-leaflet-css";
   s.textContent = `
     @keyframes rw-pulse { 0%{transform:scale(0.85);opacity:0.9} 60%{transform:scale(2.6);opacity:0} 100%{transform:scale(0.85);opacity:0} }
-    .leaflet-routing-container { display:none !important; }
     .leaflet-container { width:100%; height:100%; }
     /* Push Leaflet controls down so they don't hide under the top panel */
     .leaflet-top { top: 80px !important; }
@@ -116,7 +115,7 @@ function RoutingMachine({ from, to }) {
           { color: "#4285F4", weight: 12, opacity: 1.0 },
         ],
       },
-      show:               false,
+      show:               true,
       addWaypoints:       false,
       routeWhileDragging: false,
       draggableWaypoints: false,
@@ -307,12 +306,12 @@ export default function RideMap({ ride, myLocation, isLive = false }) {
       </MapContainer>
 
       {/* ── Tile switcher (overlay, outside MapContainer so pointer events work) ── */}
-      <div className="rw-custom-control" style={{ position: "absolute", top: "80px", right: "10px", zIndex: 9999 }}>
+      <div className="rw-custom-control" style={{ position: "absolute", top: "170px", right: "10px", zIndex: 9999 }}>
         <button
           title="Switch map style"
           onClick={() => setShowTiles(v => !v)}
           style={{
-            width: "34px", height: "34px", borderRadius: "8px",
+            width: "50px", height: "50px", borderRadius: "8px",
             background: "rgba(255,255,255,0.95)",
             border: "2px solid rgba(200,200,200,0.6)",
             boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
