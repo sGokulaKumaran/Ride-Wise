@@ -5,6 +5,9 @@ import { defineConfig } from 'vite'
 // https://vite.dev/config/      This link provide vite official doc 
 export default defineConfig({
   plugins: [react()],
+  optimizeDeps: {
+    include: ['leaflet', 'leaflet-routing-machine'],
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src') //this point the src file always with @ 

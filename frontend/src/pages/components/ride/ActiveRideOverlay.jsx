@@ -425,7 +425,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
       {/* ============================================================
           MAP CANVAS
           ============================================================ */}
-      <div style={{ flex: 1, position: "relative" }}>
+      <div style={{ flex: 1, position: "relative", height: 0, overflow: "hidden" }}>
         <RideMap
           ride={ride}
           myLocation={myLocation}

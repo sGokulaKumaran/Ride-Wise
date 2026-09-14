@@ -26,6 +26,7 @@ import { geocode, getRoute, formatDistance, formatDuration } from "../../../serv
 import { getCurrentLocation }                                  from "../../../services/locationService";
 import { createRide }                                          from "../../../services/rideApi";
 import RideMap                                                 from "./RideMap";
+import LocationSearchInput                                     from "../shared/LocationSearchInput";
 
 // ---------------------------------------------------------------------------
 // Preset popular destinations — shown as quick-pick chips
@@ -323,60 +324,19 @@ export default function RideSetupFlow({ rideType, userId, onRideCreated, onCance
             <div style={{ flex: 1, height: "1px", background: "rgba(255,255,255,0.1)" }} />
           </div>
 
-          {/* Text input for FROM */}
-          <div style={{ position: "relative" }}>
-            <i className="fa fa-map-marker-alt" style={{
-              position: "absolute", left: "14px", top: "50%",
-              transform: "translateY(-50%)", color: "#22c55e", fontSize: "14px",
-            }} />
-            <input
-              type="text"
-              value={fromText}
-              onChange={e => handleFromType(e.target.value)}
-              placeholder="e.g. Chennai Central, Koyambedu..."
-              className={`w-full ${tc.input}`}
-              style={{
-                paddingLeft: "40px", paddingRight: "16px",
-                paddingTop: "14px", paddingBottom: "14px",
-                borderRadius: "14px", border: "1.5px solid rgba(255,255,255,0.12)",
-                background: "rgba(255,255,255,0.05)", outline: "none",
-                fontSize: "14px",
-              }}
-              onFocus={e => e.target.style.borderColor = "rgba(249,115,22,0.5)"}
-              onBlur={e => e.target.style.borderColor = "rgba(255,255,255,0.12)"}
-            />
-          </div>
-
-          {/* FROM suggestions dropdown */}
-          {fromSuggestions.length > 0 && (
-            <div style={{
-              background: "rgba(10,10,15,0.97)",
-              backdropFilter: "blur(20px)",
-              border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: "14px",
-              overflow: "hidden",
-              boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-            }}>
-              {fromSuggestions.map((place, i) => (
-                <button
-                  key={i}
-                  onClick={() => pickFrom(place)}
-                  style={{
-                    width: "100%", padding: "12px 16px",
-                    borderBottom: i < fromSuggestions.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none",
-                    display: "flex", alignItems: "center", gap: "10px",
-                    background: "transparent", color: "inherit",
-                    cursor: "pointer", textAlign: "left", fontSize: "13px",
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
-                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-                >
-                  <i className="fa fa-location-dot" style={{ color: "#22c55e", fontSize: "12px", flexShrink: 0 }} />
-                  {place}
-                </button>
-              ))}
-            </div>
-          )}
+          {/* Text input for FROM — live OSM geocoder */}
+          <LocationSearchInput
+            icon="fa-map-marker-alt"
+            iconColor="#22c55e"
+            placeholder="Search any city, area, landmark..."
+            value={fromText}
+            onChange={(text) => { setFromText(text); setUsingGps(false); setFromCoords(null); }}
+            onSelect={(result) => {
+              setFromText(result.label);
+              setFromCoords({ lat: result.lat, lng: result.lng, name: result.label });
+            }}
+            tc={tc}
+          />
 
           {/* Error */}
           {error && <ErrorBox message={error} />}
@@ -436,58 +396,19 @@ export default function RideSetupFlow({ rideType, userId, onRideCreated, onCance
             </div>
           </div>
 
-          {/* Destination input */}
-          <div style={{ position: "relative" }}>
-            <i className="fa fa-flag-checkered" style={{
-              position: "absolute", left: "14px", top: "50%",
-              transform: "translateY(-50%)", color: "#ef4444", fontSize: "14px",
-            }} />
-            <input
-              type="text"
-              value={destText}
-              onChange={e => handleDestType(e.target.value)}
-              placeholder="e.g. Pondicherry, Ooty, Goa..."
-              autoFocus
-              className={tc.input}
-              style={{
-                width: "100%", paddingLeft: "40px", paddingRight: "16px",
-                paddingTop: "14px", paddingBottom: "14px",
-                borderRadius: "14px", border: "1.5px solid rgba(255,255,255,0.12)",
-                background: "rgba(255,255,255,0.05)", outline: "none",
-                fontSize: "14px", boxSizing: "border-box",
-              }}
-              onFocus={e => e.target.style.borderColor = "rgba(249,115,22,0.5)"}
-              onBlur={e => e.target.style.borderColor = "rgba(255,255,255,0.12)"}
-            />
-          </div>
-
-          {/* Destination suggestions dropdown */}
-          {destSuggestions.length > 0 && (
-            <div style={{
-              background: "rgba(10,10,15,0.97)", backdropFilter: "blur(20px)",
-              border: "1px solid rgba(255,255,255,0.08)", borderRadius: "14px",
-              overflow: "hidden", boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-            }}>
-              {destSuggestions.map((place, i) => (
-                <button
-                  key={i}
-                  onClick={() => pickDest(place)}
-                  style={{
-                    width: "100%", padding: "12px 16px",
-                    borderBottom: i < destSuggestions.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none",
-                    display: "flex", alignItems: "center", gap: "10px",
-                    background: "transparent", color: "inherit",
-                    cursor: "pointer", textAlign: "left", fontSize: "13px",
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
-                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-                >
-                  <i className="fa fa-location-dot" style={{ color: "#ef4444", fontSize: "12px", flexShrink: 0 }} />
-                  {place}
-                </button>
-              ))}
-            </div>
-          )}
+          {/* Destination input — live OSM geocoder */}
+          <LocationSearchInput
+            icon="fa-flag-checkered"
+            iconColor="#ef4444"
+            placeholder="Search destination city, place..."
+            value={destText}
+            onChange={(text) => { setDestText(text); setDestCoords(null); }}
+            onSelect={(result) => {
+              setDestText(result.label);
+              setDestCoords({ lat: result.lat, lng: result.lng, name: result.label });
+            }}
+            tc={tc}
+          />
 
           {/* Error */}
           {error && <ErrorBox message={error} />}
@@ -549,7 +470,7 @@ export default function RideSetupFlow({ rideType, userId, onRideCreated, onCance
           </p>
 
           {/* Mini map preview */}
-          <div style={{ height: "240px", borderRadius: "16px", overflow: "hidden", border: "1px solid rgba(255,255,255,0.1)" }}>
+          <div style={{ height: "240px", borderRadius: "16px", overflow: "hidden", border: "1px solid rgba(255,255,255,0.1)", position: "relative" }}>
             <RideMap ride={previewRide} isLive={false} />
           </div>
 

@@ -7,6 +7,9 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 // Wraps the entire app — makes auth state available everywhere
 
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+
 import LoginPage from "./pages/landing-page/Login";   // Public — entry point
 import Onboarding from "./pages/Onboarding";          // Public — between signup and home
 
@@ -43,6 +46,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
+      <ToastContainer position="bottom-right" autoClose={3000} theme="dark" />
     </AuthProvider>
   );
 }

@@ -10,10 +10,17 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@react-leaflet/core": "^3.0.0",
+    "leaflet": "^1.9.4",
+    "leaflet-geosearch": "^4.4.0",
+    "leaflet-routing-machine": "^3.2.12",
     "maplibre-gl": "^6.7.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-router-dom": "^7.18.2"
+    "react-leaflet": "^5.0.0",
+    "react-router-dom": "^7.18.2",
+    "react-select": "^5.10.2",
+    "react-toastify": "^11.1.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
