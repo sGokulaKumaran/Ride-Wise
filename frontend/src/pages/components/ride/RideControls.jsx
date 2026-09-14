@@ -57,7 +57,7 @@ export default function RideControls({ ride, onCloseMap, onRideEnded }) {
         {/* Close Map — hides map but keeps ride active */}
         <button
           onClick={onCloseMap}
-          className="flex-1 py-3 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 font-bold transition-all text-sm"
+          className="flex-1 py-3 rounded-xl border border-/15 bg-white/5 hover:bg-white/10 font-bold transition-all text-sm"
         >
           <i className="fa fa-eye-slash mr-2" />Hide Map
         </button>

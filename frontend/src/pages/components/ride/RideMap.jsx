@@ -77,6 +77,12 @@ if (typeof document !== "undefined" && !document.getElementById("rw-leaflet-css"
     @keyframes rw-pulse { 0%{transform:scale(0.85);opacity:0.9} 60%{transform:scale(2.6);opacity:0} 100%{transform:scale(0.85);opacity:0} }
     .leaflet-routing-container { display:none !important; }
     .leaflet-container { width:100%; height:100%; }
+    /* Push Leaflet controls down so they don't hide under the top panel */
+    .leaflet-top { top: 80px !important; }
+    /* Push Leaflet controls up so they don't hide under the bottom panel */
+    .leaflet-bottom { bottom: 120px !important; }
+    /* Make sure our custom overlay controls are always clickable and on top */
+    .rw-custom-control { z-index: 9999 !important; pointer-events: auto !important; }
   `;
   document.head.appendChild(s);
 }
@@ -154,6 +160,18 @@ function MapInternals({ ride, myLocation, isLive, tileLayerRef, activeTileIdx })
     const stop = () => { followRef.current = false; };
     map.on("dragstart", stop);
     return () => map.off("dragstart", stop);
+  }, [map]);
+
+  // Listen for the custom "re-center" event
+  useEffect(() => {
+    if (!map) return;
+    const handleRecenter = (e) => {
+      const { lat, lng } = e.detail;
+      followRef.current = true; // Re-enable follow mode
+      map.setView([lat, lng], Math.max(map.getZoom(), 16), { animate: true, duration: 0.5 });
+    };
+    window.addEventListener("rw-recenter", handleRecenter);
+    return () => window.removeEventListener("rw-recenter", handleRecenter);
   }, [map]);
 
   // A marker (start)
@@ -289,7 +307,7 @@ export default function RideMap({ ride, myLocation, isLive = false }) {
       </MapContainer>
 
       {/* ── Tile switcher (overlay, outside MapContainer so pointer events work) ── */}
-      <div style={{ position: "absolute", top: "80px", right: "10px", zIndex: 1000 }}>
+      <div className="rw-custom-control" style={{ position: "absolute", top: "80px", right: "10px", zIndex: 9999 }}>
         <button
           title="Switch map style"
           onClick={() => setShowTiles(v => !v)}
@@ -337,6 +355,7 @@ export default function RideMap({ ride, myLocation, isLive = false }) {
       {/* ── Re-center button (live rides only) ── */}
       {isLive && myLocation?.lat && (
         <button
+          className="rw-custom-control"
           title="Re-center on your location"
           onClick={() => {
             /* trigger via map ref is tricky outside MapContainer —
@@ -346,7 +365,7 @@ export default function RideMap({ ride, myLocation, isLive = false }) {
             }));
           }}
           style={{
-            position: "absolute", bottom: "110px", right: "10px", zIndex: 1000,
+            position: "absolute", bottom: "110px", right: "10px", zIndex: 9999,
             width: "46px", height: "46px", borderRadius: "13px",
             background: "rgba(255,255,255,0.95)",
             border: "2px solid rgba(66,133,244,0.6)",
