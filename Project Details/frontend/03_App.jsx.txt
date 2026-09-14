@@ -1,0 +1,214 @@
+================================================================================
+  RIDEWISE PROJECT -- CODE EXPLANATION
+  File    : App.jsx
+  Located : E:\My projects\RideWise\frontend\src\App.jsx
+  Purpose : This file acts as the main map or switchboard for the application. It defines all the different web pages (URLs) the user can visit and decides which component to show on the screen based on the current URL.
+================================================================================
+
+  KEY CONCEPTS IN THIS FILE
+  -------------------------
+  Routing: The system that changes what is on the screen when the web address changes, without reloading the whole page.
+  Context Providers: Special wrappers that share data (like user login status) with every page inside them.
+  Protected Routes: Special pages that check if a user is allowed to see them (like if they are logged in) before showing up.
+
+================================================================================
+  LINE-BY-LINE CODE EXPLANATION
+================================================================================
+
+LINE 1:
+  import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+  -- Brings in tools to manage web addresses and navigation within the app.
+
+LINE 2:
+  // BrowserRouter: enables URL-based navigation
+  -- A comment explaining what the tool for managing web addresses does.
+
+LINE 3:
+  // Routes: container for all route definitions
+  -- A comment explaining what the tool that holds all the different page links does.
+
+LINE 4:
+  // Route: one URL pattern → one component
+  -- A comment explaining that this tool connects a specific web address to a specific screen.
+
+LINE 5:
+  // Navigate: redirect component
+  -- A comment explaining what the tool for automatically sending users to a different page does.
+
+LINE 6:
+  
+  -- (blank line -- spacing only, no code effect)
+
+LINE 7:
+  import { AuthProvider } from "./context/AuthContext";
+  -- Brings in a wrapper component that manages and shares user login information across the whole app.
+
+LINE 8:
+  // Wraps the entire app — makes auth state available everywhere
+  -- A comment explaining the purpose of the wrapper component from line 7.
+
+LINE 9:
+  
+  -- (blank line -- spacing only, no code effect)
+
+LINE 10:
+  import LoginPage from "./pages/landing-page/Login";   // Public — entry point
+  -- Brings in the code for the Login page screen.
+
+LINE 11:
+  import Onboarding from "./pages/Onboarding";          // Public — between signup and home
+  -- Brings in the code for the Onboarding page screen, shown to new users.
+
+LINE 12:
+  
+  -- (blank line -- spacing only, no code effect)
+
+LINE 13:
+  import Account from "./pages/Account";   // Protected
+  -- Brings in the code for the Account page screen.
+
+LINE 14:
+  import Home from "./pages/Home";         // Protected
+  -- Brings in the code for the Home page screen.
+
+LINE 15:
+  import Settings from "./pages/Settings"; // Protected
+  -- Brings in the code for the Settings page screen.
+
+LINE 16:
+  import Riders from "./pages/Riders";     // Protected (NEW)
+  -- Brings in the code for the Riders page screen.
+
+LINE 17:
+  
+  -- (blank line -- spacing only, no code effect)
+
+LINE 18:
+  import ProtectedRoute from "./pages/components/shared/ProtectedRoute";
+  -- Brings in a special guard component that stops guests from seeing logged-in pages.
+
+LINE 19:
+  // The "security guard" — checks auth before allowing access
+  -- A comment explaining that the component from line 18 acts as a security checkpoint.
+
+LINE 20:
+  
+  -- (blank line -- spacing only, no code effect)
+
+LINE 21:
+  export default function App() {
+  -- Starts defining the main App component and makes it available to use in other files. The open brace starts the function body.
+
+LINE 22:
+    return (
+  -- Starts the block of code that says what this component will show on the screen. The open parenthesis starts the display output.
+
+LINE 23:
+      <AuthProvider>           {/* Step 1: Provide auth context to entire app */}
+  -- Starts a wrapper that gives every page inside it access to the user's login information.
+
+LINE 24:
+        <BrowserRouter>        {/* Step 2: Enable client-side routing */}
+  -- Starts a wrapper that listens to changes in the web address bar to switch pages smoothly.
+
+LINE 25:
+          <Routes>             {/* Step 3: Define all routes */}
+  -- Starts the list of all possible web addresses in the app.
+
+LINE 26:
+            
+  -- (blank line -- spacing only, no code effect)
+
+LINE 27:
+            {/* ─── PUBLIC ROUTES (no login required) ─── */}
+  -- A comment marking the start of pages anyone can visit.
+
+LINE 28:
+            <Route path="/"           element={<LoginPage />} />
+  -- Connects the main web address ('/') to the Login page screen.
+
+LINE 29:
+            <Route path="/onboarding" element={<Onboarding />} />
+  -- Connects the '/onboarding' web address to the Onboarding page screen.
+
+LINE 30:
+            
+  -- (blank line -- spacing only, no code effect)
+
+LINE 31:
+            {/* ─── PROTECTED ROUTES (login + onboarding required) ─── */}
+  -- A comment marking the start of pages that need you to be logged in.
+
+LINE 32:
+            <Route path="/home"     element={<ProtectedRoute><Home /></ProtectedRoute>} />
+  -- Connects the '/home' address to the Home screen, but wraps it in the security guard component to check login first.
+
+LINE 33:
+            <Route path="/riders"   element={<ProtectedRoute><Riders /></ProtectedRoute>} />
+  -- Connects the '/riders' address to the Riders screen, guarded to ensure the user is logged in.
+
+LINE 34:
+            <Route path="/account"  element={<ProtectedRoute><Account /></ProtectedRoute>} />
+  -- Connects the '/account' address to the Account screen, guarded to ensure the user is logged in.
+
+LINE 35:
+            <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+  -- Connects the '/settings' address to the Settings screen, guarded to ensure the user is logged in.
+
+LINE 36:
+            
+  -- (blank line -- spacing only, no code effect)
+
+LINE 37:
+            {/* ─── REDIRECTS (old URLs → new) ─── */}
+  -- A comment marking the start of rules for sending people from old links to new ones.
+
+LINE 38:
+            <Route path="/saved"   element={<Navigate to="/home" replace />} />
+  -- Says if someone visits '/saved', automatically send them to the '/home' page instead.
+
+LINE 39:
+            <Route path="/profile" element={<Navigate to="/account" replace />} />
+  -- Says if someone visits '/profile', automatically send them to the '/account' page instead.
+
+LINE 40:
+            <Route path="/login"   element={<Navigate to="/" replace />} />
+  -- Says if someone visits '/login', automatically send them to the main '/' page instead.
+
+LINE 41:
+            
+  -- (blank line -- spacing only, no code effect)
+
+LINE 42:
+            {/* ─── 404 CATCH-ALL ─── */}
+  -- A comment explaining what happens if a user types a link that does not exist.
+
+LINE 43:
+            <Route path="*" element={<Navigate to="/" replace />} />
+  -- Says if someone visits any address ('*') that does not match the ones above, send them to the main page.
+
+LINE 44:
+          </Routes>
+  -- Closes the list of web addresses started on line 25.
+
+LINE 45:
+        </BrowserRouter>
+  -- Closes the address listener wrapper started on line 24.
+
+LINE 46:
+      </AuthProvider>
+  -- Closes the login information wrapper started on line 23.
+
+LINE 47:
+    );
+  -- Closes the display output block started on line 22.
+
+LINE 48:
+  }
+  -- Closes the function body started on line 21.
+
+================================================================================
+  HOW THIS FILE CONNECTS TO THE REST OF THE APP
+================================================================================
+  This file is used by main.jsx to display the entire app on the screen. It is connected to every single page component (like Login, Home, Account) because it controls when and where they are displayed. If this file breaks, users cannot navigate anywhere in the app.
+================================================================================\n

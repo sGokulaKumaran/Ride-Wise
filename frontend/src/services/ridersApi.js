@@ -48,15 +48,16 @@ export async function searchRiders(query, currentUserId) {
 
   const params = new URLSearchParams({ query: q, userId: currentUserId });
   const res = await fetch(`/api/riders/search?${params}`);
-  return handleResponse(res);
+  return handleResponse(res); // its return the server status
 }
 
 // ── addRider(userId, riderId) ──
 // Returns { success: true/false }
 export async function addRider(userId, riderId) {
-  if (!userId || !riderId) return { success: false, error: "Missing IDs" };
-  if (userId === riderId)  return { success: false, error: "Cannot add yourself" };
+  if (!userId || !riderId) return { success: false, error: "Missing IDs" };// is to avoid to add unknown rider not exist
+  if (userId === riderId)  return { success: false, error: "Cannot add yourself" }; //is to avoid to add myself
 
+  // add rider to the backend
   const res = await fetch("/api/riders/add", {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
@@ -97,6 +98,7 @@ export async function getNearRiders(userId) {
   const res = await fetch(`/api/riders/nearby?${params}`);
   return handleResponse(res);
 }
+// this two getconnetions and the getnerby function are mostly handle in the backend not in this frontend
 
 // ── isConnected(userId, riderId) ──
 // Synchronous check using the cached connections list.

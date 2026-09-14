@@ -94,8 +94,10 @@ export default function Home() {
     try {
       const all = await getUserRides(user.id);
       setRides(all); // newest first (backend orders by createdAt desc)
+      return all;
     } catch (e) {
       console.error("Failed to load rides:", e);
+      return [];
     } finally {
       setLoading(false);
     }
@@ -134,13 +136,19 @@ export default function Home() {
   };
 
   // Called by ActiveRideOverlay when user confirms "End Ride"
+  // BUG FIX: we must setMapRide(null) BEFORE refreshing so the overlay
+  // doesn't still show "active" state with a stale ride object.
   const handleEndRide = async () => {
     if (!mapRide?.id) return;
+    const rideId = mapRide.id;
+    // Close map immediately — prevents re-opening a stale active ride object
+    setMapRide(null);
     try {
-      await endRide(mapRide.id);  // PATCH status → "completed" in backend
+      await endRide(rideId);  // PATCH status → "completed" in backend
+    } catch(e) {
+      console.error("End ride failed:", e);
     } finally {
-      setMapRide(null);           // close the map
-      refreshRides();             // refresh history list
+      refreshRides();             // refresh history list to show completed status
     }
   };
 

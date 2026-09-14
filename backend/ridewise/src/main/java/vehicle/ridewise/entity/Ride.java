@@ -35,6 +35,9 @@ public class Ride { // Define class
     @Column(name = "route_coordinates", columnDefinition = "TEXT") // Column for route coordinates
     private String routeCoordinates; // Route coordinates field
 
+    @Column(name = "route_steps", columnDefinition = "TEXT") // Column for route steps (turn-by-turn)
+    private String routeSteps; // Route steps field
+
     @Column(name = "distance_meters") // Column for distance
     private Double distanceMeters; // Distance field
 
@@ -129,6 +132,14 @@ public class Ride { // Define class
 
     public void setRouteCoordinates(String routeCoordinates) { // Set routeCoordinates
         this.routeCoordinates = routeCoordinates; // Assign routeCoordinates
+    } // End setter
+
+    public String getRouteSteps() { // Get routeSteps
+        return routeSteps; // Return routeSteps
+    } // End getter
+
+    public void setRouteSteps(String routeSteps) { // Set routeSteps
+        this.routeSteps = routeSteps; // Assign routeSteps
     } // End setter
 
     public Double getDistanceMeters() { // Get distanceMeters

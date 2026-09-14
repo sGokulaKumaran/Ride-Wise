@@ -14,6 +14,7 @@ public class RideResponse { // Define class
     private Double destinationLat; // Destination latitude field
     private Double destinationLng; // Destination longitude field
     private String routeCoordinates; // Route coordinates field
+    private String routeSteps;       // Route turn-by-turn steps field
     private Double distanceMeters; // Distance field
     private Double durationSeconds; // Duration field
     private String rideType; // Ride type field
@@ -32,6 +33,7 @@ public class RideResponse { // Define class
         res.setDestinationLat(ride.getDestinationLat()); // Set Destination Lat
         res.setDestinationLng(ride.getDestinationLng()); // Set Destination Lng
         res.setRouteCoordinates(ride.getRouteCoordinates()); // Set Route
+        res.setRouteSteps(ride.getRouteSteps()); // Set Route Steps
         res.setDistanceMeters(ride.getDistanceMeters()); // Set Distance
         res.setDurationSeconds(ride.getDurationSeconds()); // Set Duration
         res.setRideType(ride.getRideType()); // Set Type
@@ -112,6 +114,14 @@ public class RideResponse { // Define class
 
     public void setRouteCoordinates(String routeCoordinates) { // Set routeCoordinates
         this.routeCoordinates = routeCoordinates; // Assign routeCoordinates
+    } // End setter
+
+    public String getRouteSteps() { // Get routeSteps
+        return routeSteps; // Return routeSteps
+    } // End getter
+
+    public void setRouteSteps(String routeSteps) { // Set routeSteps
+        this.routeSteps = routeSteps; // Assign routeSteps
     } // End setter
 
     public Double getDistanceMeters() { // Get distanceMeters

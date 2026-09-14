@@ -1,0 +1,1634 @@
+================================================================================
+  RIDEWISE PROJECT -- CODE EXPLANATION
+  File    : Riders.jsx
+  Located : E:\My projects\RideWise\frontend\src\pages\Riders.jsx
+  Purpose : Manages the user's social network within RideWise. Allows them to add, remove, and view connected riders, as well as discover nearby riders using location-based searches.
+================================================================================
+
+  KEY CONCEPTS IN THIS FILE
+  -------------------------
+  1. Multi-View State: Uses a single 'view' state string to toggle between 'all', 'add', 'remove', and 'near' sub-screens.
+  2. Debounced Searching: Optimizes network calls by waiting for the user to pause typing before searching the database.
+  3. Reusable Sub-components: Defines internal 'RiderCard' and 'EmptyState' helper components to keep the main code clean.
+  4. Network Operations: Connects to ridersApi to handle CRUD operations on user connections.
+
+================================================================================
+  LINE-BY-LINE CODE EXPLANATION
+================================================================================
+
+LINE 1:
+  // ============================================================
+  -- This is a comment: ============================================================
+
+LINE 2:
+  // 🏍️ Riders — Manage rider connections
+  -- This is a comment: 🏍️ Riders — Manage rider connections
+
+LINE 3:
+  // Route: /riders (protected)
+  -- This is a comment: Route: /riders (protected)
+
+LINE 4:
+  //
+  -- This is a comment: 
+
+LINE 5:
+  // SAFETY:
+  -- This is a comment: SAFETY:
+
+LINE 6:
+  //   - Uses `user?.id` everywhere (defensive against missing user)
+  -- This is a comment: - Uses `user?.id` everywhere (defensive against missing user)
+
+LINE 7:
+  //   - Properly imports onStartRide prop for MobileNav
+  -- This is a comment: - Properly imports onStartRide prop for MobileNav
+
+LINE 8:
+  //   - Re-fetches when user.id changes
+  -- This is a comment: - Re-fetches when user.id changes
+
+LINE 9:
+  // ============================================================
+  -- This is a comment: ============================================================
+
+LINE 10:
+  
+  -- (blank line -- spacing only)
+
+LINE 11:
+  import { useState, useEffect } from "react";
+  -- Imports core React features to enable state and component lifecycle management.
+
+LINE 12:
+  import { useTheme } from "./hooks/useTheme";
+  -- Imports our custom useTheme hook to handle dark/light mode classes.
+
+LINE 13:
+  import { useAuth } from "../context/AuthContext";
+  -- Imports authentication context to get the currently logged-in user's details.
+
+LINE 14:
+  import Sidebar from "./components/layout/Sidebar";
+  -- Imports a reusable UI component to use within this page.
+
+LINE 15:
+  import TopBar from "./components/layout/TopBar";
+  -- Imports a reusable UI component to use within this page.
+
+LINE 16:
+  import MobileNav from "./components/layout/MobileNav";
+  -- Imports a reusable UI component to use within this page.
+
+LINE 17:
+  import {
+  -- Imports an external module or local file required for this page.
+
+LINE 18:
+    searchRiders,
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 19:
+    addRider,
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 20:
+    removeRider,
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 21:
+    getConnectionsFull,
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 22:
+    getNearRiders,
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 23:
+  } from "../services/ridersApi";
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 24:
+  
+  -- (blank line -- spacing only)
+
+LINE 25:
+  export default function Riders() {
+  -- Declares and exports the main React component function so it can be used in app routing.
+
+LINE 26:
+    const { theme, setTheme, tc } = useTheme();
+  -- Destructures and extracts useful properties (like user data or theme classes) from our custom hooks.
+
+LINE 27:
+    const { user } = useAuth();
+  -- Destructures and extracts useful properties (like user data or theme classes) from our custom hooks.
+
+LINE 28:
+  
+  -- (blank line -- spacing only)
+
+LINE 29:
+    // view: "all" | "add" | "remove" | "near"
+  -- This is a comment: view: "all" | "add" | "remove" | "near"
+
+LINE 30:
+    const [view, setView] = useState("all");
+  -- Initializes a state variable 'view' and its setter function 'setView'. This tells React to remember this value and update the screen when it changes.
+
+LINE 31:
+  
+  -- (blank line -- spacing only)
+
+LINE 32:
+    const [connections,   setConnections]   = useState([]);
+  -- Initializes a state variable 'connections' and its setter function 'setConnections'. This tells React to remember this value and update the screen when it changes.
+
+LINE 33:
+    const [nearRiders,    setNearRiders]    = useState([]);
+  -- Initializes a state variable 'nearRiders' and its setter function 'setNearRiders'. This tells React to remember this value and update the screen when it changes.
+
+LINE 34:
+    const [searchQuery,   setSearchQuery]   = useState("");
+  -- Initializes a state variable 'searchQuery' and its setter function 'setSearchQuery'. This tells React to remember this value and update the screen when it changes.
+
+LINE 35:
+    const [searchResults, setSearchResults] = useState([]);
+  -- Initializes a state variable 'searchResults' and its setter function 'setSearchResults'. This tells React to remember this value and update the screen when it changes.
+
+LINE 36:
+    const [searching,     setSearching]     = useState(false);
+  -- Initializes a state variable 'searching' and its setter function 'setSearching'. This tells React to remember this value and update the screen when it changes.
+
+LINE 37:
+    const [loading,       setLoading] = useState(false);
+  -- Initializes a state variable 'loading' and its setter function 'setLoading'. This tells React to remember this value and update the screen when it changes.
+
+LINE 38:
+    const [toast,         setToast]         = useState("");
+  -- Initializes a state variable 'toast' and its setter function 'setToast'. This tells React to remember this value and update the screen when it changes.
+
+LINE 39:
+  
+  -- (blank line -- spacing only)
+
+LINE 40:
+    const currentUserId = user?.id;
+  -- Declares a constant variable used to store data or compute logic.
+
+LINE 41:
+  
+  -- (blank line -- spacing only)
+
+LINE 42:
+    // Derive a Set of connected IDs from the connections list for O(1) lookup
+  -- This is a comment: Derive a Set of connected IDs from the connections list for O(1) lookup
+
+LINE 43:
+    const connectedIds = new Set(connections.map((c) => c.id));
+  -- Declares a constant variable used to store data or compute logic.
+
+LINE 44:
+  
+  -- (blank line -- spacing only)
+
+LINE 45:
+    // ── Reload connections ──
+  -- This is a comment: ── Reload connections ──
+
+LINE 46:
+    const reloadConnections = async () => {
+  -- Defines an arrow function for a specific action or calculation.
+
+LINE 47:
+      if (!currentUserId) return;
+  -- An if-statement to execute code conditionally.
+
+LINE 48:
+      setLoading(true);
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 49:
+      try {
+  -- Starts a try-catch block to handle potential errors gracefully, especially useful for network requests.
+
+LINE 50:
+        const list = await getConnectionsFull(currentUserId);
+  -- Declares a constant variable used to store data or compute logic.
+
+LINE 51:
+        setConnections(list);
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 52:
+      } catch (e) {
+  -- Catches any errors that occurred in the try block and handles them (e.g., logging or showing a message).
+
+LINE 53:
+        console.error("Failed to load connections:", e);
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 54:
+      } finally {
+  -- Evaluates a JavaScript expression or object inside the code.
+
+LINE 55:
+        setLoading(false);
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 56:
+      }
+  -- Closes the previous block of code (function, object, or hook).
+
+LINE 57:
+    };
+  -- Closes the previous block of code (function, object, or hook).
+
+LINE 58:
+  
+  -- (blank line -- spacing only)
+
+LINE 59:
+    useEffect(() => {
+  -- Starts a useEffect hook, which allows us to run side-effects (like fetching data) automatically when the component loads or when specific variables change.
+
+LINE 60:
+      reloadConnections();
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 61:
+    }, [currentUserId]);
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 62:
+  
+  -- (blank line -- spacing only)
+
+LINE 63:
+    // ── Reload near riders ──
+  -- This is a comment: ── Reload near riders ──
+
+LINE 64:
+    const loadNearRiders = async () => {
+  -- Defines an arrow function for a specific action or calculation.
+
+LINE 65:
+      if (!currentUserId) return;
+  -- An if-statement to execute code conditionally.
+
+LINE 66:
+      setLoading(true);
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 67:
+      try {
+  -- Starts a try-catch block to handle potential errors gracefully, especially useful for network requests.
+
+LINE 68:
+        const list = await getNearRiders(currentUserId);
+  -- Declares a constant variable used to store data or compute logic.
+
+LINE 69:
+        setNearRiders(list);
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 70:
+      } catch (e) {
+  -- Catches any errors that occurred in the try block and handles them (e.g., logging or showing a message).
+
+LINE 71:
+        console.error("Failed to load near riders:", e);
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 72:
+      } finally {
+  -- Evaluates a JavaScript expression or object inside the code.
+
+LINE 73:
+        setLoading(false);
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 74:
+      }
+  -- Closes the previous block of code (function, object, or hook).
+
+LINE 75:
+    };
+  -- Closes the previous block of code (function, object, or hook).
+
+LINE 76:
+  
+  -- (blank line -- spacing only)
+
+LINE 77:
+    // ── Debounced search (only in "add" view) ──
+  -- This is a comment: ── Debounced search (only in "add" view) ──
+
+LINE 78:
+    useEffect(() => {
+  -- Starts a useEffect hook, which allows us to run side-effects (like fetching data) automatically when the component loads or when specific variables change.
+
+LINE 79:
+      if (view !== "add" || !currentUserId) return;
+  -- An if-statement to execute code conditionally.
+
+LINE 80:
+      if (searchQuery.trim().length === 0) {
+  -- An if-statement to execute code conditionally.
+
+LINE 81:
+        setSearchResults([]);
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 82:
+        return;
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 83:
+      }
+  -- Closes the previous block of code (function, object, or hook).
+
+LINE 84:
+      const t = setTimeout(async () => {
+  -- Defines an arrow function for a specific action or calculation.
+
+LINE 85:
+        setSearching(true);
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 86:
+        try {
+  -- Starts a try-catch block to handle potential errors gracefully, especially useful for network requests.
+
+LINE 87:
+          const results = await searchRiders(searchQuery, currentUserId);
+  -- Declares a constant variable used to store data or compute logic.
+
+LINE 88:
+          setSearchResults(results);
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 89:
+        } catch (e) {
+  -- Catches any errors that occurred in the try block and handles them (e.g., logging or showing a message).
+
+LINE 90:
+          console.error("Search failed:", e);
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 91:
+   setSearchResults([]);
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 92:
+        } finally {
+  -- Evaluates a JavaScript expression or object inside the code.
+
+LINE 93:
+          setSearching(false);
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 94:
+        }
+  -- Closes the previous block of code (function, object, or hook).
+
+LINE 95:
+      }, 250);
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 96:
+      return () => clearTimeout(t);
+  -- Begins the return statement, outlining the JSX (HTML-like) code that React will render on the screen.
+
+LINE 97:
+    }, [searchQuery, view, currentUserId]);
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 98:
+  
+  -- (blank line -- spacing only)
+
+LINE 99:
+    // ── Actions ──
+  -- This is a comment: ── Actions ──
+
+LINE 100:
+    const showToast = (msg) => {
+  -- Defines an arrow function for a specific action or calculation.
+
+LINE 101:
+      setToast(msg);
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 102:
+      setTimeout(() => setToast(""), 2500);
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 103:
+    };
+  -- Closes the previous block of code (function, object, or hook).
+
+LINE 104:
+  
+  -- (blank line -- spacing only)
+
+LINE 105:
+    const handleAdd = async (rider) => {
+  -- Defines an event handler function that will run when a specific user action (like clicking) occurs.
+
+LINE 106:
+      if (!currentUserId) return;
+  -- An if-statement to execute code conditionally.
+
+LINE 107:
+      try {
+  -- Starts a try-catch block to handle potential errors gracefully, especially useful for network requests.
+
+LINE 108:
+        const res = await addRider(currentUserId, rider.id);
+  -- Declares a constant variable used to store data or compute logic.
+
+LINE 109:
+        if (res.success) {
+  -- An if-statement to execute code conditionally.
+
+LINE 110:
+          showToast(`✅ Added @${rider.username || rider.email.split("@")[0]}`);
+  -- Evaluates a JavaScript expression or object inside the code.
+
+LINE 111:
+          await reloadConnections();
+  -- Pauses the execution of this async function until the promise (like a network request) resolves.
+
+LINE 112:
+        } else {
+  -- Evaluates a JavaScript expression or object inside the code.
+
+LINE 113:
+          showToast(`⚠️ Already in your connections`);
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 114:
+        }
+  -- Closes the previous block of code (function, object, or hook).
+
+LINE 115:
+      } catch (e) {
+  -- Catches any errors that occurred in the try block and handles them (e.g., logging or showing a message).
+
+LINE 116:
+        showToast(`❌ ${e.message || "Failed to add rider"}`);
+  -- Evaluates a JavaScript expression or object inside the code.
+
+LINE 117:
+      }
+  -- Closes the previous block of code (function, object, or hook).
+
+LINE 118:
+    };
+  -- Closes the previous block of code (function, object, or hook).
+
+LINE 119:
+  
+  -- (blank line -- spacing only)
+
+LINE 120:
+    const handleRemove = async (rider) => {
+  -- Defines an event handler function that will run when a specific user action (like clicking) occurs.
+
+LINE 121:
+      if (!currentUserId) return;
+  -- An if-statement to execute code conditionally.
+
+LINE 122:
+      try {
+  -- Starts a try-catch block to handle potential errors gracefully, especially useful for network requests.
+
+LINE 123:
+        const res = await removeRider(currentUserId, rider.id);
+  -- Declares a constant variable used to store data or compute logic.
+
+LINE 124:
+        if (res.success) {
+  -- An if-statement to execute code conditionally.
+
+LINE 125:
+          showToast(`🗑️ Removed @${rider.username || rider.email.split("@")[0]}`);
+  -- Evaluates a JavaScript expression or object inside the code.
+
+LINE 126:
+          await reloadConnections();
+  -- Pauses the execution of this async function until the promise (like a network request) resolves.
+
+LINE 127:
+        } else {
+  -- Evaluates a JavaScript expression or object inside the code.
+
+LINE 128:
+          showToast(`⚠️ Not in your connections`);
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 129:
+        }
+  -- Closes the previous block of code (function, object, or hook).
+
+LINE 130:
+      } catch (e) {
+  -- Catches any errors that occurred in the try block and handles them (e.g., logging or showing a message).
+
+LINE 131:
+        showToast(`❌ ${e.message || "Failed to remove rider"}`);
+  -- Evaluates a JavaScript expression or object inside the code.
+
+LINE 132:
+      }
+  -- Closes the previous block of code (function, object, or hook).
+
+LINE 133:
+    };
+  -- Closes the previous block of code (function, object, or hook).
+
+LINE 134:
+  
+  -- (blank line -- spacing only)
+
+LINE 135:
+    // ── Rider card ──
+  -- This is a comment: ── Rider card ──
+
+LINE 136:
+    const RiderCard = ({ rider, showAdd, showRemove, distance }) => {
+  -- Defines an arrow function for a specific action or calculation.
+
+LINE 137:
+      const displayName = rider.username || rider.email.split("@")[0];
+  -- Declares a constant variable used to store data or compute logic.
+
+LINE 138:
+      const initial = (rider.username || rider.email).charAt(0).toUpperCase();
+  -- Declares a constant variable used to store data or compute logic.
+
+LINE 139:
+  
+  -- (blank line -- spacing only)
+
+LINE 140:
+      return (
+  -- Begins the return statement, outlining the JSX (HTML-like) code that React will render on the screen.
+
+LINE 141:
+        <div
+  -- Creates a standard structural container (div).
+
+LINE 142:
+          className={`flex items-center gap-3 p-4 rounded-2xl border transition-all hover:scale-[1.01] hover:shadow-lg ${tc.card} ${tc.cardHover}`}
+  -- Evaluates a JavaScript expression or object inside the code.
+
+LINE 143:
+        >
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 144:
+          <div className="relative shrink-0">
+  -- Creates a container (div) element. Tailwind classes are applied here to control layout (e.g., flexbox), spacing (padding/margin), and visual styling (colors, borders).
+
+LINE 145:
+            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center font-black text-white text-lg">
+  -- Creates a container (div) element. Tailwind classes are applied here to control layout (e.g., flexbox), spacing (padding/margin), and visual styling (colors, borders).
+
+LINE 146:
+              {initial}
+  -- Evaluates a JavaScript expression or object inside the code.
+
+LINE 147:
+            </div>
+  -- Closes the div element.
+
+LINE 148:
+          </div>
+  -- Closes the div element.
+
+LINE 149:
+  
+  -- (blank line -- spacing only)
+
+LINE 150:
+          <div className="flex-1 min-w-0">
+  -- Creates a container (div) element. Tailwind classes are applied here to control layout (e.g., flexbox), spacing (padding/margin), and visual styling (colors, borders).
+
+LINE 151:
+            <p className="font-bold text-sm truncate">@{displayName}</p>
+  -- Renders a text paragraph element, typically styled with theme text classes.
+
+LINE 152:
+            <p className={`text-xs ${tc.sub} truncate`}>{rider.email}</p>
+  -- Renders a text paragraph element, typically styled with theme text classes.
+
+LINE 153:
+            {rider.address && (
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 154:
+              <p className={`text-xs ${tc.sub} truncate`}>📍 {rider.address}</p>
+  -- Renders a text paragraph element, typically styled with theme text classes.
+
+LINE 155:
+            )}
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 156:
+            {distance !== undefined && distance !== null && (
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 157:
+              <p className={`text-xs ${tc.sub} truncate`}>
+  -- Renders a text paragraph element, typically styled with theme text classes.
+
+LINE 158:
+   📏 {distance.toFixed(1)} km away
+  -- Evaluates a JavaScript expression or object inside the code.
+
+LINE 159:
+              </p>
+  -- Closes the p element.
+
+LINE 160:
+            )}
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 161:
+          </div>
+  -- Closes the div element.
+
+LINE 162:
+  
+  -- (blank line -- spacing only)
+
+LINE 163:
+          {showAdd && !connectedIds.has(rider.id) && (
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 164:
+            <button
+  -- Renders an interactive button for the user to click.
+
+LINE 165:
+              onClick={() => handleAdd(rider)}
+  -- Defines an arrow function for a specific action or calculation.
+
+LINE 166:
+              className={`px-3 py-1.5 rounded-full text-xs font-bold ${tc.button} hover:scale-105 active:scale-95 transition-transform shrink-0`}
+  -- Evaluates a JavaScript expression or object inside the code.
+
+LINE 167:
+            >
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 168:
+              <i className="fa fa-plus mr-1"></i>Add
+  -- Renders an icon element using FontAwesome classes.
+
+LINE 169:
+            </button>
+  -- Closes the button element.
+
+LINE 170:
+          )}
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 171:
+          {showAdd && connectedIds.has(rider.id) && (
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 172:
+            <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-green-500/20 text-green-400 border border-green-500/30 shrink-0">
+  -- Renders a custom span component or HTML element, applying Tailwind classes for styling.
+
+LINE 173:
+              ✓ Added
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 174:
+            </span>
+  -- Closes the span element.
+
+LINE 175:
+          )}
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 176:
+          {showRemove && (
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 177:
+            <button
+  -- Renders an interactive button for the user to click.
+
+LINE 178:
+              onClick={() => handleRemove(rider)}
+  -- Defines an arrow function for a specific action or calculation.
+
+LINE 179:
+              className="px-3 py-1.5 rounded-full text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 hover:scale-105 active:scale-95 transition-all shrink-0"
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 180:
+            >
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 181:
+              <i className="fa fa-times mr-1"></i>Remove
+  -- Renders an icon element using FontAwesome classes.
+
+LINE 182:
+            </button>
+  -- Closes the button element.
+
+LINE 183:
+          )}
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 184:
+        </div>
+  -- Closes the div element.
+
+LINE 185:
+      );
+  -- Closes the previous block of code (function, object, or hook).
+
+LINE 186:
+    };
+  -- Closes the previous block of code (function, object, or hook).
+
+LINE 187:
+  
+  -- (blank line -- spacing only)
+
+LINE 188:
+    // ── Empty state ──
+  -- This is a comment: ── Empty state ──
+
+LINE 189:
+    const EmptyState = ({ icon, title, message }) => (
+  -- Defines an arrow function for a specific action or calculation.
+
+LINE 190:
+      <div className={`text-center py-10 rounded-xl border ${tc.divider}`}>
+  -- Creates a container (div) element. Tailwind classes are applied here to control layout (e.g., flexbox), spacing (padding/margin), and visual styling (colors, borders).
+
+LINE 191:
+        <i className={`fa ${icon} text-4xl mb-2 opacity-30`}></i>
+  -- Renders an icon element using FontAwesome classes.
+
+LINE 192:
+        <p className="text-sm font-bold mb-1">{title}</p>
+  -- Renders a text paragraph element, typically styled with theme text classes.
+
+LINE 193:
+        <p className={`text-xs ${tc.sub} max-w-xs mx-auto`}>{message}</p>
+  -- Renders a text paragraph element, typically styled with theme text classes.
+
+LINE 194:
+      </div>
+  -- Closes the div element.
+
+LINE 195:
+    );
+  -- Closes the previous block of code (function, object, or hook).
+
+LINE 196:
+  
+  -- (blank line -- spacing only)
+
+LINE 197:
+    return (
+  -- Begins the return statement, outlining the JSX (HTML-like) code that React will render on the screen.
+
+LINE 198:
+      <div className={`relative min-h-screen w-full overflow-x-hidden ${tc.bg} ${tc.text}`}>
+  -- Creates a container (div) element. Tailwind classes are applied here to control layout (e.g., flexbox), spacing (padding/margin), and visual styling (colors, borders).
+
+LINE 199:
+        <Sidebar tc={tc} />
+  -- Renders the Sidebar component/element.
+
+LINE 200:
+        <TopBar theme={theme} setTheme={setTheme} tc={tc} />
+  -- Renders the TopBar component/element.
+
+LINE 201:
+        <MobileNav tc={tc} onStartRide={() => {}} />
+  -- Renders the MobileNav component/element.
+
+LINE 202:
+  
+  -- (blank line -- spacing only)
+
+LINE 203:
+  <main className="lg:ml-64 pt-20 px-4 pb-24 lg:pb-8">
+  -- Renders a custom main component or HTML element, applying Tailwind classes for styling.
+
+LINE 204:
+          <div className="max-w-4xl mx-auto">
+  -- Creates a container (div) element. Tailwind classes are applied here to control layout (e.g., flexbox), spacing (padding/margin), and visual styling (colors, borders).
+
+LINE 205:
+  
+  -- (blank line -- spacing only)
+
+LINE 206:
+            {/* Header */}
+  -- Evaluates a JavaScript expression or object inside the code.
+
+LINE 207:
+            <div className="mb-6">
+  -- Creates a container (div) element. Tailwind classes are applied here to control layout (e.g., flexbox), spacing (padding/margin), and visual styling (colors, borders).
+
+LINE 208:
+              <h1 className="text-3xl md:text-4xl font-black">🏍️ Riders</h1>
+  -- Renders a heading element for large, prominent title text.
+
+LINE 209:
+              <p className={`text-sm ${tc.sub} mt-1`}>
+  -- Renders a text paragraph element, typically styled with theme text classes.
+
+LINE 210:
+                Connect with real riders, manage your network, and find people nearby
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 211:
+              </p>
+  -- Closes the p element.
+
+LINE 212:
+            </div>
+  -- Closes the div element.
+
+LINE 213:
+  
+  -- (blank line -- spacing only)
+
+LINE 214:
+            {/* 3 CTA cards */}
+  -- Evaluates a JavaScript expression or object inside the code.
+
+LINE 215:
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+  -- Creates a container (div) element. Tailwind classes are applied here to control layout (e.g., flexbox), spacing (padding/margin), and visual styling (colors, borders).
+
+LINE 216:
+              <button
+  -- Renders an interactive button for the user to click.
+
+LINE 217:
+                onClick={() => setView(view === "add" ? "all" : "add")}
+  -- Defines an arrow function for a specific action or calculation.
+
+LINE 218:
+                className={`p-5 rounded-2xl border text-left transition-all hover:scale-[1.03] active:scale-95 ${
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 219:
+                  view === "add" ? "ring-2 ring-orange-500 " + tc.card : tc.card + " " + tc.cardHover
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 220:
+                }`}
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 221:
+              >
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 222:
+                <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-3 bg-gradient-to-br from-green-400 to-emerald-500 text-white text-xl shadow-lg shadow-green-500/30">
+  -- Creates a container (div) element. Tailwind classes are applied here to control layout (e.g., flexbox), spacing (padding/margin), and visual styling (colors, borders).
+
+LINE 223:
+                  <i className="fa fa-user-plus"></i>
+  -- Renders an icon element using FontAwesome classes.
+
+LINE 224:
+                </div>
+  -- Closes the div element.
+
+LINE 225:
+                <p className="font-black text-base">Add Rider</p>
+  -- Renders a text paragraph element, typically styled with theme text classes.
+
+LINE 226:
+                <p className={`text-xs ${tc.sub} mt-1`}>Search by username</p>
+  -- Renders a text paragraph element, typically styled with theme text classes.
+
+LINE 227:
+              </button>
+  -- Closes the button element.
+
+LINE 228:
+  
+  -- (blank line -- spacing only)
+
+LINE 229:
+              <button
+  -- Renders an interactive button for the user to click.
+
+LINE 230:
+                onClick={() => setView(view === "remove" ? "all" : "remove")}
+  -- Defines an arrow function for a specific action or calculation.
+
+LINE 231:
+                className={`p-5 rounded-2xl border text-left transition-all hover:scale-[1.03] active:scale-95 ${
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 232:
+                  view === "remove" ? "ring-2 ring-orange-500 " + tc.card : tc.card + " " + tc.cardHover
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 233:
+                }`}
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 234:
+              >
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 235:
+                <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-3 bg-gradient-to-br from-red-400 to-pink-500 text-white text-xl shadow-lg shadow-red-500/30">
+  -- Creates a container (div) element. Tailwind classes are applied here to control layout (e.g., flexbox), spacing (padding/margin), and visual styling (colors, borders).
+
+LINE 236:
+                  <i className="fa fa-user-minus"></i>
+  -- Renders an icon element using FontAwesome classes.
+
+LINE 237:
+                </div>
+  -- Closes the div element.
+
+LINE 238:
+                <p className="font-black text-base">Remove Rider</p>
+  -- Renders a text paragraph element, typically styled with theme text classes.
+
+LINE 239:
+                <p className={`text-xs ${tc.sub} mt-1`}>Unfollow from your list</p>
+  -- Renders a text paragraph element, typically styled with theme text classes.
+
+LINE 240:
+              </button>
+  -- Closes the button element.
+
+LINE 241:
+  
+  -- (blank line -- spacing only)
+
+LINE 242:
+              <button
+  -- Renders an interactive button for the user to click.
+
+LINE 243:
+                onClick={() => {
+  -- Defines an arrow function for a specific action or calculation.
+
+LINE 244:
+                  if (view !== "near") {
+  -- An if-statement to execute code conditionally.
+
+LINE 245:
+                    setView("near");
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 246:
+                    loadNearRiders();
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 247:
+                  } else {
+  -- Evaluates a JavaScript expression or object inside the code.
+
+LINE 248:
+                    setView("all");
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 249:
+                  }
+  -- Closes the previous block of code (function, object, or hook).
+
+LINE 250:
+                }}
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 251:
+                className={`p-5 rounded-2xl border text-left transition-all hover:scale-[1.03] active:scale-95 ${
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 252:
+                  view === "near" ? "ring-2 ring-orange-500 " + tc.card : tc.card + " " + tc.cardHover
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 253:
+                }`}
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 254:
+              >
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 255:
+                <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-3 bg-gradient-to-br from-blue-400 to-purple-500 text-white text-xl shadow-lg shadow-blue-500/30">
+  -- Creates a container (div) element. Tailwind classes are applied here to control layout (e.g., flexbox), spacing (padding/margin), and visual styling (colors, borders).
+
+LINE 256:
+                  <i className="fa fa-location-dot"></i>
+  -- Renders an icon element using FontAwesome classes.
+
+LINE 257:
+                </div>
+  -- Closes the div element.
+
+LINE 258:
+                <p className="font-black text-base">Near Riders</p>
+  -- Renders a text paragraph element, typically styled with theme text classes.
+
+LINE 259:
+                <p className={`text-xs ${tc.sub} mt-1`}>Find riders within 50 km</p>
+  -- Renders a text paragraph element, typically styled with theme text classes.
+
+LINE 260:
+              </button>
+  -- Closes the button element.
+
+LINE 261:
+            </div>
+  -- Closes the div element.
+
+LINE 262:
+  
+  -- (blank line -- spacing only)
+
+LINE 263:
+            {/* Toast */}
+  -- Evaluates a JavaScript expression or object inside the code.
+
+LINE 264:
+            {toast && (
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 265:
+              <div className={`mb-4 p-3 rounded-xl text-sm font-semibold border backdrop-blur-xl animate-pulse ${tc.card}`}>
+  -- Creates a container (div) element. Tailwind classes are applied here to control layout (e.g., flexbox), spacing (padding/margin), and visual styling (colors, borders).
+
+LINE 266:
+                {toast}
+  -- Evaluates a JavaScript expression or object inside the code.
+
+LINE 267:
+              </div>
+  -- Closes the div element.
+
+LINE 268:
+            )}
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 269:
+  
+  -- (blank line -- spacing only)
+
+LINE 270:
+            {/* ADD VIEW */}
+  -- Evaluates a JavaScript expression or object inside the code.
+
+LINE 271:
+            {view === "add" && (
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 272:
+              <section className={`rounded-2xl border p-5 mb-6 ${tc.card}`}>
+  -- Renders a custom section component or HTML element, applying Tailwind classes for styling.
+
+LINE 273:
+                <h2 className="text-lg font-black mb-3">🔎 Search riders by username</h2>
+  -- Renders a heading element for large, prominent title text.
+
+LINE 274:
+                <div className="relative mb-4">
+  -- Creates a container (div) element. Tailwind classes are applied here to control layout (e.g., flexbox), spacing (padding/margin), and visual styling (colors, borders).
+
+LINE 275:
+                  <i className={`fa fa-search absolute left-4 top-1/2 -translate-y-1/2 ${tc.sub}`}></i>
+  -- Renders an icon element using FontAwesome classes.
+
+LINE 276:
+                  <input type="text"
+  -- Renders the input component/element.
+
+LINE 277:
+                    value={searchQuery}
+  -- Evaluates a JavaScript expression or object inside the code.
+
+LINE 278:
+                    onChange={(e) => setSearchQuery(e.target.value)}
+  -- Defines an arrow function for a specific action or calculation.
+
+LINE 279:
+                    placeholder="Type a username or email..."
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 280:
+                    className={`w-full pl-11 pr-4 py-3 rounded-xl border outline-none focus:ring-2 focus:ring-orange-500/50 ${tc.input}`}
+  -- Evaluates a JavaScript expression or object inside the code.
+
+LINE 281:
+                    autoFocus
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 282:
+                  />
+  -- A self-closing tag rendering a specific component.
+
+LINE 283:
+                  {searching && (
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 284:
+                    <i className="fa fa-spinner fa-spin absolute right-4 top-1/2 -translate-y-1/2 text-orange-400"></i>
+  -- Renders an icon element using FontAwesome classes.
+
+LINE 285:
+                  )}
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 286:
+                </div>
+  -- Closes the div element.
+
+LINE 287:
+  
+  -- (blank line -- spacing only)
+
+LINE 288:
+                {searchQuery.length === 0 ? (
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 289:
+                  <EmptyState
+  -- Renders the EmptyState component/element.
+
+LINE 290:
+                    icon="fa-search"
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 291:
+                    title="Start typing to search"
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 292:
+                    message="Search for real riders who have signed up to RideWise"
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 293:
+                  />
+  -- A self-closing tag rendering a specific component.
+
+LINE 294:
+                ) : searching ? (
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 295:
+                  <p className={`text-center text-sm ${tc.sub} py-8`}>
+  -- Renders a text paragraph element, typically styled with theme text classes.
+
+LINE 296:
+                    <i className="fa fa-spinner fa-spin mr-2"></i>Searching…
+  -- Renders an icon element using FontAwesome classes.
+
+LINE 297:
+                  </p>
+  -- Closes the p element.
+
+LINE 298:
+                ) : searchResults.length === 0 ? (
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 299:
+                  <EmptyState
+  -- Renders the EmptyState component/element.
+
+LINE 300:
+                    icon="fa-user-slash"
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 301:
+                    title="No riders found"
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 302:
+                    message={`No signed-up riders match "${searchQuery}"`}
+  -- Evaluates a JavaScript expression or object inside the code.
+
+LINE 303:
+                  />
+  -- A self-closing tag rendering a specific component.
+
+LINE 304:
+                ) : (
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 305:
+                  <div className="space-y-2">
+  -- Creates a container (div) element. Tailwind classes are applied here to control layout (e.g., flexbox), spacing (padding/margin), and visual styling (colors, borders).
+
+LINE 306:
+                    {searchResults.map((r) => (
+  -- Defines an arrow function for a specific action or calculation.
+
+LINE 307:
+                      <RiderCard key={r.id} rider={r} showAdd />
+  -- Renders the RiderCard component/element.
+
+LINE 308:
+                    ))}
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 309:
+                  </div>
+  -- Closes the div element.
+
+LINE 310:
+                )}
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 311:
+              </section>
+  -- Closes the section element.
+
+LINE 312:
+            )}
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 313:
+  
+  -- (blank line -- spacing only)
+
+LINE 314:
+            {/* REMOVE VIEW */}
+  -- Evaluates a JavaScript expression or object inside the code.
+
+LINE 315:
+            {view === "remove" && (
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 316:
+              <section className={`rounded-2xl border p-5 mb-6 ${tc.card}`}>
+  -- Renders a custom section component or HTML element, applying Tailwind classes for styling.
+
+LINE 317:
+                <h2 className="text-lg font-black mb-3">🗑️ Remove from your connections</h2>
+  -- Renders a heading element for large, prominent title text.
+
+LINE 318:
+                {loading ? (
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 319:
+                  <p className={`text-center text-sm ${tc.sub} py-8`}>
+  -- Renders a text paragraph element, typically styled with theme text classes.
+
+LINE 320:
+                    <i className="fa fa-spinner fa-spin mr-2"></i>Loading…
+  -- Renders an icon element using FontAwesome classes.
+
+LINE 321:
+                  </p>
+  -- Closes the p element.
+
+LINE 322:
+                ) : connections.length === 0 ? (
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 323:
+                  <EmptyState
+  -- Renders the EmptyState component/element.
+
+LINE 324:
+                    icon="fa-users"
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 325:
+                    title="No connections yet"
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 326:
+                    message="Add some riders first using the Add Rider or Near Riders button"
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 327:
+                  />
+  -- A self-closing tag rendering a specific component.
+
+LINE 328:
+                ) : (
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 329:
+                  <div className="space-y-2">
+  -- Creates a container (div) element. Tailwind classes are applied here to control layout (e.g., flexbox), spacing (padding/margin), and visual styling (colors, borders).
+
+LINE 330:
+                    {connections.map((r) => (
+  -- Defines an arrow function for a specific action or calculation.
+
+LINE 331:
+                      <RiderCard key={r.id} rider={r} showRemove />
+  -- Renders the RiderCard component/element.
+
+LINE 332:
+                    ))}
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 333:
+                  </div>
+  -- Closes the div element.
+
+LINE 334:
+                )}
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 335:
+              </section>
+  -- Closes the section element.
+
+LINE 336:
+            )}
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 337:
+  
+  -- (blank line -- spacing only)
+
+LINE 338:
+            {/* NEAR VIEW */}
+  -- Evaluates a JavaScript expression or object inside the code.
+
+LINE 339:
+            {view === "near" && (
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 340:
+              <section className={`rounded-2xl border p-5 mb-6 ${tc.card}`}>
+  -- Renders a custom section component or HTML element, applying Tailwind classes for styling.
+
+LINE 341:
+                <h2 className="text-lg font-black mb-1">📍 Riders near you</h2>
+  -- Renders a heading element for large, prominent title text.
+
+LINE 342:
+                <p className={`text-xs ${tc.sub} mb-3`}>Within 50 km of your location</p>
+  -- Renders a text paragraph element, typically styled with theme text classes.
+
+LINE 343:
+                {loading ? (
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 344:
+                  <p className={`text-center text-sm ${tc.sub} py-8`}>
+  -- Renders a text paragraph element, typically styled with theme text classes.
+
+LINE 345:
+                    <i className="fa fa-spinner fa-spin mr-2"></i>Finding riders near you…
+  -- Renders an icon element using FontAwesome classes.
+
+LINE 346:
+                  </p>
+  -- Closes the p element.
+
+LINE 347:
+                ) : nearRiders.length === 0 ? (
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 348:
+                  <EmptyState
+  -- Renders the EmptyState component/element.
+
+LINE 349:
+                    icon="fa-map-marker-alt"
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 350:
+                    title="No nearby riders"
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 351:
+                    message="When other riders sign up with locations near yours, they'll appear here"
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 352:
+                  />
+  -- A self-closing tag rendering a specific component.
+
+LINE 353:
+                ) : (
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 354:
+                  <div className="space-y-2">
+  -- Creates a container (div) element. Tailwind classes are applied here to control layout (e.g., flexbox), spacing (padding/margin), and visual styling (colors, borders).
+
+LINE 355:
+                    {nearRiders.map((r) => (
+  -- Defines an arrow function for a specific action or calculation.
+
+LINE 356:
+                      <RiderCard key={r.id} rider={r} showAdd distance={r.distance} />
+  -- Renders the RiderCard component/element.
+
+LINE 357:
+                    ))}
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 358:
+                  </div>
+  -- Closes the div element.
+
+LINE 359:
+                )}
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 360:
+              </section>
+  -- Closes the section element.
+
+LINE 361:
+            )}
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 362:
+  
+  -- (blank line -- spacing only)
+
+LINE 363:
+            {/* ALWAYS-VISIBLE: Your connections */}
+  -- Evaluates a JavaScript expression or object inside the code.
+
+LINE 364:
+            <section className={`rounded-2xl border p-5 ${tc.card}`}>
+  -- Renders a custom section component or HTML element, applying Tailwind classes for styling.
+
+LINE 365:
+              <div className="flex items-center justify-between mb-3">
+  -- Creates a container (div) element. Tailwind classes are applied here to control layout (e.g., flexbox), spacing (padding/margin), and visual styling (colors, borders).
+
+LINE 366:
+                <h2 className="text-lg font-black">
+  -- Renders a heading element for large, prominent title text.
+
+LINE 367:
+                  🤝 Your connections
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 368:
+                  <span className={`ml-2 text-sm font-normal ${tc.sub}`}>
+  -- Renders a custom span component or HTML element, applying Tailwind classes for styling.
+
+LINE 369:
+                    ({connections.length})
+  -- Evaluates a JavaScript expression or object inside the code.
+
+LINE 370:
+                  </span>
+  -- Closes the span element.
+
+LINE 371:
+                </h2>
+  -- Closes the h2 element.
+
+LINE 372:
+                <button
+  -- Renders an interactive button for the user to click.
+
+LINE 373:
+                  onClick={reloadConnections}
+  -- Evaluates a JavaScript expression or object inside the code.
+
+LINE 374:
+                  className={`text-xs font-bold ${tc.sub} hover:underline`}
+  -- Evaluates a JavaScript expression or object inside the code.
+
+LINE 375:
+                >
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 376:
+                  <i className="fa fa-refresh mr-1"></i>Refresh
+  -- Renders an icon element using FontAwesome classes.
+
+LINE 377:
+                </button>
+  -- Closes the button element.
+
+LINE 378:
+              </div>
+  -- Closes the div element.
+
+LINE 379:
+  
+  -- (blank line -- spacing only)
+
+LINE 380:
+              {loading ? (
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 381:
+                <p className={`text-center text-sm ${tc.sub} py-8`}>
+  -- Renders a text paragraph element, typically styled with theme text classes.
+
+LINE 382:
+                  <i className="fa fa-spinner fa-spin mr-2"></i>Loading…
+  -- Renders an icon element using FontAwesome classes.
+
+LINE 383:
+                </p>
+  -- Closes the p element.
+
+LINE 384:
+              ) : connections.length === 0 ? (
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 385:
+                <EmptyState
+  -- Renders the EmptyState component/element.
+
+LINE 386:
+                  icon="fa-users"
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 387:
+                  title="No connections yet"
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 388:
+                  message="Use Add Rider or Near Riders above to start connecting with real riders"
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 389:
+                />
+  -- A self-closing tag rendering a specific component.
+
+LINE 390:
+              ) : (
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 391:
+  <div className="space-y-2">
+  -- Creates a container (div) element. Tailwind classes are applied here to control layout (e.g., flexbox), spacing (padding/margin), and visual styling (colors, borders).
+
+LINE 392:
+                  {connections.map((r) => (
+  -- Defines an arrow function for a specific action or calculation.
+
+LINE 393:
+   <RiderCard key={r.id} rider={r} showAdd />
+  -- Renders the RiderCard component/element.
+
+LINE 394:
+                  ))}
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 395:
+                </div>
+  -- Closes the div element.
+
+LINE 396:
+              )}
+  -- Executes specific logic, configuration, or structural JSX for this component.
+
+LINE 397:
+            </section>
+  -- Closes the section element.
+
+LINE 398:
+          </div>
+  -- Closes the div element.
+
+LINE 399:
+        </main>
+  -- Closes the main element.
+
+LINE 400:
+      </div>
+  -- Closes the div element.
+
+LINE 401:
+    );
+  -- Closes the previous block of code (function, object, or hook).
+
+LINE 402:
+  }
+  -- Closes the previous block of code (function, object, or hook).
+
+================================================================================
+  HOW THIS FILE CONNECTS TO THE REST OF THE APP
+================================================================================
+  - Imports standard layout elements (Sidebar, TopBar, MobileNav) to fit the app shell.
+  - Connects to services/ridersApi.js to execute searches and manage connections.
+  - Pulls theme configurations from useTheme for styling consistency.
+  - Used as a top-level route in the application's React Router setup.
+================================================================================

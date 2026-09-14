@@ -1,0 +1,1462 @@
+================================================================================
+  RIDEWISE PROJECT -- CODE EXPLANATION
+  File    : routingApi.js
+  Located : E:\My projects\RideWise\frontend\src\services\routingApi.js
+  Purpose : This file handles mapping features such as converting city names to coordinates, calculating the best driving route between two places, and giving turn-by-turn directions.
+================================================================================
+
+  KEY CONCEPTS IN THIS FILE
+  -------------------------
+  1. Geocoding: Converting text addresses into map coordinates.
+  2. Routing Engine (OSRM): A service that calculates the best road path to take.
+  3. Geographic Math: Formulas to calculate direction and distance on the earth.
+
+================================================================================
+  LINE-BY-LINE CODE EXPLANATION
+================================================================================
+
+LINE 1:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 2:
+  //  routingApi.js -- Geocoding + Route calculation + Geo Math
+  -- This is a comment providing information for developers.
+
+LINE 3:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 4:
+  // GEOCODING  : Converts a place name like "Chennai" into
+  -- This is a comment providing information for developers.
+
+LINE 5:
+  //              { lat, lng, name } using Nominatim (OpenStreetMap)
+  -- This is a comment providing information for developers.
+
+LINE 6:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 7:
+  // ROUTING    : Calculates the road route between two lat/lng
+  -- This is a comment providing information for developers.
+
+LINE 8:
+  //              points using OSRM (free routing engine).
+  -- This is a comment providing information for developers.
+
+LINE 9:
+  //              Returns coordinates as [[lng, lat], ...] (GeoJSON order).
+  -- This is a comment providing information for developers.
+
+LINE 10:
+  //              Also returns turn-by-turn steps when steps=true is used.
+  -- This is a comment providing information for developers.
+
+LINE 11:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 12:
+  // GEO MATH   : haversineDistance -- straight-line distance between
+  -- This is a comment providing information for developers.
+
+LINE 13:
+  //              two lat/lng points (used for popup remaining-km display
+  -- This is a comment providing information for developers.
+
+LINE 14:
+  //              and for snapping the user to the nearest route point).
+  -- This is a comment providing information for developers.
+
+LINE 15:
+  //              bearingBetween -- compass bearing A->B (used to rotate the
+  -- This is a comment providing information for developers.
+
+LINE 16:
+  //              GPS marker to face the direction of travel).
+  -- This is a comment providing information for developers.
+
+LINE 17:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 18:
+  // FORMAT HELPERS: formatDistance / formatDuration convert
+  -- This is a comment providing information for developers.
+
+LINE 19:
+  //              raw meters/seconds into human-readable strings.
+  -- This is a comment providing information for developers.
+
+LINE 20:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 21:
+  
+  -- (blank line -- spacing only)
+
+LINE 22:
+  // ---------------------------------------------------------------------------
+  -- This is a comment providing information for developers.
+
+LINE 23:
+  // Nominatim -- free OpenStreetMap geocoding API (no API key required)
+  -- This is a comment providing information for developers.
+
+LINE 24:
+  // Rate limit: 1 request per second; respect their usage policy.
+  -- This is a comment providing information for developers.
+
+LINE 25:
+  // ---------------------------------------------------------------------------
+  -- This is a comment providing information for developers.
+
+LINE 26:
+  const NOMINATIM = "https://nominatim.openstreetmap.org/search";
+  -- This creates a variable to store data temporarily.
+
+LINE 27:
+  
+  -- (blank line -- spacing only)
+
+LINE 28:
+  // ---------------------------------------------------------------------------
+  -- This is a comment providing information for developers.
+
+LINE 29:
+  // OSRM -- free Open Source Routing Machine (OSM road network data)
+  -- This is a comment providing information for developers.
+
+LINE 30:
+  // Returns the fastest driving route between two coordinates.
+  -- This is a comment providing information for developers.
+
+LINE 31:
+  // ---------------------------------------------------------------------------
+  -- This is a comment providing information for developers.
+
+LINE 32:
+  const OSRM = "https://router.project-osrm.org/route/v1/driving";
+  -- This creates a variable to store data temporarily.
+
+LINE 33:
+  
+  -- (blank line -- spacing only)
+
+LINE 34:
+  // ---------------------------------------------------------------------------
+  -- This is a comment providing information for developers.
+
+LINE 35:
+  // Earth's mean radius in metres -- used by the Haversine formula.
+  -- This is a comment providing information for developers.
+
+LINE 36:
+  // ---------------------------------------------------------------------------
+  -- This is a comment providing information for developers.
+
+LINE 37:
+  const EARTH_RADIUS_M = 6_371_000;
+  -- This creates a variable to store data temporarily.
+
+LINE 38:
+  
+  -- (blank line -- spacing only)
+
+LINE 39:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 40:
+  // GEOCODE -- convert a place name to coordinates
+  -- This is a comment providing information for developers.
+
+LINE 41:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 42:
+  // INPUT:  "Chennai"
+  -- This is a comment providing information for developers.
+
+LINE 43:
+  // OUTPUT: { name: "Chennai, Tamil Nadu, India", lat: 13.08, lng: 80.27 }
+  -- This is a comment providing information for developers.
+
+LINE 44:
+  //         OR null if the place was not found
+  -- This is a comment providing information for developers.
+
+LINE 45:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 46:
+  export async function geocode(query) {
+  -- simply means wait for server reply before continuing.
+
+LINE 47:
+    // Guard: don't query with an empty or whitespace-only string
+  -- This is a comment providing information for developers.
+
+LINE 48:
+    if (!query || !query.trim()) return null;
+  -- This gives the result back to whoever called this function.
+
+LINE 49:
+  
+  -- (blank line -- spacing only)
+
+LINE 50:
+    // Build the URL -- limit=1 means we only want the top result
+  -- This is a comment providing information for developers.
+
+LINE 51:
+    // addressdetails=1 makes Nominatim return structured address components
+  -- This is a comment providing information for developers.
+
+LINE 52:
+    const url = `${NOMINATIM}?q=${encodeURIComponent(query.trim())}&format=json&limit=1&addressdetails=1`;
+  -- This creates a variable to store data temporarily.
+
+LINE 53:
+  
+  -- (blank line -- spacing only)
+
+LINE 54:
+    const res = await fetch(url, {
+  -- sending a request to the server and waiting for response. simply means wait for server reply before continuing.
+
+LINE 55:
+      headers: {
+  -- This line is part of the application logic or data structure.
+
+LINE 56:
+        // Nominatim policy: every request must include a meaningful User-Agent
+  -- This is a comment providing information for developers.
+
+LINE 57:
+        "Accept-Language": "en",
+  -- This line is part of the application logic or data structure.
+
+LINE 58:
+        "User-Agent":      "RideWise/1.0 (ridewise.app)",
+  -- This line is part of the application logic or data structure.
+
+LINE 59:
+      },
+  -- This closes the previous block of code.
+
+LINE 60:
+    });
+  -- This line is part of the application logic or data structure.
+
+LINE 61:
+  
+  -- (blank line -- spacing only)
+
+LINE 62:
+    if (!res.ok) throw new Error(`Geocoding failed (HTTP ${res.status})`);
+  -- This checks a condition before deciding what to do next.
+
+LINE 63:
+  
+  -- (blank line -- spacing only)
+
+LINE 64:
+    const data = await res.json();
+  -- simply means wait for server reply before continuing.
+
+LINE 65:
+  
+  -- (blank line -- spacing only)
+
+LINE 66:
+    // No results found -> return null so the caller can show an error message
+  -- This is a comment providing information for developers.
+
+LINE 67:
+    if (!data || !data.length) return null;
+  -- This gives the result back to whoever called this function.
+
+LINE 68:
+  
+  -- (blank line -- spacing only)
+
+LINE 69:
+    const first = data[0];
+  -- This creates a variable to store data temporarily.
+
+LINE 70:
+    return {
+  -- This gives the result back to whoever called this function.
+
+LINE 71:
+      name: first.display_name,          // Full readable address
+  -- This line is part of the application logic or data structure.
+
+LINE 72:
+      lat:  parseFloat(first.lat),       // Latitude  (north-south)
+  -- This line is part of the application logic or data structure.
+
+LINE 73:
+      lng:  parseFloat(first.lon),       // Longitude (east-west)
+  -- This line is part of the application logic or data structure.
+
+LINE 74:
+    };
+  -- This closes the previous block of code.
+
+LINE 75:
+  }
+  -- This closes the previous block of code.
+
+LINE 76:
+  
+  -- (blank line -- spacing only)
+
+LINE 77:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 78:
+  // GET ROUTE -- calculate the fastest road route between two points
+  -- This is a comment providing information for developers.
+
+LINE 79:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 80:
+  // INPUT:
+  -- This is a comment providing information for developers.
+
+LINE 81:
+  //   from = { lat, lng }   -- start coordinate
+  -- This is a comment providing information for developers.
+
+LINE 82:
+  //   to   = { lat, lng }   -- end coordinate
+  -- This is a comment providing information for developers.
+
+LINE 83:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 84:
+  // OUTPUT:
+  -- This is a comment providing information for developers.
+
+LINE 85:
+  //   {
+  -- This is a comment providing information for developers.
+
+LINE 86:
+  //     coordinates: [[lng, lat], [lng, lat], ...],   GeoJSON order (lng first)
+  -- This is a comment providing information for developers.
+
+LINE 87:
+  //     distance: 150000,     metres (number)
+  -- This is a comment providing information for developers.
+
+LINE 88:
+  //     duration: 5400,       seconds (number)
+  -- This is a comment providing information for developers.
+
+LINE 89:
+  //     steps: [...]          parsed turn-by-turn maneuver steps
+  -- This is a comment providing information for developers.
+
+LINE 90:
+  //   }
+  -- This is a comment providing information for developers.
+
+LINE 91:
+  //   OR throws an Error if no route is found.
+  -- This is a comment providing information for developers.
+
+LINE 92:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 93:
+  // NOTE ON COORDINATE ORDER:
+  -- This is a comment providing information for developers.
+
+LINE 94:
+  //   navigator.geolocation returns  { latitude, longitude }
+  -- This is a comment providing information for developers.
+
+LINE 95:
+  //   We store internally as         { lat, lng }
+  -- This is a comment providing information for developers.
+
+LINE 96:
+  //   OSRM API URL format:           {lng},{lat} (longitude first in the URL)
+  -- This is a comment providing information for developers.
+
+LINE 97:
+  //   OSRM JSON response (GeoJSON):  [lng, lat] (longitude first in the array)
+  -- This is a comment providing information for developers.
+
+LINE 98:
+  //   MapLibre expects:              [lng, lat]
+  -- This is a comment providing information for developers.
+
+LINE 99:
+  //   -> We do NOT need to flip the OSRM output; it's already in the right order.
+  -- This is a comment providing information for developers.
+
+LINE 100:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 101:
+  export async function getRoute(from, to) {
+  -- simply means wait for server reply before continuing.
+
+LINE 102:
+    // Guard: need both endpoints with valid coordinates
+  -- This is a comment providing information for developers.
+
+LINE 103:
+    if (!from || !to) return null;
+  -- This gives the result back to whoever called this function.
+
+LINE 104:
+  
+  -- (blank line -- spacing only)
+
+LINE 105:
+    // OSRM URL format: /route/v1/driving/{lng1},{lat1};{lng2},{lat2}
+  -- This is a comment providing information for developers.
+
+LINE 106:
+    // overview=full    -> return the complete route geometry (not simplified)
+  -- if something goes wrong, catch the error instead of crashing.
+
+LINE 107:
+    // geometries=geojson -> coordinates as [[lng,lat],...] array
+  -- This is a comment providing information for developers.
+
+LINE 108:
+    // steps=true       -> include turn-by-turn maneuver steps for navigation
+  -- This is a comment providing information for developers.
+
+LINE 109:
+    const coords = `${from.lng},${from.lat};${to.lng},${to.lat}`;
+  -- This creates a variable to store data temporarily.
+
+LINE 110:
+    const url = `${OSRM}/${coords}?overview=full&geometries=geojson&steps=true`;
+  -- This creates a variable to store data temporarily.
+
+LINE 111:
+  
+  -- (blank line -- spacing only)
+
+LINE 112:
+    const res = await fetch(url);
+  -- sending a request to the server and waiting for response. simply means wait for server reply before continuing.
+
+LINE 113:
+    if (!res.ok) throw new Error(`Routing request failed (HTTP ${res.status})`);
+  -- This checks a condition before deciding what to do next.
+
+LINE 114:
+  
+  -- (blank line -- spacing only)
+
+LINE 115:
+    const data = await res.json();
+  -- simply means wait for server reply before continuing.
+
+LINE 116:
+  
+  -- (blank line -- spacing only)
+
+LINE 117:
+    // OSRM returns a "code" field: "Ok" means success; "NoRoute" means no path
+  -- This is a comment providing information for developers.
+
+LINE 118:
+    if (data.code !== "Ok" || !data.routes || !data.routes.length) {
+  -- This checks a condition before deciding what to do next.
+
+LINE 119:
+      throw new Error("No road route found between these locations.");
+  -- This creates an error message to let the app know something failed.
+
+LINE 120:
+    }
+  -- This closes the previous block of code.
+
+LINE 121:
+  
+  -- (blank line -- spacing only)
+
+LINE 122:
+    const route = data.routes[0]; // The best route is always the first element
+  -- This creates a variable to store data temporarily.
+
+LINE 123:
+  
+  -- (blank line -- spacing only)
+
+LINE 124:
+    // Flatten all steps from all route legs into a single array
+  -- This is a comment providing information for developers.
+
+LINE 125:
+    const rawSteps = route.legs?.flatMap(leg => leg.steps || []) || [];
+  -- This creates a variable to store data temporarily.
+
+LINE 126:
+  
+  -- (blank line -- spacing only)
+
+LINE 127:
+    return {
+  -- This gives the result back to whoever called this function.
+
+LINE 128:
+      coordinates: route.geometry.coordinates, // [[lng, lat], ...]
+  -- if something goes wrong, catch the error instead of crashing.
+
+LINE 129:
+      distance:    route.distance,             // total metres
+  -- This line is part of the application logic or data structure.
+
+LINE 130:
+      duration:    route.duration,             // total seconds
+  -- This line is part of the application logic or data structure.
+
+LINE 131:
+      steps:       parseRouteSteps(rawSteps),  // UI-ready turn-by-turn steps
+  -- This line is part of the application logic or data structure.
+
+LINE 132:
+    };
+  -- This closes the previous block of code.
+
+LINE 133:
+  }
+  -- This closes the previous block of code.
+
+LINE 134:
+  
+  -- (blank line -- spacing only)
+
+LINE 135:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 136:
+  // PARSE ROUTE STEPS -- convert raw OSRM step objects into
+  -- This is a comment providing information for developers.
+
+LINE 137:
+  // clean, UI-ready instruction objects.
+  -- This is a comment providing information for developers.
+
+LINE 138:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 139:
+  // Each output step:
+  -- This is a comment providing information for developers.
+
+LINE 140:
+  //   {
+  -- This is a comment providing information for developers.
+
+LINE 141:
+  //     instruction: "Turn left onto Main Street",
+  -- This is a comment providing information for developers.
+
+LINE 142:
+  //     distance: 350,           metres for this step
+  -- This is a comment providing information for developers.
+
+LINE 143:
+  //     duration: 42,            seconds for this step
+  -- This is a comment providing information for developers.
+
+LINE 144:
+  //     icon: "fa-turn-left",    Font Awesome 6 icon class
+  -- This is a comment providing information for developers.
+
+LINE 145:
+  //     maneuverType: "turn",
+  -- This is a comment providing information for developers.
+
+LINE 146:
+  //     maneuverModifier: "left",
+  -- This is a comment providing information for developers.
+
+LINE 147:
+  //     location: [lng, lat],    coordinate where this maneuver starts
+  -- This is a comment providing information for developers.
+
+LINE 148:
+  //   }
+  -- This is a comment providing information for developers.
+
+LINE 149:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 150:
+  export function parseRouteSteps(rawSteps) {
+  -- This makes the function or variable available for other files to use.
+
+LINE 151:
+    return rawSteps.map(step => {
+  -- This gives the result back to whoever called this function.
+
+LINE 152:
+      const maneuver = step.maneuver || {};
+  -- This creates a variable to store data temporarily.
+
+LINE 153:
+      const type     = maneuver.type     || "";
+  -- This creates a variable to store data temporarily.
+
+LINE 154:
+      const modifier = maneuver.modifier || "";
+  -- This creates a variable to store data temporarily.
+
+LINE 155:
+      const name     = step.name || "";
+  -- This creates a variable to store data temporarily.
+
+LINE 156:
+  
+  -- (blank line -- spacing only)
+
+LINE 157:
+      return {
+  -- This gives the result back to whoever called this function.
+
+LINE 158:
+        instruction:      buildInstruction(type, modifier, name),
+  -- This line is part of the application logic or data structure.
+
+LINE 159:
+        distance:         step.distance  || 0,
+  -- This line is part of the application logic or data structure.
+
+LINE 160:
+        duration:         step.duration  || 0,
+  -- This line is part of the application logic or data structure.
+
+LINE 161:
+        icon:             getManeuverIcon(type, modifier),
+  -- This line is part of the application logic or data structure.
+
+LINE 162:
+        maneuverType:     type,
+  -- This line is part of the application logic or data structure.
+
+LINE 163:
+        maneuverModifier: modifier,
+  -- This line is part of the application logic or data structure.
+
+LINE 164:
+        location:         maneuver.location || null,  // [lng, lat]
+  -- This line is part of the application logic or data structure.
+
+LINE 165:
+      };
+  -- This closes the previous block of code.
+
+LINE 166:
+    });
+  -- This line is part of the application logic or data structure.
+
+LINE 167:
+  }
+  -- This closes the previous block of code.
+
+LINE 168:
+  
+  -- (blank line -- spacing only)
+
+LINE 169:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 170:
+  // BUILD INSTRUCTION -- human-readable sentence from OSRM maneuver
+  -- This is a comment providing information for developers.
+
+LINE 171:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 172:
+  function buildInstruction(type, modifier, streetName) {
+  -- This line is part of the application logic or data structure.
+
+LINE 173:
+    const on = streetName ? ` onto ${streetName}` : "";
+  -- This creates a variable to store data temporarily.
+
+LINE 174:
+  
+  -- (blank line -- spacing only)
+
+LINE 175:
+    switch (type) {
+  -- This line is part of the application logic or data structure.
+
+LINE 176:
+      case "depart":
+  -- This line is part of the application logic or data structure.
+
+LINE 177:
+        return streetName ? `Head on ${streetName}` : "Start your journey";
+  -- This gives the result back to whoever called this function.
+
+LINE 178:
+      case "arrive":
+  -- This line is part of the application logic or data structure.
+
+LINE 179:
+        return "You have arrived at your destination";
+  -- This gives the result back to whoever called this function.
+
+LINE 180:
+      case "turn": {
+  -- This line is part of the application logic or data structure.
+
+LINE 181:
+        const dir = modifier === "slight left"  ? "Slight left"
+  -- This creates a variable to store data temporarily.
+
+LINE 182:
+                  : modifier === "slight right" ? "Slight right"
+  -- This line is part of the application logic or data structure.
+
+LINE 183:
+                  : modifier === "sharp left"   ? "Sharp left"
+  -- This line is part of the application logic or data structure.
+
+LINE 184:
+                  : modifier === "sharp right"  ? "Sharp right"
+  -- This line is part of the application logic or data structure.
+
+LINE 185:
+                  : modifier === "left"         ? "Turn left"
+  -- This line is part of the application logic or data structure.
+
+LINE 186:
+                  : modifier === "right"        ? "Turn right"
+  -- This line is part of the application logic or data structure.
+
+LINE 187:
+                  : modifier === "uturn"        ? "Make a U-turn"
+  -- This line is part of the application logic or data structure.
+
+LINE 188:
+                  : "Turn";
+  -- This line is part of the application logic or data structure.
+
+LINE 189:
+        return `${dir}${on}`;
+  -- This gives the result back to whoever called this function.
+
+LINE 190:
+      }
+  -- This closes the previous block of code.
+
+LINE 191:
+      case "new name":
+  -- This line is part of the application logic or data structure.
+
+LINE 192:
+        return streetName ? `Continue onto ${streetName}` : "Continue";
+  -- This gives the result back to whoever called this function.
+
+LINE 193:
+      case "merge":
+  -- This line is part of the application logic or data structure.
+
+LINE 194:
+        return `Merge${modifier ? " " + modifier : ""}${on}`;
+  -- This gives the result back to whoever called this function.
+
+LINE 195:
+      case "fork": {
+  -- This line is part of the application logic or data structure.
+
+LINE 196:
+        const side = modifier.includes("left")  ? "left"
+  -- This creates a variable to store data temporarily.
+
+LINE 197:
+                   : modifier.includes("right") ? "right" : "";
+  -- This line is part of the application logic or data structure.
+
+LINE 198:
+        return side ? `Keep ${side}${on}` : `Stay on route${on}`;
+  -- This gives the result back to whoever called this function.
+
+LINE 199:
+      }
+  -- This closes the previous block of code.
+
+LINE 200:
+      case "end of road":
+  -- This line is part of the application logic or data structure.
+
+LINE 201:
+        return modifier.includes("left")  ? `Turn left${on}`
+  -- This gives the result back to whoever called this function.
+
+LINE 202:
+             : modifier.includes("right") ? `Turn right${on}` : `Continue${on}`;
+  -- This line is part of the application logic or data structure.
+
+LINE 203:
+      case "roundabout":
+  -- This line is part of the application logic or data structure.
+
+LINE 204:
+      case "rotary": {
+  -- This line is part of the application logic or data structure.
+
+LINE 205:
+        const exit = type === "roundabout" ? undefined : undefined; // exit number in step.maneuver.exit
+  -- This creates a variable to store data temporarily.
+
+LINE 206:
+        return exit ? `Take exit ${exit} from the roundabout${on}` : `Take the roundabout${on}`;
+  -- This gives the result back to whoever called this function.
+
+LINE 207:
+      }
+  -- This closes the previous block of code.
+
+LINE 208:
+      case "continue":
+  -- This line is part of the application logic or data structure.
+
+LINE 209:
+        return `Continue straight${on}`;
+  -- This gives the result back to whoever called this function.
+
+LINE 210:
+      case "on ramp":
+  -- This line is part of the application logic or data structure.
+
+LINE 211:
+        return `Take the ramp${on}`;
+  -- This gives the result back to whoever called this function.
+
+LINE 212:
+      case "off ramp":
+  -- This line is part of the application logic or data structure.
+
+LINE 213:
+        return `Take the exit${on}`;
+  -- This gives the result back to whoever called this function.
+
+LINE 214:
+      default:
+  -- This line is part of the application logic or data structure.
+
+LINE 215:
+        return streetName ? `Continue on ${streetName}` : "Continue";
+  -- This gives the result back to whoever called this function.
+
+LINE 216:
+    }
+  -- This closes the previous block of code.
+
+LINE 217:
+  }
+  -- This closes the previous block of code.
+
+LINE 218:
+  
+  -- (blank line -- spacing only)
+
+LINE 219:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 220:
+  // GET MANEUVER ICON -- returns a Font Awesome 6 class for the step
+  -- This is a comment providing information for developers.
+
+LINE 221:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 222:
+  export function getManeuverIcon(type, modifier = "") {
+  -- This makes the function or variable available for other files to use.
+
+LINE 223:
+    if (type === "arrive")                          return "fa-flag-checkered";
+  -- This gives the result back to whoever called this function.
+
+LINE 224:
+    if (type === "depart")                          return "fa-location-dot";
+  -- This gives the result back to whoever called this function.
+
+LINE 225:
+    if (type === "roundabout" || type === "rotary") return "fa-rotate-right";
+  -- This gives the result back to whoever called this function.
+
+LINE 226:
+    if (type === "merge")                           return "fa-code-merge";
+  -- This gives the result back to whoever called this function.
+
+LINE 227:
+    if (type === "on ramp")                         return "fa-arrow-up-right-from-square";
+  -- This gives the result back to whoever called this function.
+
+LINE 228:
+    if (type === "off ramp")                        return "fa-arrow-turn-down";
+  -- This gives the result back to whoever called this function.
+
+LINE 229:
+    if (type === "fork") {
+  -- This checks a condition before deciding what to do next.
+
+LINE 230:
+      return modifier.includes("left") ? "fa-turn-left" : "fa-turn-right";
+  -- This gives the result back to whoever called this function.
+
+LINE 231:
+    }
+  -- This closes the previous block of code.
+
+LINE 232:
+    if (type === "turn" || type === "end of road" || type === "new name") {
+  -- This checks a condition before deciding what to do next.
+
+LINE 233:
+      if (modifier === "uturn")        return "fa-rotate-left";
+  -- This gives the result back to whoever called this function.
+
+LINE 234:
+      if (modifier === "sharp left")   return "fa-turn-left";
+  -- This gives the result back to whoever called this function.
+
+LINE 235:
+      if (modifier === "left")         return "fa-turn-left";
+  -- This gives the result back to whoever called this function.
+
+LINE 236:
+      if (modifier === "slight left")  return "fa-arrow-up-left";
+  -- This gives the result back to whoever called this function.
+
+LINE 237:
+      if (modifier === "sharp right")  return "fa-turn-right";
+  -- This gives the result back to whoever called this function.
+
+LINE 238:
+      if (modifier === "right")        return "fa-turn-right";
+  -- This gives the result back to whoever called this function.
+
+LINE 239:
+      if (modifier === "slight right") return "fa-arrow-up-right";
+  -- This gives the result back to whoever called this function.
+
+LINE 240:
+    }
+  -- This closes the previous block of code.
+
+LINE 241:
+    return "fa-arrow-up"; // straight / continue / unknown
+  -- This gives the result back to whoever called this function.
+
+LINE 242:
+  }
+  -- This closes the previous block of code.
+
+LINE 243:
+  
+  -- (blank line -- spacing only)
+
+LINE 244:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 245:
+  // HAVERSINE DISTANCE -- straight-line distance between two points
+  -- This is a comment providing information for developers.
+
+LINE 246:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 247:
+  // Uses the Haversine formula, which accounts for the Earth's curvature.
+  -- This is a comment providing information for developers.
+
+LINE 248:
+  // Accurate to within ~0.5% for distances under 1000 km.
+  -- This is a comment providing information for developers.
+
+LINE 249:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 250:
+  // INPUT:
+  -- This is a comment providing information for developers.
+
+LINE 251:
+  //   lat1, lng1 -- first point (decimal degrees)
+  -- This is a comment providing information for developers.
+
+LINE 252:
+  //   lat2, lng2 -- second point (decimal degrees)
+  -- This is a comment providing information for developers.
+
+LINE 253:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 254:
+  // OUTPUT:
+  -- This is a comment providing information for developers.
+
+LINE 255:
+  //   Distance in metres (number)
+  -- This is a comment providing information for developers.
+
+LINE 256:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 257:
+  // USAGE:
+  -- This is a comment providing information for developers.
+
+LINE 258:
+  //   - RideMap.jsx uses this to find the closest route point to the user
+  -- This is a comment providing information for developers.
+
+LINE 259:
+  //   - Destination popup uses this for the "remaining km" display
+  -- This is a comment providing information for developers.
+
+LINE 260:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 261:
+  export function haversineDistance(lat1, lng1, lat2, lng2) {
+  -- This makes the function or variable available for other files to use.
+
+LINE 262:
+    // Convert degrees to radians (the trig functions in JS use radians)
+  -- This is a comment providing information for developers.
+
+LINE 263:
+    const toRad = deg => (deg * Math.PI) / 180;
+  -- This creates a variable to store data temporarily.
+
+LINE 264:
+  
+  -- (blank line -- spacing only)
+
+LINE 265:
+    const dLat = toRad(lat2 - lat1); // latitude in radians
+  -- This creates a variable to store data temporarily.
+
+LINE 266:
+    const dLng = toRad(lng2 - lng1); // longitude in radians
+  -- This creates a variable to store data temporarily.
+
+LINE 267:
+  
+  -- (blank line -- spacing only)
+
+LINE 268:
+    // Haversine formula:
+  -- This is a comment providing information for developers.
+
+LINE 269:
+    // a = sin^2(lat/2) + cos(lat1)cos(lat2)sin^2(lng/2)
+  -- This is a comment providing information for developers.
+
+LINE 270:
+    const a =
+  -- This creates a variable to store data temporarily.
+
+LINE 271:
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+  -- This line is part of the application logic or data structure.
+
+LINE 272:
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+  -- This line is part of the application logic or data structure.
+
+LINE 273:
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  -- This line is part of the application logic or data structure.
+
+LINE 274:
+  
+  -- (blank line -- spacing only)
+
+LINE 275:
+    // c = 2atan2(sqrta, sqrt(1a))    angular distance in radians
+  -- This is a comment providing information for developers.
+
+LINE 276:
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  -- This creates a variable to store data temporarily.
+
+LINE 277:
+  
+  -- (blank line -- spacing only)
+
+LINE 278:
+    return EARTH_RADIUS_M * c; // distance in metres
+  -- This gives the result back to whoever called this function.
+
+LINE 279:
+  }
+  -- This closes the previous block of code.
+
+LINE 280:
+  
+  -- (blank line -- spacing only)
+
+LINE 281:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 282:
+  // BEARING BETWEEN -- compass bearing from point A -> point B
+  -- This is a comment providing information for developers.
+
+LINE 283:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 284:
+  // Returns degrees 0360 (0 = North, 90 = East, 180 = South, 270 = West)
+  -- This is a comment providing information for developers.
+
+LINE 285:
+  // Used to rotate the GPS marker arrow to face the direction of travel.
+  -- This is a comment providing information for developers.
+
+LINE 286:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 287:
+  export function bearingBetween(lat1, lng1, lat2, lng2) {
+  -- This makes the function or variable available for other files to use.
+
+LINE 288:
+    const toRad = deg => (deg * Math.PI) / 180;
+  -- This creates a variable to store data temporarily.
+
+LINE 289:
+    const toDeg = rad => (rad * 180) / Math.PI;
+  -- This creates a variable to store data temporarily.
+
+LINE 290:
+  
+  -- (blank line -- spacing only)
+
+LINE 291:
+    const dLng = toRad(lng2 - lng1);
+  -- This creates a variable to store data temporarily.
+
+LINE 292:
+    const y    = Math.sin(dLng) * Math.cos(toRad(lat2));
+  -- This creates a variable to store data temporarily.
+
+LINE 293:
+    const x    =
+  -- This creates a variable to store data temporarily.
+
+LINE 294:
+      Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
+  -- This line is part of the application logic or data structure.
+
+LINE 295:
+      Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLng);
+  -- This line is part of the application logic or data structure.
+
+LINE 296:
+  
+  -- (blank line -- spacing only)
+
+LINE 297:
+    return (toDeg(Math.atan2(y, x)) + 360) % 360;
+  -- This gives the result back to whoever called this function.
+
+LINE 298:
+  }
+  -- This closes the previous block of code.
+
+LINE 299:
+  
+  -- (blank line -- spacing only)
+
+LINE 300:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 301:
+  // FIND ACTIVE STEP -- returns the index of the upcoming step
+  -- This is a comment providing information for developers.
+
+LINE 302:
+  // that is closest (in distance) to the user's current position.
+  -- This is a comment providing information for developers.
+
+LINE 303:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 304:
+  // Used by the navigation panel to highlight the next maneuver.
+  -- This is a comment providing information for developers.
+
+LINE 305:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 306:
+  export function findActiveStep(steps, userLat, userLng) {
+  -- This makes the function or variable available for other files to use.
+
+LINE 307:
+    if (!steps?.length || userLat == null || userLng == null) return 0;
+  -- This gives the result back to whoever called this function.
+
+LINE 308:
+  
+  -- (blank line -- spacing only)
+
+LINE 309:
+    let nearest = 0;
+  -- This creates a variable to store data temporarily.
+
+LINE 310:
+    let minDist  = Infinity;
+  -- This creates a variable to store data temporarily.
+
+LINE 311:
+  
+  -- (blank line -- spacing only)
+
+LINE 312:
+    steps.forEach((step, i) => {
+  -- This line is part of the application logic or data structure.
+
+LINE 313:
+      const loc = step.location; // [lng, lat]
+  -- This creates a variable to store data temporarily.
+
+LINE 314:
+      if (!loc) return;
+  -- This gives the result back to whoever called this function.
+
+LINE 315:
+      const d = haversineDistance(userLat, userLng, loc[1], loc[0]);
+  -- This creates a variable to store data temporarily.
+
+LINE 316:
+      if (d < minDist) {
+  -- This checks a condition before deciding what to do next.
+
+LINE 317:
+        minDist  = d;
+  -- This line is part of the application logic or data structure.
+
+LINE 318:
+        nearest  = i;
+  -- This line is part of the application logic or data structure.
+
+LINE 319:
+      }
+  -- This closes the previous block of code.
+
+LINE 320:
+    });
+  -- This line is part of the application logic or data structure.
+
+LINE 321:
+  
+  -- (blank line -- spacing only)
+
+LINE 322:
+    return nearest;
+  -- This gives the result back to whoever called this function.
+
+LINE 323:
+  }
+  -- This closes the previous block of code.
+
+LINE 324:
+  
+  -- (blank line -- spacing only)
+
+LINE 325:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 326:
+  // FORMAT DISTANCE -- meters -> human-readable string
+  -- This is a comment providing information for developers.
+
+LINE 327:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 328:
+  // Examples:  850    -> "850 m"
+  -- This is a comment providing information for developers.
+
+LINE 329:
+  //            3500   -> "3.5 km"
+  -- This is a comment providing information for developers.
+
+LINE 330:
+  //            150000 -> "150.0 km"
+  -- This is a comment providing information for developers.
+
+LINE 331:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 332:
+  export function formatDistance(meters) {
+  -- This makes the function or variable available for other files to use.
+
+LINE 333:
+    if (meters == null) return "--";            // null / undefined -> dash
+  -- This gives the result back to whoever called this function.
+
+LINE 334:
+    if (meters < 1000)  return `${Math.round(meters)} m`;
+  -- This gives the result back to whoever called this function.
+
+LINE 335:
+    return `${(meters / 1000).toFixed(1)} km`;
+  -- This gives the result back to whoever called this function.
+
+LINE 336:
+  }
+  -- This closes the previous block of code.
+
+LINE 337:
+  
+  -- (blank line -- spacing only)
+
+LINE 338:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 339:
+  // FORMAT DURATION -- seconds -> human-readable string
+  -- This is a comment providing information for developers.
+
+LINE 340:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 341:
+  // Examples:  45   -> "45 min"
+  -- This is a comment providing information for developers.
+
+LINE 342:
+  //            3600 -> "1 h"
+  -- This is a comment providing information for developers.
+
+LINE 343:
+  //            5400 -> "1 h 30 min"
+  -- This is a comment providing information for developers.
+
+LINE 344:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 345:
+  export function formatDuration(seconds) {
+  -- This makes the function or variable available for other files to use.
+
+LINE 346:
+    if (seconds == null) return "--";           // null / undefined -> dash
+  -- This gives the result back to whoever called this function.
+
+LINE 347:
+    const h = Math.floor(seconds / 3600);     // full hours
+  -- This creates a variable to store data temporarily.
+
+LINE 348:
+    const m = Math.floor((seconds % 3600) / 60); // remaining minutes
+  -- This creates a variable to store data temporarily.
+
+LINE 349:
+    if (h === 0) return `${m} min`;
+  -- This gives the result back to whoever called this function.
+
+LINE 350:
+    if (m === 0) return `${h} h`;
+  -- This gives the result back to whoever called this function.
+
+LINE 351:
+    return `${h} h ${m} min`;
+  -- This gives the result back to whoever called this function.
+
+LINE 352:
+  }
+  -- This closes the previous block of code.
+
+LINE 353:
+  
+  -- (blank line -- spacing only)
+
+LINE 354:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 355:
+  // FORMAT SPEED -- m/s -> km/h string
+  -- This is a comment providing information for developers.
+
+LINE 356:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 357:
+  export function formatSpeed(mps) {
+  -- This makes the function or variable available for other files to use.
+
+LINE 358:
+    if (mps == null || mps < 0) return "0";
+  -- This gives the result back to whoever called this function.
+
+LINE 359:
+    return Math.round(mps * 3.6).toString(); // convert m/s to km/h
+  -- This gives the result back to whoever called this function.
+
+LINE 360:
+  }
+  -- This closes the previous block of code.
+
+================================================================================
+  HOW THIS FILE CONNECTS TO THE REST OF THE APP
+================================================================================
+  This file is used by the frontend components to handle data and logic.
+================================================================================

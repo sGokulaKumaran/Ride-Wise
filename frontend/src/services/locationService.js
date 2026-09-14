@@ -3,18 +3,20 @@
 //
 // WHY THIS EXISTS:
 //   The native navigator.geolocation API fires very frequently
-//   (sometimes every 100ms on mobile). Pushing every update to
-//   a backend or re-rendering React would be too expensive.
-//   This wrapper throttles updates to once every THROTTLE_MS.
+//   (sometimes every 100ms on mobile). This wrapper throttles
+//   updates to THROTTLE_MS and exposes speed + heading.
 //
-// LOCATION OBJECT SHAPE:
+// LOCATION OBJECT:
 //   {
-//     lat:       number,   — latitude in decimal degrees
-//     lng:       number,   — longitude in decimal degrees
-//     accuracy:  number,   — accuracy radius in metres
-//     speed:     number|null, — speed in m/s (null if unavailable)
-//     heading:   number|null, — direction in degrees 0–360 (null if unavailable)
-//     timestamp: number,   — ms since epoch
+//     lat:       number,        — latitude  (decimal degrees)
+//     lng:       number,        — longitude (decimal degrees)
+//     accuracy:  number,        — accuracy radius in metres
+//                                 < 20m  = GPS hardware fix (excellent)
+//                                 < 100m = WiFi-based (good)
+//                                 > 500m = IP-based (unreliable — do not use)
+//     speed:     number|null,   — speed in m/s (null if unavailable)
+//     heading:   number|null,   — direction 0-360° (null if unavailable)
+//     timestamp: number,        — ms since epoch
 //   }
 //
 // EXPORTS:
@@ -23,61 +25,68 @@
 // ============================================================
 
 // ---------------------------------------------------------------------------
-// THROTTLE: minimum milliseconds between emitted location updates.
-// 2000ms = update at most once every 2 seconds — responsive enough for
-// navigation while still battery-friendly.
+// THROTTLE: minimum ms between emitted location updates.
+// 1500ms = responsive for navigation while still battery-friendly.
 // ---------------------------------------------------------------------------
-const THROTTLE_MS = 2000;
+const THROTTLE_MS = 1500;
 
 // ---------------------------------------------------------------------------
-// GPS options passed to the browser API
-// enableHighAccuracy: true  → use GPS chip (more accurate, uses more battery)
-// maximumAge: 3000          → accept cached positions up to 3 seconds old
-// timeout: 10000            → give up if no fix in 10 seconds
+// GPS options:
+//   enableHighAccuracy: true  → use GPS chip (not IP/WiFi fallback)
+//   maximumAge: 0             → ALWAYS request a fresh GPS fix.
+//                               Never serve a stale cached position.
+//                               This is the key fix for the "locked location"
+//                               bug — cached IP-based positions (like an ISP
+//                               server at Virudhunagar) would be served if
+//                               maximumAge > 0.
+//   timeout: 15000            → wait up to 15s for a real GPS hardware fix
 // ---------------------------------------------------------------------------
 const GPS_OPTIONS = {
   enableHighAccuracy: true,
-  maximumAge:         3000,
-  timeout:            10000,
+  maximumAge:         0,      // ← CRITICAL: 0 = never use cached position
+  timeout:            15000,
 };
 
-// ── Internal helper to extract a clean location object from a GeolocationPosition ──
+// ── Internal helper ─────────────────────────────────────────
+
 function posToLocation(pos) {
   return {
     lat:       pos.coords.latitude,
     lng:       pos.coords.longitude,
-    accuracy:  pos.coords.accuracy,
-    // speed / heading may be null on desktop browsers; always forward them
-    speed:     pos.coords.speed   ?? null,   // m/s (null if not available)
-    heading:   pos.coords.heading ?? null,   // degrees 0–360 (null if not available)
+    accuracy:  pos.coords.accuracy,   // metres — lower is better
+    speed:     pos.coords.speed   ?? null,  // m/s
+    heading:   pos.coords.heading ?? null,  // degrees 0-360
     timestamp: pos.timestamp,
   };
 }
 
 // ============================================================
-// getCurrentLocation — one-shot position fetch
-// Returns a Promise so you can await it
+// getCurrentLocation — one-shot fresh GPS fix
+// Returns a Promise — never uses cache (maximumAge: 0).
 // ============================================================
+
 export function getCurrentLocation() {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
       reject(new Error("Geolocation is not supported by this browser."));
       return;
     }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => resolve(posToLocation(pos)),
-      (err)  => reject(err),
-      GPS_OPTIONS
+
+    navigator.geolocation.getCurrentPosition( // this getCurrentPosotion is the browser function a inbuild function for to track gps
+      (pos) => resolve(posToLocation(pos)), // this is a success parameter 
+      (err)  => reject(err),// this the error parameter but its all call inside of another function like
+      GPS_OPTIONS // this is the variable on that 44 line
     );
   });
 }
 
 // ============================================================
-// watchLocation — continuous position tracking (with throttle)
+// watchLocation — continuous position tracking (throttled)
 //
 // onUpdate(location) is called at most once every THROTTLE_MS.
 // Returns a stop() function — call it to cancel tracking.
 // ============================================================
+
 export function watchLocation(onUpdate, onError) {
   if (!navigator.geolocation) {
     console.warn("[locationService] Geolocation not supported.");
@@ -101,7 +110,6 @@ export function watchLocation(onUpdate, onError) {
     GPS_OPTIONS
   );
 
-  return () => {
-    navigator.geolocation.clearWatch(watchId);
-  };
+  return () => navigator.geolocation.clearWatch(watchId);
 }
+

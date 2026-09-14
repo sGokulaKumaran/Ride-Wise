@@ -23,6 +23,7 @@ export function useRideLocation(active = true) {
     if (!active) return;
 
     setIsWatching(true);
+    
     // Start watching; the cleanup function stops it
     const stop = watchLocation((loc) => {
       setLocation(loc);

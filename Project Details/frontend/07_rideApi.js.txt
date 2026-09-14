@@ -1,0 +1,990 @@
+================================================================================
+  RIDEWISE PROJECT -- CODE EXPLANATION
+  File    : rideApi.js
+  Located : E:\My projects\RideWise\frontend\src\services\rideApi.js
+  Purpose : This file manages all ride-related operations by communicating with the server. It can create new rides, end them, and fetch ride history, while also saving data locally if the server is offline.
+================================================================================
+
+  KEY CONCEPTS IN THIS FILE
+  -------------------------
+  1. Fallback Mechanism: Saving data locally when the server is unavailable.
+  2. LocalStorage: The browser's built-in memory to store data across sessions.
+  3. API Communication: Talking to the backend server to save and retrieve data.
+
+================================================================================
+  LINE-BY-LINE CODE EXPLANATION
+================================================================================
+
+LINE 1:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 2:
+  //  rideApi.js -- Ride data service
+  -- This is a comment providing information for developers.
+
+LINE 3:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 4:
+  // All ride operations go through this file.
+  -- This is a comment providing information for developers.
+
+LINE 5:
+  // Talks to the Spring Boot backend at /api/rides.
+  -- This is a comment providing information for developers.
+
+LINE 6:
+  // Falls back to localStorage if the backend is unreachable
+  -- This is a comment providing information for developers.
+
+LINE 7:
+  // (so the UI still works during development without the server).
+  -- This is a comment providing information for developers.
+
+LINE 8:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 9:
+  // HOW TO USE:
+  -- This is a comment providing information for developers.
+
+LINE 10:
+  //   import { createRide, getUserRides, endRide, deleteRide } from "../services/rideApi";
+  -- This is a comment providing information for developers.
+
+LINE 11:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 12:
+  
+  -- (blank line -- spacing only)
+
+LINE 13:
+  // ---------------------------------------------------------------------------
+  -- This is a comment providing information for developers.
+
+LINE 14:
+  // BASE URL -- change this if your backend runs on a different port
+  -- This is a comment providing information for developers.
+
+LINE 15:
+  // In Vite dev mode the proxy in vite.config.js rewrites /api -> localhost:8080
+  -- This is a comment providing information for developers.
+
+LINE 16:
+  // ---------------------------------------------------------------------------
+  -- This is a comment providing information for developers.
+
+LINE 17:
+  const BASE = "/api/rides";
+  -- This creates a variable to store data temporarily.
+
+LINE 18:
+  
+  -- (blank line -- spacing only)
+
+LINE 19:
+  // ---------------------------------------------------------------------------
+  -- This is a comment providing information for developers.
+
+LINE 20:
+  // LOCALSTORAGE FALLBACK KEY
+  -- This is a comment providing information for developers.
+
+LINE 21:
+  // Used when the backend is not running (dev convenience)
+  -- This is a comment providing information for developers.
+
+LINE 22:
+  // ---------------------------------------------------------------------------
+  -- This is a comment providing information for developers.
+
+LINE 23:
+  const LS_KEY = "ridewise-rides-local";// this is the name of the web Local Storage a key for the value of the web storage
+  -- This creates a variable to store data temporarily.
+
+LINE 24:
+  
+  -- (blank line -- spacing only)
+
+LINE 25:
+  // ---------------------------------------------------------------------------
+  -- This is a comment providing information for developers.
+
+LINE 26:
+  // Helper: load rides from localStorage (used as fallback cache)
+  -- This is a comment providing information for developers.
+
+LINE 27:
+  // ---------------------------------------------------------------------------
+  -- This is a comment providing information for developers.
+
+LINE 28:
+  function lsLoad() {
+  -- This line is part of the application logic or data structure.
+
+LINE 29:
+    try { return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); }
+  -- if something goes wrong, catch the error instead of crashing.
+
+LINE 30:
+    catch { return []; }
+  -- if something goes wrong, catch the error instead of crashing.
+
+LINE 31:
+  }
+  -- This closes the previous block of code.
+
+LINE 32:
+  
+  -- (blank line -- spacing only)
+
+LINE 33:
+  // ---------------------------------------------------------------------------
+  -- This is a comment providing information for developers.
+
+LINE 34:
+  // Helper: save rides to localStorage fallback cache
+  -- This is a comment providing information for developers.
+
+LINE 35:
+  // ---------------------------------------------------------------------------
+  -- This is a comment providing information for developers.
+
+LINE 36:
+  function lsSave(rides) {
+  -- This line is part of the application logic or data structure.
+
+LINE 37:
+    try { localStorage.setItem(LS_KEY, JSON.stringify(rides)); }
+  -- if something goes wrong, catch the error instead of crashing.
+
+LINE 38:
+    catch { /* storage quota exceeded -- ignore */ }
+  -- if something goes wrong, catch the error instead of crashing.
+
+LINE 39:
+  }
+  -- This closes the previous block of code.
+
+LINE 40:
+  
+  -- (blank line -- spacing only)
+
+LINE 41:
+  // ---------------------------------------------------------------------------
+  -- This is a comment providing information for developers.
+
+LINE 42:
+  // Helper: call backend; if it fails, run the fallback function instead
+  -- This is a comment providing information for developers.
+
+LINE 43:
+  // This lets every function degrade gracefully when the backend is offline
+  -- This is a comment providing information for developers.
+
+LINE 44:
+  // ---------------------------------------------------------------------------
+  -- This is a comment providing information for developers.
+
+LINE 45:
+  async function withFallback(backendFn, fallbackFn) {
+  -- simply means wait for server reply before continuing.
+
+LINE 46:
+    try {
+  -- if something goes wrong, catch the error instead of crashing.
+
+LINE 47:
+      return await backendFn();
+  -- simply means wait for server reply before continuing.
+
+LINE 48:
+    } catch (err) {
+  -- if something goes wrong, catch the error instead of crashing.
+
+LINE 49:
+      console.warn("Backend unreachable, using local fallback:", err.message);
+  -- This prints a message to the developer console for debugging.
+
+LINE 50:
+      return fallbackFn();
+  -- This gives the result back to whoever called this function.
+
+LINE 51:
+    }
+  -- This closes the previous block of code.
+
+LINE 52:
+  }
+  -- This closes the previous block of code.
+
+LINE 53:
+  
+  -- (blank line -- spacing only)
+
+LINE 54:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 55:
+  // CREATE RIDE
+  -- This is a comment providing information for developers.
+
+LINE 56:
+  // POST /api/rides
+  -- This is a comment providing information for developers.
+
+LINE 57:
+  // rideData: { userId, fromName, fromLat, fromLng,
+  -- This is a comment providing information for developers.
+
+LINE 58:
+  //             destinationName, destinationLat, destinationLng,
+  -- This is a comment providing information for developers.
+
+LINE 59:
+  //             routeCoordinates (JSON string), distanceMeters,
+  -- This is a comment providing information for developers.
+
+LINE 60:
+  //             durationSeconds, rideType }
+  -- This is a comment providing information for developers.
+
+LINE 61:
+  // Returns the saved ride object with id + createdAt
+  -- This is a comment providing information for developers.
+
+LINE 62:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 63:
+  export async function createRide(rideData) {
+  -- simply means wait for server reply before continuing.
+
+LINE 64:
+    return withFallback(
+  -- This gives the result back to whoever called this function.
+
+LINE 65:
+      // ---- Try backend ----
+  -- This is a comment providing information for developers.
+
+LINE 66:
+      async () => {
+  -- simply means wait for server reply before continuing.
+
+LINE 67:
+        const res = await fetch(BASE, {
+  -- sending a request to the server and waiting for response. simply means wait for server reply before continuing.
+
+LINE 68:
+          method: "POST",
+  -- This line is part of the application logic or data structure.
+
+LINE 69:
+          headers: { "Content-Type": "application/json" },
+  -- This line is part of the application logic or data structure.
+
+LINE 70:
+          body: JSON.stringify(rideData), // send all fields to backend
+  -- This converts data into a text format that can be sent over the internet.
+
+LINE 71:
+        });
+  -- This line is part of the application logic or data structure.
+
+LINE 72:
+        if (!res.ok) throw new Error(`Create ride failed: ${res.status}`);
+  -- This checks a condition before deciding what to do next.
+
+LINE 73:
+        const saved = await res.json();
+  -- simply means wait for server reply before continuing.
+
+LINE 74:
+        // Also add to local cache so getActiveRides works offline
+  -- This is a comment providing information for developers.
+
+LINE 75:
+        const cached = lsLoad();
+  -- This creates a variable to store data temporarily.
+
+LINE 76:
+        cached.push(saved);
+  -- This line is part of the application logic or data structure.
+
+LINE 77:
+        lsSave(cached);
+  -- This line is part of the application logic or data structure.
+
+LINE 78:
+        return saved;
+  -- This gives the result back to whoever called this function.
+
+LINE 79:
+      },
+  -- This closes the previous block of code.
+
+LINE 80:
+      // ---- Fallback: save to localStorage ----
+  -- This is a comment providing information for developers.
+
+LINE 81:
+      () => {
+  -- This line is part of the application logic or data structure.
+
+LINE 82:
+        const ride = {
+  -- This creates a variable to store data temporarily.
+
+LINE 83:
+          ...rideData,
+  -- This line is part of the application logic or data structure.
+
+LINE 84:
+          id: "local_" + Date.now(),       // local-only id
+  -- This line is part of the application logic or data structure.
+
+LINE 85:
+          status: "active",                // new rides start active
+  -- This line is part of the application logic or data structure.
+
+LINE 86:
+          createdAt: new Date().toISOString(),
+  -- This line is part of the application logic or data structure.
+
+LINE 87:
+          endedAt: null,
+  -- This line is part of the application logic or data structure.
+
+LINE 88:
+        };
+  -- This closes the previous block of code.
+
+LINE 89:
+        const cached = lsLoad();
+  -- This creates a variable to store data temporarily.
+
+LINE 90:
+        cached.push(ride);
+  -- This line is part of the application logic or data structure.
+
+LINE 91:
+        lsSave(cached);
+  -- This line is part of the application logic or data structure.
+
+LINE 92:
+        return ride;
+  -- This gives the result back to whoever called this function.
+
+LINE 93:
+      }
+  -- This closes the previous block of code.
+
+LINE 94:
+    );
+  -- This line is part of the application logic or data structure.
+
+LINE 95:
+  }
+  -- This closes the previous block of code.
+
+LINE 96:
+  
+  -- (blank line -- spacing only)
+
+LINE 97:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 98:
+  // GET ALL RIDES FOR A USER  (history -- newest first)
+  -- This is a comment providing information for developers.
+
+LINE 99:
+  // GET /api/rides/user/{userId}
+  -- This is a comment providing information for developers.
+
+LINE 100:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 101:
+  export async function getUserRides(userId) {
+  -- simply means wait for server reply before continuing.
+
+LINE 102:
+    return withFallback(
+  -- This gives the result back to whoever called this function.
+
+LINE 103:
+      async () => {
+  -- simply means wait for server reply before continuing.
+
+LINE 104:
+        const res = await fetch(`${BASE}/user/${userId}`);
+  -- sending a request to the server and waiting for response. simply means wait for server reply before continuing.
+
+LINE 105:
+        if (!res.ok) throw new Error(`Get rides failed: ${res.status}`);
+  -- This checks a condition before deciding what to do next.
+
+LINE 106:
+        return res.json(); // array of RideResponse
+  -- This gives the result back to whoever called this function.
+
+LINE 107:
+      },
+  -- This closes the previous block of code.
+
+LINE 108:
+      () => {
+  -- This line is part of the application logic or data structure.
+
+LINE 109:
+        // Fallback: filter local cache by userId
+  -- This is a comment providing information for developers.
+
+LINE 110:
+        return lsLoad()
+  -- This gives the result back to whoever called this function.
+
+LINE 111:
+          .filter(r => String(r.userId) === String(userId))
+  -- This line is part of the application logic or data structure.
+
+LINE 112:
+          .reverse(); // newest first
+  -- This line is part of the application logic or data structure.
+
+LINE 113:
+      }
+  -- This closes the previous block of code.
+
+LINE 114:
+    );
+  -- This line is part of the application logic or data structure.
+
+LINE 115:
+  }
+  -- This closes the previous block of code.
+
+LINE 116:
+  
+  -- (blank line -- spacing only)
+
+LINE 117:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 118:
+  // GET ACTIVE RIDES FOR A USER
+  -- This is a comment providing information for developers.
+
+LINE 119:
+  // GET /api/rides/user/{userId}/active
+  -- This is a comment providing information for developers.
+
+LINE 120:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 121:
+  export async function getActiveRides(userId) {
+  -- simply means wait for server reply before continuing.
+
+LINE 122:
+    return withFallback(
+  -- This gives the result back to whoever called this function.
+
+LINE 123:
+      async () => {
+  -- simply means wait for server reply before continuing.
+
+LINE 124:
+        const res = await fetch(`${BASE}/user/${userId}/active`);
+  -- sending a request to the server and waiting for response. simply means wait for server reply before continuing.
+
+LINE 125:
+        if (!res.ok) throw new Error(`Get active rides failed: ${res.status}`);
+  -- This checks a condition before deciding what to do next.
+
+LINE 126:
+        return res.json();
+  -- This gives the result back to whoever called this function.
+
+LINE 127:
+      },
+  -- This closes the previous block of code.
+
+LINE 128:
+      () => {
+  -- This line is part of the application logic or data structure.
+
+LINE 129:
+        // Fallback: filter local cache for active rides
+  -- This is a comment providing information for developers.
+
+LINE 130:
+        return lsLoad().filter(
+  -- This gives the result back to whoever called this function.
+
+LINE 131:
+          r => String(r.userId) === String(userId) && r.status === "active"
+  -- This line is part of the application logic or data structure.
+
+LINE 132:
+        );
+  -- This line is part of the application logic or data structure.
+
+LINE 133:
+      }
+  -- This closes the previous block of code.
+
+LINE 134:
+    );
+  -- This line is part of the application logic or data structure.
+
+LINE 135:
+  }
+  -- This closes the previous block of code.
+
+LINE 136:
+  
+  -- (blank line -- spacing only)
+
+LINE 137:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 138:
+  // END A RIDE (change status to "completed")
+  -- This is a comment providing information for developers.
+
+LINE 139:
+  // PATCH /api/rides/{rideId}/status
+  -- This is a comment providing information for developers.
+
+LINE 140:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 141:
+  export async function endRide(rideId) {
+  -- simply means wait for server reply before continuing.
+
+LINE 142:
+    return withFallback(
+  -- This gives the result back to whoever called this function.
+
+LINE 143:
+      async () => {
+  -- simply means wait for server reply before continuing.
+
+LINE 144:
+        const res = await fetch(`${BASE}/${rideId}/status`, {
+  -- sending a request to the server and waiting for response. simply means wait for server reply before continuing.
+
+LINE 145:
+          method: "PATCH",
+  -- This line is part of the application logic or data structure.
+
+LINE 146:
+          headers: { "Content-Type": "application/json" },
+  -- This line is part of the application logic or data structure.
+
+LINE 147:
+          body: JSON.stringify({ status: "completed" }), // tell backend to mark complete
+  -- This converts data into a text format that can be sent over the internet.
+
+LINE 148:
+        });
+  -- This line is part of the application logic or data structure.
+
+LINE 149:
+        if (!res.ok) throw new Error(`End ride failed: ${res.status}`);
+  -- This checks a condition before deciding what to do next.
+
+LINE 150:
+        const updated = await res.json();
+  -- simply means wait for server reply before continuing.
+
+LINE 151:
+        // Sync to local cache
+  -- This is a comment providing information for developers.
+
+LINE 152:
+        const cached = lsLoad().map(r => String(r.id) === String(rideId) ? updated : r);
+  -- This creates a variable to store data temporarily.
+
+LINE 153:
+        lsSave(cached);
+  -- This line is part of the application logic or data structure.
+
+LINE 154:
+        return updated;
+  -- This gives the result back to whoever called this function.
+
+LINE 155:
+      },
+  -- This closes the previous block of code.
+
+LINE 156:
+      () => {
+  -- This line is part of the application logic or data structure.
+
+LINE 157:
+        // Fallback: update local cache
+  -- This is a comment providing information for developers.
+
+LINE 158:
+        const cached = lsLoad().map(r =>
+  -- This creates a variable to store data temporarily.
+
+LINE 159:
+          String(r.id) === String(rideId)
+  -- This line is part of the application logic or data structure.
+
+LINE 160:
+            ? { ...r, status: "completed", endedAt: new Date().toISOString() }
+  -- This line is part of the application logic or data structure.
+
+LINE 161:
+            : r
+  -- This line is part of the application logic or data structure.
+
+LINE 162:
+        );
+  -- This line is part of the application logic or data structure.
+
+LINE 163:
+        lsSave(cached);
+  -- This line is part of the application logic or data structure.
+
+LINE 164:
+        return cached.find(r => String(r.id) === String(rideId));
+  -- This gives the result back to whoever called this function.
+
+LINE 165:
+      }
+  -- This closes the previous block of code.
+
+LINE 166:
+    );
+  -- This line is part of the application logic or data structure.
+
+LINE 167:
+  }
+  -- This closes the previous block of code.
+
+LINE 168:
+  
+  -- (blank line -- spacing only)
+
+LINE 169:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 170:
+  // DELETE A RIDE PERMANENTLY
+  -- This is a comment providing information for developers.
+
+LINE 171:
+  // DELETE /api/rides/{rideId}
+  -- This is a comment providing information for developers.
+
+LINE 172:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 173:
+  export async function deleteRide(rideId) {
+  -- simply means wait for server reply before continuing.
+
+LINE 174:
+    return withFallback(
+  -- This gives the result back to whoever called this function.
+
+LINE 175:
+      async () => {
+  -- simply means wait for server reply before continuing.
+
+LINE 176:
+        const res = await fetch(`${BASE}/${rideId}`, { method: "DELETE" });
+  -- sending a request to the server and waiting for response. simply means wait for server reply before continuing.
+
+LINE 177:
+        if (!res.ok) throw new Error(`Delete ride failed: ${res.status}`);
+  -- This checks a condition before deciding what to do next.
+
+LINE 178:
+        // Remove from local cache too
+  -- This is a comment providing information for developers.
+
+LINE 179:
+        lsSave(lsLoad().filter(r => String(r.id) !== String(rideId)));
+  -- This line is part of the application logic or data structure.
+
+LINE 180:
+      },
+  -- This closes the previous block of code.
+
+LINE 181:
+      () => {
+  -- This line is part of the application logic or data structure.
+
+LINE 182:
+        // Fallback: remove from local cache
+  -- This is a comment providing information for developers.
+
+LINE 183:
+        lsSave(lsLoad().filter(r => String(r.id) !== String(rideId)));
+  -- This line is part of the application logic or data structure.
+
+LINE 184:
+      }
+  -- This closes the previous block of code.
+
+LINE 185:
+    );
+  -- This line is part of the application logic or data structure.
+
+LINE 186:
+  }
+  -- This closes the previous block of code.
+
+LINE 187:
+  
+  -- (blank line -- spacing only)
+
+LINE 188:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 189:
+  // GET A SINGLE RIDE BY ID
+  -- This is a comment providing information for developers.
+
+LINE 190:
+  // GET /api/rides/{rideId}
+  -- This is a comment providing information for developers.
+
+LINE 191:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 192:
+  export async function getRide(rideId) {
+  -- simply means wait for server reply before continuing.
+
+LINE 193:
+    return withFallback(
+  -- This gives the result back to whoever called this function.
+
+LINE 194:
+      async () => {
+  -- simply means wait for server reply before continuing.
+
+LINE 195:
+        const res = await fetch(`${BASE}/${rideId}`);
+  -- sending a request to the server and waiting for response. simply means wait for server reply before continuing.
+
+LINE 196:
+        if (!res.ok) throw new Error(`Get ride failed: ${res.status}`);
+  -- This checks a condition before deciding what to do next.
+
+LINE 197:
+        return res.json();
+  -- This gives the result back to whoever called this function.
+
+LINE 198:
+      },
+  -- This closes the previous block of code.
+
+LINE 199:
+      () => lsLoad().find(r => String(r.id) === String(rideId)) || null
+  -- This line is part of the application logic or data structure.
+
+LINE 200:
+    );
+  -- This line is part of the application logic or data structure.
+
+LINE 201:
+  }
+  -- This closes the previous block of code.
+
+LINE 202:
+  
+  -- (blank line -- spacing only)
+
+LINE 203:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 204:
+  // UPDATE USER LOCATION -- store a GPS position update on the backend
+  -- This is a comment providing information for developers.
+
+LINE 205:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 206:
+  // Called on every GPS tick while a ride is active.
+  -- This is a comment providing information for developers.
+
+LINE 207:
+  // The backend records position history so we can:
+  -- This is a comment providing information for developers.
+
+LINE 208:
+  //   - Show the traveled path in ride history
+  -- This is a comment providing information for developers.
+
+LINE 209:
+  //   - Support future route deviation detection
+  -- This is a comment providing information for developers.
+
+LINE 210:
+  //   - Support group ride live location sharing
+  -- This is a comment providing information for developers.
+
+LINE 211:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 212:
+  // POST /api/rides/{rideId}/location
+  -- This is a comment providing information for developers.
+
+LINE 213:
+  // Body: { lat, lng, timestamp }
+  -- This is a comment providing information for developers.
+
+LINE 214:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 215:
+  // This is "fire-and-forget" -- if backend is unreachable we log and
+  -- This is a comment providing information for developers.
+
+LINE 216:
+  // silently skip. GPS dot and route trimming still work client-side.
+  -- This is a comment providing information for developers.
+
+LINE 217:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 218:
+  export async function updateUserLocation(rideId, lat, lng) {
+  -- simply means wait for server reply before continuing.
+
+LINE 219:
+    try {
+  -- if something goes wrong, catch the error instead of crashing.
+
+LINE 220:
+      // Build the location update payload with an ISO timestamp
+  -- This is a comment providing information for developers.
+
+LINE 221:
+      const payload = {
+  -- This creates a variable to store data temporarily.
+
+LINE 222:
+        lat,                                // decimal degrees (e.g. 13.0827)
+  -- This line is part of the application logic or data structure.
+
+LINE 223:
+        lng,                                // decimal degrees (e.g. 80.2707)
+  -- This line is part of the application logic or data structure.
+
+LINE 224:
+        timestamp: new Date().toISOString(), // when this fix was captured
+  -- This line is part of the application logic or data structure.
+
+LINE 225:
+      };
+  -- This closes the previous block of code.
+
+LINE 226:
+  
+  -- (blank line -- spacing only)
+
+LINE 227:
+      const res = await fetch(`${BASE}/${rideId}/location`, {
+  -- sending a request to the server and waiting for response. simply means wait for server reply before continuing.
+
+LINE 228:
+        method:  "POST",
+  -- This line is part of the application logic or data structure.
+
+LINE 229:
+        headers: { "Content-Type": "application/json" },
+  -- This line is part of the application logic or data structure.
+
+LINE 230:
+        body:    JSON.stringify(payload),
+  -- This converts data into a text format that can be sent over the internet.
+
+LINE 231:
+      });
+  -- This line is part of the application logic or data structure.
+
+LINE 232:
+  
+  -- (blank line -- spacing only)
+
+LINE 233:
+      // Log non-2xx responses but don't throw -- this is non-critical
+  -- This is a comment providing information for developers.
+
+LINE 234:
+      if (!res.ok) {
+  -- This checks a condition before deciding what to do next.
+
+LINE 235:
+        console.warn(`[rideApi] Location update returned HTTP ${res.status}`);
+  -- This gives the result back to whoever called this function.
+
+LINE 236:
+      }
+  -- This closes the previous block of code.
+
+LINE 237:
+    } catch (err) {
+  -- if something goes wrong, catch the error instead of crashing.
+
+LINE 238:
+      // Backend offline or network error -- silently continue.
+  -- This is a comment providing information for developers.
+
+LINE 239:
+      // All client-side map features still work without this call.
+  -- This is a comment providing information for developers.
+
+LINE 240:
+      console.warn("[rideApi] updateUserLocation skipped (backend unreachable):", err.message);
+  -- This prints a message to the developer console for debugging.
+
+LINE 241:
+    }
+  -- This closes the previous block of code.
+
+LINE 242:
+  }
+  -- This closes the previous block of code.
+
+================================================================================
+  HOW THIS FILE CONNECTS TO THE REST OF THE APP
+================================================================================
+  This file is used by the frontend components to handle data and logic.
+================================================================================

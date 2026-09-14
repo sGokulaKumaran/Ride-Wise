@@ -1,0 +1,734 @@
+================================================================================
+  RIDEWISE PROJECT -- CODE EXPLANATION
+  File    : AuthContext.jsx
+  Located : E:\My projects\RideWise\frontend\src\context\AuthContext.jsx
+  Purpose : This file serves as the global authentication manager for the app. It handles logging in, signing up, and remembering the user's session.
+================================================================================
+
+  KEY CONCEPTS IN THIS FILE
+  -------------------------
+  1. Context: A way to share data globally across the application.
+  2. localStorage: Browser storage that survives page refresh.
+  3. async/await: Waiting for server to reply.
+  4. try/catch: Error handling.
+
+================================================================================
+  LINE-BY-LINE CODE EXPLANATION
+================================================================================
+LINE 1:
+  // ============================================================
+  -- A code comment.
+
+LINE 2:
+  // 🔐 AuthContext — Global authentication state manager
+  -- A code comment.
+
+LINE 3:
+  //
+  -- A code comment.
+
+LINE 4:
+  // BACKEND CONNECTED:
+  -- A code comment.
+
+LINE 5:
+  //   signup       → POST /api/auth/signup
+  -- A code comment.
+
+LINE 6:
+  //   login        → POST /api/auth/login
+  -- A code comment.
+
+LINE 7:
+  //   updateProfile → PATCH /api/auth/profile/{userId}
+  -- A code comment.
+
+LINE 8:
+  //
+  -- A code comment.
+
+LINE 9:
+  // SESSION PERSISTENCE:
+  -- A code comment.
+
+LINE 10:
+  //   The UserResponse returned by the backend is saved to
+  -- A code comment.
+
+LINE 11:
+  //   localStorage so the user stays logged in on refresh.
+  -- Using localStorage, which is browser storage that survives page refresh.
+
+LINE 12:
+  //   The actual source-of-truth for credentials lives in the
+  -- A code comment.
+
+LINE 13:
+  //   backend H2 / PostgreSQL database.
+  -- A code comment.
+
+LINE 14:
+  //
+  -- A code comment.
+
+LINE 15:
+  // NOTES:
+  -- A code comment.
+
+LINE 16:
+  //   - user.id is now a Long (number) from the backend — no more
+  -- A code comment.
+
+LINE 17:
+  //     "u_<timestamp>_<random>" string IDs.
+  -- A code comment.
+
+LINE 18:
+  //   - Passwords are BCrypt-hashed on the backend; we never store
+  -- A code comment.
+
+LINE 19:
+  //     them in localStorage.
+  -- Using localStorage, which is browser storage that survives page refresh.
+
+LINE 20:
+  // ============================================================
+  -- A code comment.
+
+LINE 21:
+  
+  -- (blank line -- spacing only)
+
+LINE 22:
+  import { createContext, useContext, useEffect, useState } from "react";
+  -- Importing a required module or function.
+
+LINE 23:
+  
+  -- (blank line -- spacing only)
+
+LINE 24:
+  const AuthContext = createContext(null);
+  -- Executing application logic.
+
+LINE 25:
+  
+  -- (blank line -- spacing only)
+
+LINE 26:
+  // ── Custom hook used by every component that needs auth ──
+  -- A code comment.
+
+LINE 27:
+  export function useAuth() {
+  -- Defining a function.
+
+LINE 28:
+    const ctx = useContext(AuthContext);
+  -- Executing application logic.
+
+LINE 29:
+    if (!ctx) throw new Error("useAuth must be used within <AuthProvider>");
+  -- Executing application logic.
+
+LINE 30:
+    return ctx;
+  -- Returning a value or UI elements.
+
+LINE 31:
+  }
+  -- Closing a block of code.
+
+LINE 32:
+  
+  -- (blank line -- spacing only)
+
+LINE 33:
+  // ── Helper: throw a readable error from a non-2xx response ──
+  -- A code comment.
+
+LINE 34:
+  async function handleResponse(res) {
+  -- Using async/await, waiting for server to reply.
+
+LINE 35:
+    if (res.ok) return res.json();
+  -- Executing application logic.
+
+LINE 36:
+    // Try to parse a message from the backend error body
+  -- A code comment.
+
+LINE 37:
+    let msg = `Server error (${res.status})`;
+  -- Executing application logic.
+
+LINE 38:
+    try {
+  -- Using try/catch for error handling.
+
+LINE 39:
+      const body = await res.json();
+  -- Using async/await, waiting for server to reply.
+
+LINE 40:
+      if (body?.message) msg = body.message;
+  -- Executing application logic.
+
+LINE 41:
+      else if (typeof body === "string") msg = body;
+  -- Executing application logic.
+
+LINE 42:
+    } catch (_) {
+  -- Using try/catch for error handling.
+
+LINE 43:
+      // body wasn't JSON — keep the generic message
+  -- A code comment.
+
+LINE 44:
+    }
+  -- Closing a block of code.
+
+LINE 45:
+    throw new Error(msg);
+  -- Executing application logic.
+
+LINE 46:
+  }
+  -- Closing a block of code.
+
+LINE 47:
+  
+  -- (blank line -- spacing only)
+
+LINE 48:
+  export function AuthProvider({ children }) {
+  -- Defining a function.
+
+LINE 49:
+    // ── STATE ──
+  -- A code comment.
+
+LINE 50:
+    const [user,             setUser]             = useState(null);
+  -- Creating a state variable.
+
+LINE 51:
+    const [isAuthenticated,  setIsAuthenticated]  = useState(false);
+  -- Creating a state variable.
+
+LINE 52:
+    const [isFullyOnboarded, setIsFullyOnboarded] = useState(false);
+  -- Creating a state variable.
+
+LINE 53:
+    const [loading,          setLoading]          = useState(true);
+  -- Creating a state variable.
+
+LINE 54:
+  
+  -- (blank line -- spacing only)
+
+LINE 55:
+    // ── RESTORE SESSION FROM LOCALSTORAGE ON APP LOAD ──
+  -- A code comment.
+
+LINE 56:
+    useEffect(() => {
+  -- Setting up a side effect.
+
+LINE 57:
+      try {
+  -- Using try/catch for error handling.
+
+LINE 58:
+        const savedUser  = localStorage.getItem("ridewise-user");
+  -- Using localStorage, which is browser storage that survives page refresh.
+
+LINE 59:
+        const savedAuth  = localStorage.getItem("ridewise-authenticated");
+  -- Using localStorage, which is browser storage that survives page refresh.
+
+LINE 60:
+        const savedBoard = localStorage.getItem("ridewise-onboarded");
+  -- Using localStorage, which is browser storage that survives page refresh.
+
+LINE 61:
+  
+  -- (blank line -- spacing only)
+
+LINE 62:
+        if (savedUser && savedAuth === "true") {
+  -- Executing application logic.
+
+LINE 63:
+          const parsed = JSON.parse(savedUser);
+  -- Executing application logic.
+
+LINE 64:
+          setUser(parsed);
+  -- Executing application logic.
+
+LINE 65:
+          setIsAuthenticated(true);
+  -- Executing application logic.
+
+LINE 66:
+          setIsFullyOnboarded(savedBoard === "true" && Boolean(parsed.username));
+  -- Executing application logic.
+
+LINE 67:
+        }
+  -- Closing a block of code.
+
+LINE 68:
+      } catch (err) {
+  -- Using try/catch for error handling.
+
+LINE 69:
+        // Corrupted data — wipe everything
+  -- A code comment.
+
+LINE 70:
+        localStorage.removeItem("ridewise-user");
+  -- Using localStorage, which is browser storage that survives page refresh.
+
+LINE 71:
+        localStorage.removeItem("ridewise-authenticated");
+  -- Using localStorage, which is browser storage that survives page refresh.
+
+LINE 72:
+        localStorage.removeItem("ridewise-onboarded");
+  -- Using localStorage, which is browser storage that survives page refresh.
+
+LINE 73:
+      } finally {
+  -- Executing application logic.
+
+LINE 74:
+        setLoading(false);
+  -- Executing application logic.
+
+LINE 75:
+      }
+  -- Closing a block of code.
+
+LINE 76:
+    }, []);
+  -- Executing application logic.
+
+LINE 77:
+  
+  -- (blank line -- spacing only)
+
+LINE 78:
+    // ── SIGNUP — POST /api/auth/signup ──
+  -- A code comment.
+
+LINE 79:
+    const signup = async (email, password) => {
+  -- Using async/await, waiting for server to reply.
+
+LINE 80:
+      if (!email || !password) throw new Error("Email and password are required.");
+  -- Executing application logic.
+
+LINE 81:
+      if (password.length < 6)  throw new Error("Password must be at least 6 characters.");
+  -- Executing application logic.
+
+LINE 82:
+      
+  -- (blank line -- spacing only)
+
+LINE 83:
+      //Its awake the backend of the signup controller in the authController
+  -- A code comment.
+
+LINE 84:
+      const res = await fetch("/api/auth/signup", {
+  -- Using async/await, waiting for server to reply.
+
+LINE 85:
+        method:  "POST",
+  -- Executing application logic.
+
+LINE 86:
+        headers: { "Content-Type": "application/json" },
+  -- Executing application logic.
+
+LINE 87:
+        body:    JSON.stringify({ email: email.trim().toLowerCase(), password }),
+  -- Executing application logic.
+
+LINE 88:
+      });
+  -- Executing application logic.
+
+LINE 89:
+  
+  -- (blank line -- spacing only)
+
+LINE 90:
+      const newUser = await handleResponse(res);
+  -- Using async/await, waiting for server to reply.
+
+LINE 91:
+      // newUser is a UserResponse: { id, email, username, mobile, address, lat, lng, createdAt }
+  -- A code comment.
+
+LINE 92:
+  
+  -- (blank line -- spacing only)
+
+LINE 93:
+      localStorage.setItem("ridewise-user", JSON.stringify(newUser));
+  -- Using localStorage, which is browser storage that survives page refresh.
+
+LINE 94:
+      localStorage.setItem("ridewise-authenticated", "true");
+  -- Using localStorage, which is browser storage that survives page refresh.
+
+LINE 95:
+      localStorage.setItem("ridewise-onboarded", "false");
+  -- Using localStorage, which is browser storage that survives page refresh.
+
+LINE 96:
+  
+  -- (blank line -- spacing only)
+
+LINE 97:
+      setUser(newUser);
+  -- Executing application logic.
+
+LINE 98:
+      setIsAuthenticated(true);
+  -- Executing application logic.
+
+LINE 99:
+      setIsFullyOnboarded(false);
+  -- Executing application logic.
+
+LINE 100:
+  
+  -- (blank line -- spacing only)
+
+LINE 101:
+      return newUser;
+  -- Returning a value or UI elements.
+
+LINE 102:
+    };
+  -- Closing a block of code.
+
+LINE 103:
+  
+  -- (blank line -- spacing only)
+
+LINE 104:
+    // ── LOGIN — POST /api/auth/login ──
+  -- A code comment.
+
+LINE 105:
+    const login = async (email, password) => {
+  -- Using async/await, waiting for server to reply.
+
+LINE 106:
+      if (!email || !password) throw new Error("Email and password are required.");
+  -- Executing application logic.
+
+LINE 107:
+  
+  -- (blank line -- spacing only)
+
+LINE 108:
+      const res = await fetch("/api/auth/login", {
+  -- Using async/await, waiting for server to reply.
+
+LINE 109:
+        method:  "POST",
+  -- Executing application logic.
+
+LINE 110:
+        headers: { "Content-Type": "application/json" },
+  -- Executing application logic.
+
+LINE 111:
+        body:    JSON.stringify({ email: email.trim().toLowerCase(), password }),
+  -- Executing application logic.
+
+LINE 112:
+      });
+  -- Executing application logic.
+
+LINE 113:
+  
+  -- (blank line -- spacing only)
+
+LINE 114:
+      const loggedInUser = await handleResponse(res);
+  -- Using async/await, waiting for server to reply.
+
+LINE 115:
+  
+  -- (blank line -- spacing only)
+
+LINE 116:
+      localStorage.setItem("ridewise-user",          JSON.stringify(loggedInUser));
+  -- Using localStorage, which is browser storage that survives page refresh.
+
+LINE 117:
+      localStorage.setItem("ridewise-authenticated", "true");
+  -- Using localStorage, which is browser storage that survives page refresh.
+
+LINE 118:
+      localStorage.setItem("ridewise-onboarded",     loggedInUser.username ? "true" : "false");
+  -- Using localStorage, which is browser storage that survives page refresh.
+
+LINE 119:
+  
+  -- (blank line -- spacing only)
+
+LINE 120:
+      setUser(loggedInUser);
+  -- Executing application logic.
+
+LINE 121:
+      setIsAuthenticated(true);
+  -- Executing application logic.
+
+LINE 122:
+      setIsFullyOnboarded(Boolean(loggedInUser.username));
+  -- Executing application logic.
+
+LINE 123:
+  
+  -- (blank line -- spacing only)
+
+LINE 124:
+      return loggedInUser;
+  -- Returning a value or UI elements.
+
+LINE 125:
+    };
+  -- Closing a block of code.
+
+LINE 126:
+  
+  -- (blank line -- spacing only)
+
+LINE 127:
+    // ── UPDATE PROFILE — PATCH /api/auth/profile/{userId} ──
+  -- A code comment.
+
+LINE 128:
+    const updateProfile = async (patch) => {
+  -- Using async/await, waiting for server to reply.
+
+LINE 129:
+      if (!user) throw new Error("Not logged in");// for safty check
+  -- Executing application logic.
+
+LINE 130:
+  
+  -- (blank line -- spacing only)
+
+LINE 131:
+      const res = await fetch(`/api/auth/profile/${user.id}`, {
+  -- Using async/await, waiting for server to reply.
+
+LINE 132:
+        method:  "PATCH",
+  -- Executing application logic.
+
+LINE 133:
+        headers: { "Content-Type": "application/json" },
+  -- Executing application logic.
+
+LINE 134:
+        body:    JSON.stringify(patch),
+  -- Executing application logic.
+
+LINE 135:
+        // patch can include: { username, mobile, address }
+  -- A code comment.
+
+LINE 136:
+      });
+  -- Executing application logic.
+
+LINE 137:
+  
+  -- (blank line -- spacing only)
+
+LINE 138:
+      const updated = await handleResponse(res);
+  -- Using async/await, waiting for server to reply.
+
+LINE 139:
+      // Merge: keep anything the backend echoed back, fall back to local copy
+  -- A code comment.
+
+LINE 140:
+      const merged = { ...user, ...updated };
+  -- Executing application logic.
+
+LINE 141:
+  
+  -- (blank line -- spacing only)
+
+LINE 142:
+      localStorage.setItem("ridewise-user", JSON.stringify(merged));
+  -- Using localStorage, which is browser storage that survives page refresh.
+
+LINE 143:
+      setUser(merged);
+  -- Executing application logic.
+
+LINE 144:
+  
+  -- (blank line -- spacing only)
+
+LINE 145:
+      // Mark as onboarded if username was just set
+  -- A code comment.
+
+LINE 146:
+      if (patch.username && patch.username.trim()) {
+  -- Executing application logic.
+
+LINE 147:
+        localStorage.setItem("ridewise-onboarded", "true");
+  -- Using localStorage, which is browser storage that survives page refresh.
+
+LINE 148:
+        setIsFullyOnboarded(true);
+  -- Executing application logic.
+
+LINE 149:
+      }
+  -- Closing a block of code.
+
+LINE 150:
+  
+  -- (blank line -- spacing only)
+
+LINE 151:
+      return merged;
+  -- Returning a value or UI elements.
+
+LINE 152:
+    };
+  -- Closing a block of code.
+
+LINE 153:
+  
+  -- (blank line -- spacing only)
+
+LINE 154:
+    // ── LOGOUT ──
+  -- A code comment.
+
+LINE 155:
+    const logout = () => {
+  -- Defining a function.
+
+LINE 156:
+      setUser(null);
+  -- Executing application logic.
+
+LINE 157:
+      setIsAuthenticated(false);
+  -- Executing application logic.
+
+LINE 158:
+      setIsFullyOnboarded(false);
+  -- Executing application logic.
+
+LINE 159:
+      localStorage.removeItem("ridewise-user");
+  -- Using localStorage, which is browser storage that survives page refresh.
+
+LINE 160:
+      localStorage.removeItem("ridewise-authenticated");
+  -- Using localStorage, which is browser storage that survives page refresh.
+
+LINE 161:
+      localStorage.removeItem("ridewise-onboarded");
+  -- Using localStorage, which is browser storage that survives page refresh.
+
+LINE 162:
+    };
+  -- Closing a block of code.
+
+LINE 163:
+  
+  -- (blank line -- spacing only)
+
+LINE 164:
+    // ── COMPUTED: avatar letter ──
+  -- A code comment.
+
+LINE 165:
+    const avatarLetter =
+  -- Executing application logic.
+
+LINE 166:
+      (user?.username?.[0] || user?.email?.[0] || "R").toUpperCase();
+  -- Executing application logic.
+
+LINE 167:
+      // first its check the username if not then its check email
+  -- A code comment.
+
+LINE 168:
+      //even that also not then its use R default value
+  -- A code comment.
+
+LINE 169:
+  
+  -- (blank line -- spacing only)
+
+LINE 170:
+    return (
+  -- Returning a value or UI elements.
+
+LINE 171:
+      <AuthContext.Provider value={{
+  -- Rendering a user interface element.
+
+LINE 172:
+        user, isAuthenticated, isFullyOnboarded, loading, avatarLetter,
+  -- Executing application logic.
+
+LINE 173:
+        login, signup, updateProfile, logout,
+  -- Executing application logic.
+
+LINE 174:
+      }}>
+  -- Rendering a user interface element.
+
+LINE 175:
+        {children}
+  -- Executing application logic.
+
+LINE 176:
+      </AuthContext.Provider>
+  -- Rendering a user interface element.
+
+LINE 177:
+    );
+  -- Closing a block of code.
+
+LINE 178:
+  }
+  -- Closing a block of code.
+
+================================================================================
+  HOW THIS FILE CONNECTS TO THE REST OF THE APP
+================================================================================
+  It wraps the entire application and is imported by other components (like Login) to access authentication functions and user data.
+================================================================================

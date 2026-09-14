@@ -228,15 +228,22 @@ export default function RideSetupFlow({ rideType, userId, onRideCreated, onCance
       };
 
       // Save to backend (or localStorage fallback)
-      // Attach routeSteps directly to savedRide so navigation has them
-      // immediately (before the backend might strip unknown fields).
       const savedRide = await createRide(ridePayload);
-      if (!savedRide.routeSteps && routeData.steps?.length) {
-        savedRide.routeSteps = routeData.steps; // client-side attach for instant nav
+
+      // ── CRITICAL: re-attach route data that backend may not return ──
+      // The backend DB might not have a routeCoordinates or routeSteps column,
+      // so the returned object may be missing them. We always restore from the
+      // locally computed OSRM result so the live map always has coordinates to draw.
+      if (!savedRide.routeCoordinates) {
+        savedRide.routeCoordinates = JSON.stringify(routeData.coordinates);
+      }
+      if (!savedRide.routeSteps) {
+        savedRide.routeSteps = routeData.steps || [];
       }
 
       // Tell the parent (Home.jsx) to open the full-screen map for this ride
       onRideCreated(savedRide);
+
     } catch (e) {
       setError(e.message);
     } finally {

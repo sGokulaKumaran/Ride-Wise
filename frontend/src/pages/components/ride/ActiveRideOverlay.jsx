@@ -19,6 +19,7 @@
 //   ✅ Bottom bar: LIVE remaining distance + ETA + ride type
 //   ✅ GPS error banner when location permission is denied
 //   ✅ Camera-follow mode via RideMap's built-in follow logic
+//   ✅ VIEW-ONLY MODE — for completed/cancelled rides (no End Ride button)
 //
 // ── PROPS ─────────────────────────────────────────────────
 //   ride    — active ride object (from backend / localStorage)
@@ -69,6 +70,11 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
 
   const stopGpsRef = useRef(null);
 
+  // ── Determine if ride is active (live navigation) or view-only ──
+  // Completed/cancelled rides open in view-only mode — no End Ride button,
+  // no GPS tracking started (to avoid unnecessary battery drain).
+  const isActiveRide = ride?.status === "active";
+
   // Parse steps whenever ride changes
   useEffect(() => {
     setSteps(parseSteps(ride));
@@ -80,9 +86,12 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
   const isLastStep     = activeStep >= steps.length - 1;
 
   // ====================================================================
-  // START GPS when overlay mounts; STOP on unmount
+  // START GPS when overlay mounts (only for active rides); STOP on unmount
   // ====================================================================
   useEffect(() => {
+    // Only track GPS for active rides — not for history view
+    if (!isActiveRide) return;
+
     const stop = watchLocation(
       (loc) => {
         setMyLocation(loc);
@@ -122,7 +131,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
 
     stopGpsRef.current = stop;
     return () => stop();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isActiveRide]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ====================================================================
   // END RIDE handler (two-click confirm)
@@ -131,7 +140,9 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
     if (!confirmEnd) { setConfirmEnd(true); return; }
     setEnding(true);
     setConfirmEnd(false);
+    // Stop GPS tracking before calling onEnd
     stopGpsRef.current?.();
+    stopGpsRef.current = null;
     await onEnd();
     setEnding(false);
   };
@@ -169,7 +180,9 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
       >
         <span style={{
           width: "10px", height: "10px", borderRadius: "50%",
-          background: "#22c55e", animation: "pulse 2s ease-in-out infinite", flexShrink: 0,
+          background: isActiveRide ? "#22c55e" : "#9ca3af",
+          animation: isActiveRide ? "pulse 2s ease-in-out infinite" : "none",
+          flexShrink: 0,
         }} />
         <span style={{ color: "white", fontWeight: 700, fontSize: "13px" }}>
           {(ride.fromName || "From").split(",")[0]} → {(ride.destinationName || "Destination").split(",")[0]}
@@ -217,8 +230,8 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
         background:     "linear-gradient(to bottom, rgba(0,0,0,0.88) 0%, transparent 100%)",
         pointerEvents:  "none",
       }}>
-        {/* ── Row 1: Next turn instruction ── */}
-        {currentStep && (
+        {/* ── Row 1: Next turn instruction (only for active rides with steps) ── */}
+        {currentStep && isActiveRide && (
           <div style={{
             display:        "flex",
             alignItems:     "center",
@@ -353,8 +366,8 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
           </div>
         )}
 
-        {/* ── If no steps yet (loading or no steps data) — show compact top bar ── */}
-        {!currentStep && (
+        {/* ── If no steps yet or view-only mode — show compact top bar ── */}
+        {(!currentStep || !isActiveRide) && (
           <div style={{
             display:        "flex",
             alignItems:     "center",
@@ -369,13 +382,35 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <span style={{
                 width: "8px", height: "8px", borderRadius: "50%",
-                background: "#22c55e", animation: "pulse 2s ease-in-out infinite",
+                background: isActiveRide ? "#22c55e" : "#9ca3af",
+                animation: isActiveRide ? "pulse 2s ease-in-out infinite" : "none",
               }} />
               <span style={{ color: "white", fontWeight: 700, fontSize: "13px" }}>
                 {(ride.fromName || "From").split(",")[0]} → {(ride.destinationName || "Destination").split(",")[0]}
               </span>
+              {/* View-only badge for completed rides */}
+              {!isActiveRide && (
+                <span style={{
+                  background: "rgba(156,163,175,0.2)",
+                  border: "1px solid rgba(156,163,175,0.3)",
+                  borderRadius: "50px",
+                  padding: "2px 8px",
+                  color: "#9ca3af",
+                  fontSize: "10px",
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.5px",
+                }}>
+                  {ride.status || "Completed"}
+                </span>
+              )}
             </div>
             <div style={{ display: "flex", gap: "8px" }}>
+              {steps.length > 0 && (
+                <button onClick={() => setShowDirections(v => !v)} style={topBtnStyle}>
+                  <i className="fa fa-list" />
+                </button>
+              )}
               <button onClick={() => setMinimized(true)} style={topBtnStyle}>
                 <i className="fa fa-minus" />
               </button>
@@ -394,11 +429,11 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
         <RideMap
           ride={ride}
           myLocation={myLocation}
-          isLive={true}
+          isLive={isActiveRide}
         />
 
         {/* GPS error banner */}
-        {gpsError && (
+        {gpsError && isActiveRide && (
           <div style={{
             position:       "absolute",
             top:            "160px",
@@ -419,8 +454,8 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
           </div>
         )}
 
-        {/* ── Speed HUD chip (bottom-left) ── */}
-        {myLocation?.speed != null && myLocation.speed >= 0 && (
+        {/* ── Speed HUD chip (bottom-left) — only during active rides ── */}
+        {myLocation?.speed != null && myLocation.speed >= 0 && isActiveRide && (
           <div style={{
             position:       "absolute",
             bottom:         "170px",
@@ -444,7 +479,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
         )}
 
         {/* ── Step progress indicator (bottom-right) ── */}
-        {steps.length > 0 && (
+        {steps.length > 0 && isActiveRide && (
           <div style={{
             position:       "absolute",
             bottom:         "170px",
@@ -526,65 +561,88 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
           </div>
         </div>
 
-        {/* ── End Ride button (two-click confirm) ── */}
-        {confirmEnd ? (
-          <div style={{ display: "flex", gap: "8px" }}>
-            <button
-              onClick={cancelEnd}
-              style={{
-                flex: 1, padding: "14px",
-                background:   "rgba(255,255,255,0.1)",
-                border:       "1px solid rgba(255,255,255,0.2)",
-                borderRadius: "14px",
-                color:        "white",
-                fontWeight:   700,
-                fontSize:     "14px",
-                cursor:       "pointer",
-              }}
-            >
-              <i className="fa fa-arrow-left" style={{ marginRight: "8px" }} />
-              Cancel
-            </button>
+        {/* ── End Ride button — only for ACTIVE rides ── */}
+        {/* BUG FIX: completed/cancelled rides show a "Close" button instead */}
+        {isActiveRide ? (
+          confirmEnd ? (
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button
+                onClick={cancelEnd}
+                style={{
+                  flex: 1, padding: "14px",
+                  background:   "rgba(255,255,255,0.1)",
+                  border:       "1px solid rgba(255,255,255,0.2)",
+                  borderRadius: "14px",
+                  color:        "white",
+                  fontWeight:   700,
+                  fontSize:     "14px",
+                  cursor:       "pointer",
+                }}
+              >
+                <i className="fa fa-arrow-left" style={{ marginRight: "8px" }} />
+                Cancel
+              </button>
+              <button
+                onClick={handleEndRide}
+                disabled={ending}
+                style={{
+                  flex: 1, padding: "14px",
+                  background:   "linear-gradient(135deg, #ef4444, #dc2626)",
+                  border:       "none",
+                  borderRadius: "14px",
+                  color:        "white",
+                  fontWeight:   900,
+                  fontSize:     "14px",
+                  cursor:       ending ? "not-allowed" : "pointer",
+                  opacity:      ending ? 0.7 : 1,
+                  boxShadow:    "0 4px 20px rgba(239,68,68,0.4)",
+                }}
+              >
+                {ending
+                  ? <><i className="fa fa-spinner fa-spin" style={{ marginRight: "8px" }} />Ending...</>
+                  : <><i className="fa fa-flag-checkered" style={{ marginRight: "8px" }} />Confirm End</>
+                }
+              </button>
+            </div>
+          ) : (
             <button
               onClick={handleEndRide}
-              disabled={ending}
               style={{
-                flex: 1, padding: "14px",
-                background:   "linear-gradient(135deg, #ef4444, #dc2626)",
-                border:       "none",
-                borderRadius: "14px",
-                color:        "white",
-                fontWeight:   900,
-                fontSize:     "14px",
-                cursor:       ending ? "not-allowed" : "pointer",
-                opacity:      ending ? 0.7 : 1,
-                boxShadow:    "0 4px 20px rgba(239,68,68,0.4)",
+                width:          "100%",
+                padding:        "15px",
+                background:     "rgba(239,68,68,0.15)",
+                border:         "1.5px solid rgba(239,68,68,0.5)",
+                borderRadius:   "14px",
+                color:          "#ef4444",
+                fontWeight:     900,
+                fontSize:       "15px",
+                cursor:         "pointer",
+                backdropFilter: "blur(8px)",
               }}
             >
-              {ending
-                ? <><i className="fa fa-spinner fa-spin" style={{ marginRight: "8px" }} />Ending...</>
-                : <><i className="fa fa-flag-checkered" style={{ marginRight: "8px" }} />Confirm End</>
-              }
+              <i className="fa fa-flag-checkered" style={{ marginRight: "8px" }} />
+              End Ride
             </button>
-          </div>
+          )
         ) : (
+          // View-only mode for completed/cancelled rides
           <button
-            onClick={handleEndRide}
+            onClick={onClose}
             style={{
               width:          "100%",
               padding:        "15px",
-              background:     "rgba(239,68,68,0.15)",
-              border:         "1.5px solid rgba(239,68,68,0.5)",
+              background:     "rgba(255,255,255,0.08)",
+              border:         "1.5px solid rgba(255,255,255,0.15)",
               borderRadius:   "14px",
-              color:          "#ef4444",
+              color:          "rgba(255,255,255,0.8)",
               fontWeight:     900,
               fontSize:       "15px",
               cursor:         "pointer",
               backdropFilter: "blur(8px)",
             }}
           >
-            <i className="fa fa-flag-checkered" style={{ marginRight: "8px" }} />
-            End Ride
+            <i className="fa fa-times" style={{ marginRight: "8px" }} />
+            Close
           </button>
         )}
       </div>

@@ -1,0 +1,474 @@
+================================================================================
+  RIDEWISE PROJECT -- CODE EXPLANATION
+  File    : ridersApi.js
+  Located : E:\My projects\RideWise\frontend\src\services\ridersApi.js
+  Purpose : This file handles the communication between the front-end user interface and the back-end server for anything related to riders. It lets the app search for users, find nearby riders, and add or remove connections.
+================================================================================
+
+  KEY CONCEPTS IN THIS FILE
+  -------------------------
+  1. API Endpoints: Specific web addresses on the server that perform different tasks.
+  2. Haversine Formula: A mathematical formula used to calculate the actual distance between two points.
+  3. URLSearchParams: A tool that helps create the query part of a web address.
+
+================================================================================
+  LINE-BY-LINE CODE EXPLANATION
+================================================================================
+
+LINE 1:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 2:
+  //  ridersApi -- Real API calls to the Spring Boot backend
+  -- This is a comment providing information for developers.
+
+LINE 3:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 4:
+  // All functions call /api/riders/* which is proxied by Vite
+  -- This is a comment providing information for developers.
+
+LINE 5:
+  // to http://localhost:8080 during development.
+  -- This is a comment providing information for developers.
+
+LINE 6:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 7:
+  // ENDPOINT MAP (from RidersController.java):
+  -- This is a comment providing information for developers.
+
+LINE 8:
+  //   GET  /api/riders/search?query=&userId=   -> searchRiders
+  -- This is a comment providing information for developers.
+
+LINE 9:
+  //   GET  /api/riders/nearby?userId=          -> getNearRiders
+  -- This is a comment providing information for developers.
+
+LINE 10:
+  //   GET  /api/riders/connections?userId=     -> getConnectionsFull
+  -- This is a comment providing information for developers.
+
+LINE 11:
+  //   POST /api/riders/add    { userId, riderId } -> addRider
+  -- This is a comment providing information for developers.
+
+LINE 12:
+  //   POST /api/riders/remove { userId, riderId } -> removeRider
+  -- This is a comment providing information for developers.
+
+LINE 13:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 14:
+  // NOTES:
+  -- This is a comment providing information for developers.
+
+LINE 15:
+  //   - userId is a Long (number) -- matches the backend DB id
+  -- This is a comment providing information for developers.
+
+LINE 16:
+  //   - Every function throws on non-2xx so callers can catch errors
+  -- if something goes wrong, catch the error instead of crashing.
+
+LINE 17:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 18:
+  
+  -- (blank line -- spacing only)
+
+LINE 19:
+  //  Shared helper: parse response or throw a readable error 
+  -- This is a comment providing information for developers.
+
+LINE 20:
+  async function handleResponse(res) {
+  -- simply means wait for server reply before continuing.
+
+LINE 21:
+    if (res.ok) return res.json();
+  -- This gives the result back to whoever called this function.
+
+LINE 22:
+    let msg = `Server error (${res.status})`;
+  -- This creates a variable to store data temporarily.
+
+LINE 23:
+    try {
+  -- if something goes wrong, catch the error instead of crashing.
+
+LINE 24:
+      const body = await res.json();
+  -- simply means wait for server reply before continuing.
+
+LINE 25:
+      if (body?.message) msg = body.message;
+  -- This checks a condition before deciding what to do next.
+
+LINE 26:
+      else if (typeof body === "string") msg = body;
+  -- This checks a condition before deciding what to do next.
+
+LINE 27:
+    } catch (_) {/* body wasn't JSON */}
+  -- if something goes wrong, catch the error instead of crashing.
+
+LINE 28:
+    throw new Error(msg);
+  -- This creates an error message to let the app know something failed.
+
+LINE 29:
+  }
+  -- This closes the previous block of code.
+
+LINE 30:
+  
+  -- (blank line -- spacing only)
+
+LINE 31:
+  //  Haversine distance in km (still used client-side for "Near" badge) 
+  -- This is a comment providing information for developers.
+
+LINE 32:
+  export function distanceKm(lat1, lng1, lat2, lng2) {
+  -- This makes the function or variable available for other files to use.
+
+LINE 33:
+    const toRad = (v) => (v * Math.PI) / 180;
+  -- This creates a variable to store data temporarily.
+
+LINE 34:
+    const R = 6371;
+  -- This creates a variable to store data temporarily.
+
+LINE 35:
+    const dLat = toRad(lat2 - lat1);
+  -- This creates a variable to store data temporarily.
+
+LINE 36:
+    const dLng = toRad(lng2 - lng1);
+  -- This creates a variable to store data temporarily.
+
+LINE 37:
+    const a =
+  -- This creates a variable to store data temporarily.
+
+LINE 38:
+      Math.sin(dLat / 2) ** 2 +
+  -- This line is part of the application logic or data structure.
+
+LINE 39:
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  -- This line is part of the application logic or data structure.
+
+LINE 40:
+    return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  -- This gives the result back to whoever called this function.
+
+LINE 41:
+  }
+  -- This closes the previous block of code.
+
+LINE 42:
+  
+  -- (blank line -- spacing only)
+
+LINE 43:
+  //  searchRiders(query, currentUserId) 
+  -- This is a comment providing information for developers.
+
+LINE 44:
+  // Returns UserResponse[] -- users whose username or email contains the query.
+  -- This is a comment providing information for developers.
+
+LINE 45:
+  export async function searchRiders(query, currentUserId) {
+  -- simply means wait for server reply before continuing.
+
+LINE 46:
+    const q = (query || "").trim();
+  -- This creates a variable to store data temporarily.
+
+LINE 47:
+    if (!q) return [];
+  -- This gives the result back to whoever called this function.
+
+LINE 48:
+  
+  -- (blank line -- spacing only)
+
+LINE 49:
+    const params = new URLSearchParams({ query: q, userId: currentUserId });
+  -- This creates a variable to store data temporarily.
+
+LINE 50:
+    const res = await fetch(`/api/riders/search?${params}`);
+  -- sending a request to the server and waiting for response. simply means wait for server reply before continuing.
+
+LINE 51:
+    return handleResponse(res);
+  -- This gives the result back to whoever called this function.
+
+LINE 52:
+  }
+  -- This closes the previous block of code.
+
+LINE 53:
+  
+  -- (blank line -- spacing only)
+
+LINE 54:
+  //  addRider(userId, riderId) 
+  -- This is a comment providing information for developers.
+
+LINE 55:
+  // Returns { success: true/false }
+  -- This is a comment providing information for developers.
+
+LINE 56:
+  export async function addRider(userId, riderId) {
+  -- simply means wait for server reply before continuing.
+
+LINE 57:
+    if (!userId || !riderId) return { success: false, error: "Missing IDs" };
+  -- This gives the result back to whoever called this function.
+
+LINE 58:
+    if (userId === riderId)  return { success: false, error: "Cannot add yourself" };
+  -- This gives the result back to whoever called this function.
+
+LINE 59:
+  
+  -- (blank line -- spacing only)
+
+LINE 60:
+    const res = await fetch("/api/riders/add", {
+  -- sending a request to the server and waiting for response. simply means wait for server reply before continuing.
+
+LINE 61:
+      method:  "POST",
+  -- This line is part of the application logic or data structure.
+
+LINE 62:
+      headers: { "Content-Type": "application/json" },
+  -- This line is part of the application logic or data structure.
+
+LINE 63:
+      body:    JSON.stringify({ userId, riderId }),
+  -- This converts data into a text format that can be sent over the internet.
+
+LINE 64:
+    });
+  -- This line is part of the application logic or data structure.
+
+LINE 65:
+    return handleResponse(res);
+  -- This gives the result back to whoever called this function.
+
+LINE 66:
+    // Backend returns: { success: true } or { success: false }
+  -- This is a comment providing information for developers.
+
+LINE 67:
+  }
+  -- This closes the previous block of code.
+
+LINE 68:
+  
+  -- (blank line -- spacing only)
+
+LINE 69:
+  //  removeRider(userId, riderId) 
+  -- This is a comment providing information for developers.
+
+LINE 70:
+  // Returns { success: true/false }
+  -- This is a comment providing information for developers.
+
+LINE 71:
+  export async function removeRider(userId, riderId) {
+  -- simply means wait for server reply before continuing.
+
+LINE 72:
+    if (!userId || !riderId) return { success: false, error: "Missing IDs" };
+  -- This gives the result back to whoever called this function.
+
+LINE 73:
+  
+  -- (blank line -- spacing only)
+
+LINE 74:
+    const res = await fetch("/api/riders/remove", {
+  -- sending a request to the server and waiting for response. simply means wait for server reply before continuing.
+
+LINE 75:
+      method:  "POST",
+  -- This line is part of the application logic or data structure.
+
+LINE 76:
+      headers: { "Content-Type": "application/json" },
+  -- This line is part of the application logic or data structure.
+
+LINE 77:
+      body:    JSON.stringify({ userId, riderId }),
+  -- This converts data into a text format that can be sent over the internet.
+
+LINE 78:
+    });
+  -- This line is part of the application logic or data structure.
+
+LINE 79:
+    return handleResponse(res);
+  -- This gives the result back to whoever called this function.
+
+LINE 80:
+  }
+  -- This closes the previous block of code.
+
+LINE 81:
+  
+  -- (blank line -- spacing only)
+
+LINE 82:
+  //  getConnectionsFull(userId) 
+  -- This is a comment providing information for developers.
+
+LINE 83:
+  // Returns UserResponse[] -- full user objects for all connections.
+  -- This is a comment providing information for developers.
+
+LINE 84:
+  export async function getConnectionsFull(userId) {
+  -- simply means wait for server reply before continuing.
+
+LINE 85:
+    if (!userId) return [];
+  -- This gives the result back to whoever called this function.
+
+LINE 86:
+    const params = new URLSearchParams({ userId });
+  -- This creates a variable to store data temporarily.
+
+LINE 87:
+    const res = await fetch(`/api/riders/connections?${params}`);
+  -- sending a request to the server and waiting for response. simply means wait for server reply before continuing.
+
+LINE 88:
+    return handleResponse(res);
+  -- This gives the result back to whoever called this function.
+
+LINE 89:
+  }
+  -- This closes the previous block of code.
+
+LINE 90:
+  
+  -- (blank line -- spacing only)
+
+LINE 91:
+  //  getNearRiders(userId) 
+  -- This is a comment providing information for developers.
+
+LINE 92:
+  // Returns UserResponse[] -- riders within 50 km, sorted by distance.
+  -- This is a comment providing information for developers.
+
+LINE 93:
+  // The backend calculates distance using the user's stored lat/lng.
+  -- This is a comment providing information for developers.
+
+LINE 94:
+  export async function getNearRiders(userId) {
+  -- simply means wait for server reply before continuing.
+
+LINE 95:
+    if (!userId) return [];
+  -- This gives the result back to whoever called this function.
+
+LINE 96:
+    const params = new URLSearchParams({ userId });
+  -- This creates a variable to store data temporarily.
+
+LINE 97:
+    const res = await fetch(`/api/riders/nearby?${params}`);
+  -- sending a request to the server and waiting for response. simply means wait for server reply before continuing.
+
+LINE 98:
+    return handleResponse(res);
+  -- This gives the result back to whoever called this function.
+
+LINE 99:
+  }
+  -- This closes the previous block of code.
+
+LINE 100:
+  
+  -- (blank line -- spacing only)
+
+LINE 101:
+  //  isConnected(userId, riderId) 
+  -- This is a comment providing information for developers.
+
+LINE 102:
+  // Synchronous check using the cached connections list.
+  -- This is a comment providing information for developers.
+
+LINE 103:
+  // Call getConnectionsFull first and pass the result here for accuracy.
+  -- This is a comment providing information for developers.
+
+LINE 104:
+  export function isConnected(connectionsIds, riderId) {
+  -- This makes the function or variable available for other files to use.
+
+LINE 105:
+    return connectionsIds.includes(riderId);
+  -- This gives the result back to whoever called this function.
+
+LINE 106:
+  }
+  -- This closes the previous block of code.
+
+LINE 107:
+  
+  -- (blank line -- spacing only)
+
+LINE 108:
+  //  getAllRidersCount() 
+  -- This is a comment providing information for developers.
+
+LINE 109:
+  // Not directly supported by backend -- kept as a no-op placeholder.
+  -- This is a comment providing information for developers.
+
+LINE 110:
+  // Remove or replace with a real endpoint when the feature is needed.
+  -- This is a comment providing information for developers.
+
+LINE 111:
+  export function getAllRidersCount() {
+  -- This makes the function or variable available for other files to use.
+
+LINE 112:
+    return 0;
+  -- This gives the result back to whoever called this function.
+
+LINE 113:
+  }
+  -- This closes the previous block of code.
+
+================================================================================
+  HOW THIS FILE CONNECTS TO THE REST OF THE APP
+================================================================================
+  This file is used by the frontend components to handle data and logic.
+================================================================================

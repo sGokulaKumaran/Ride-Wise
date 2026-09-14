@@ -1,0 +1,466 @@
+================================================================================
+  RIDEWISE PROJECT -- CODE EXPLANATION
+  File    : locationService.js
+  Located : E:\My projects\RideWise\frontend\src\services\locationService.js
+  Purpose : This file wraps the browser's built-in GPS tracking to safely and efficiently monitor the user's location without draining the battery or lagging the app.
+================================================================================
+
+  KEY CONCEPTS IN THIS FILE
+  -------------------------
+  1. Geolocation API: The browser's built-in tool for finding the user's physical device location.
+  2. Throttling: Slowing down how often updates are processed to save battery.
+  3. Promises: A way to handle tasks that take some time to finish, like getting a GPS signal.
+
+================================================================================
+  LINE-BY-LINE CODE EXPLANATION
+================================================================================
+
+LINE 1:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 2:
+  //  locationService.js -- Browser Geolocation wrapper
+  -- This is a comment providing information for developers.
+
+LINE 3:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 4:
+  // WHY THIS EXISTS:
+  -- This is a comment providing information for developers.
+
+LINE 5:
+  //   The native navigator.geolocation API fires very frequently
+  -- This is a comment providing information for developers.
+
+LINE 6:
+  //   (sometimes every 100ms on mobile). This wrapper throttles
+  -- This is a comment providing information for developers.
+
+LINE 7:
+  //   updates to THROTTLE_MS and exposes speed + heading.
+  -- This is a comment providing information for developers.
+
+LINE 8:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 9:
+  // LOCATION OBJECT:
+  -- This is a comment providing information for developers.
+
+LINE 10:
+  //   {
+  -- This is a comment providing information for developers.
+
+LINE 11:
+  //     lat:       number,        -- latitude  (decimal degrees)
+  -- This is a comment providing information for developers.
+
+LINE 12:
+  //     lng:       number,        -- longitude (decimal degrees)
+  -- This is a comment providing information for developers.
+
+LINE 13:
+  //     accuracy:  number,        -- accuracy radius in metres
+  -- This is a comment providing information for developers.
+
+LINE 14:
+  //                                 < 20m  = GPS hardware fix (excellent)
+  -- This is a comment providing information for developers.
+
+LINE 15:
+  //                                 < 100m = WiFi-based (good)
+  -- This is a comment providing information for developers.
+
+LINE 16:
+  //                                 > 500m = IP-based (unreliable -- do not use)
+  -- This is a comment providing information for developers.
+
+LINE 17:
+  //     speed:     number|null,   -- speed in m/s (null if unavailable)
+  -- This is a comment providing information for developers.
+
+LINE 18:
+  //     heading:   number|null,   -- direction 0-360 (null if unavailable)
+  -- This is a comment providing information for developers.
+
+LINE 19:
+  //     timestamp: number,        -- ms since epoch
+  -- This is a comment providing information for developers.
+
+LINE 20:
+  //   }
+  -- This is a comment providing information for developers.
+
+LINE 21:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 22:
+  // EXPORTS:
+  -- This is a comment providing information for developers.
+
+LINE 23:
+  //   getCurrentLocation()               -> Promise<LocationObj>
+  -- This is a comment providing information for developers.
+
+LINE 24:
+  //   watchLocation(onUpdate, onError)   -> stop() function
+  -- This is a comment providing information for developers.
+
+LINE 25:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 26:
+  
+  -- (blank line -- spacing only)
+
+LINE 27:
+  // ---------------------------------------------------------------------------
+  -- This is a comment providing information for developers.
+
+LINE 28:
+  // THROTTLE: minimum ms between emitted location updates.
+  -- This is a comment providing information for developers.
+
+LINE 29:
+  // 1500ms = responsive for navigation while still battery-friendly.
+  -- This is a comment providing information for developers.
+
+LINE 30:
+  // ---------------------------------------------------------------------------
+  -- This is a comment providing information for developers.
+
+LINE 31:
+  const THROTTLE_MS = 1500;
+  -- This creates a variable to store data temporarily.
+
+LINE 32:
+  
+  -- (blank line -- spacing only)
+
+LINE 33:
+  // ---------------------------------------------------------------------------
+  -- This is a comment providing information for developers.
+
+LINE 34:
+  // GPS options:
+  -- This is a comment providing information for developers.
+
+LINE 35:
+  //   enableHighAccuracy: true  -> use GPS chip (not IP/WiFi fallback)
+  -- This is a comment providing information for developers.
+
+LINE 36:
+  //   maximumAge: 0             -> ALWAYS request a fresh GPS fix.
+  -- This is a comment providing information for developers.
+
+LINE 37:
+  //                               Never serve a stale cached position.
+  -- This is a comment providing information for developers.
+
+LINE 38:
+  //                               This is the key fix for the "locked location"
+  -- This is a comment providing information for developers.
+
+LINE 39:
+  //                               bug -- cached IP-based positions (like an ISP
+  -- This is a comment providing information for developers.
+
+LINE 40:
+  //                               server at Virudhunagar) would be served if
+  -- This is a comment providing information for developers.
+
+LINE 41:
+  //                               maximumAge > 0.
+  -- This is a comment providing information for developers.
+
+LINE 42:
+  //   timeout: 15000            -> wait up to 15s for a real GPS hardware fix
+  -- This is a comment providing information for developers.
+
+LINE 43:
+  // ---------------------------------------------------------------------------
+  -- This is a comment providing information for developers.
+
+LINE 44:
+  const GPS_OPTIONS = {
+  -- This creates a variable to store data temporarily.
+
+LINE 45:
+    enableHighAccuracy: true,
+  -- This line is part of the application logic or data structure.
+
+LINE 46:
+    maximumAge:         0,      //  CRITICAL: 0 = never use cached position
+  -- This line is part of the application logic or data structure.
+
+LINE 47:
+    timeout:            15000,
+  -- This line is part of the application logic or data structure.
+
+LINE 48:
+  };
+  -- This closes the previous block of code.
+
+LINE 49:
+  
+  -- (blank line -- spacing only)
+
+LINE 50:
+  //  Internal helper 
+  -- This is a comment providing information for developers.
+
+LINE 51:
+  function posToLocation(pos) {
+  -- This line is part of the application logic or data structure.
+
+LINE 52:
+    return {
+  -- This gives the result back to whoever called this function.
+
+LINE 53:
+      lat:       pos.coords.latitude,
+  -- This line is part of the application logic or data structure.
+
+LINE 54:
+      lng:       pos.coords.longitude,
+  -- This line is part of the application logic or data structure.
+
+LINE 55:
+      accuracy:  pos.coords.accuracy,   // metres -- lower is better
+  -- This line is part of the application logic or data structure.
+
+LINE 56:
+      speed:     pos.coords.speed   ?? null,  // m/s
+  -- This line is part of the application logic or data structure.
+
+LINE 57:
+      heading:   pos.coords.heading ?? null,  // degrees 0-360
+  -- This line is part of the application logic or data structure.
+
+LINE 58:
+      timestamp: pos.timestamp,
+  -- This line is part of the application logic or data structure.
+
+LINE 59:
+    };
+  -- This closes the previous block of code.
+
+LINE 60:
+  }
+  -- This closes the previous block of code.
+
+LINE 61:
+  
+  -- (blank line -- spacing only)
+
+LINE 62:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 63:
+  // getCurrentLocation -- one-shot fresh GPS fix
+  -- This is a comment providing information for developers.
+
+LINE 64:
+  // Returns a Promise -- never uses cache (maximumAge: 0).
+  -- This is a comment providing information for developers.
+
+LINE 65:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 66:
+  export function getCurrentLocation() {
+  -- This makes the function or variable available for other files to use.
+
+LINE 67:
+    return new Promise((resolve, reject) => {
+  -- This gives the result back to whoever called this function.
+
+LINE 68:
+      if (!navigator.geolocation) {
+  -- This checks a condition before deciding what to do next.
+
+LINE 69:
+        reject(new Error("Geolocation is not supported by this browser."));
+  -- This creates an error message to let the app know something failed.
+
+LINE 70:
+        return;
+  -- This gives the result back to whoever called this function.
+
+LINE 71:
+      }
+  -- This closes the previous block of code.
+
+LINE 72:
+      navigator.geolocation.getCurrentPosition(
+  -- This line is part of the application logic or data structure.
+
+LINE 73:
+        (pos) => resolve(posToLocation(pos)),
+  -- This line is part of the application logic or data structure.
+
+LINE 74:
+        (err)  => reject(err),
+  -- This line is part of the application logic or data structure.
+
+LINE 75:
+        GPS_OPTIONS
+  -- This line is part of the application logic or data structure.
+
+LINE 76:
+      );
+  -- This line is part of the application logic or data structure.
+
+LINE 77:
+    });
+  -- This line is part of the application logic or data structure.
+
+LINE 78:
+  }
+  -- This closes the previous block of code.
+
+LINE 79:
+  
+  -- (blank line -- spacing only)
+
+LINE 80:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 81:
+  // watchLocation -- continuous position tracking (throttled)
+  -- This is a comment providing information for developers.
+
+LINE 82:
+  //
+  -- This is a comment providing information for developers.
+
+LINE 83:
+  // onUpdate(location) is called at most once every THROTTLE_MS.
+  -- This is a comment providing information for developers.
+
+LINE 84:
+  // Returns a stop() function -- call it to cancel tracking.
+  -- This is a comment providing information for developers.
+
+LINE 85:
+  // ============================================================
+  -- This is a comment providing information for developers.
+
+LINE 86:
+  export function watchLocation(onUpdate, onError) {
+  -- This makes the function or variable available for other files to use.
+
+LINE 87:
+    if (!navigator.geolocation) {
+  -- This checks a condition before deciding what to do next.
+
+LINE 88:
+      console.warn("[locationService] Geolocation not supported.");
+  -- This prints a message to the developer console for debugging.
+
+LINE 89:
+      if (onError) onError(new Error("Geolocation not supported"));
+  -- This checks a condition before deciding what to do next.
+
+LINE 90:
+      return () => {};
+  -- This gives the result back to whoever called this function.
+
+LINE 91:
+    }
+  -- This closes the previous block of code.
+
+LINE 92:
+  
+  -- (blank line -- spacing only)
+
+LINE 93:
+    let lastEmitTime = 0;
+  -- This creates a variable to store data temporarily.
+
+LINE 94:
+  
+  -- (blank line -- spacing only)
+
+LINE 95:
+    const watchId = navigator.geolocation.watchPosition(
+  -- This creates a variable to store data temporarily.
+
+LINE 96:
+      (pos) => {
+  -- This line is part of the application logic or data structure.
+
+LINE 97:
+        const now = Date.now();
+  -- This creates a variable to store data temporarily.
+
+LINE 98:
+        if (now - lastEmitTime < THROTTLE_MS) return;
+  -- This gives the result back to whoever called this function.
+
+LINE 99:
+        lastEmitTime = now;
+  -- This line is part of the application logic or data structure.
+
+LINE 100:
+        onUpdate(posToLocation(pos));
+  -- This line is part of the application logic or data structure.
+
+LINE 101:
+      },
+  -- This closes the previous block of code.
+
+LINE 102:
+      (err) => {
+  -- This line is part of the application logic or data structure.
+
+LINE 103:
+        console.warn("[locationService] GPS error:", err.message);
+  -- This prints a message to the developer console for debugging.
+
+LINE 104:
+        if (onError) onError(err);
+  -- This checks a condition before deciding what to do next.
+
+LINE 105:
+      },
+  -- This closes the previous block of code.
+
+LINE 106:
+      GPS_OPTIONS
+  -- This line is part of the application logic or data structure.
+
+LINE 107:
+    );
+  -- This line is part of the application logic or data structure.
+
+LINE 108:
+  
+  -- (blank line -- spacing only)
+
+LINE 109:
+    return () => navigator.geolocation.clearWatch(watchId);
+  -- This gives the result back to whoever called this function.
+
+LINE 110:
+  }
+  -- This closes the previous block of code.
+
+LINE 111:
+  
+  -- (blank line -- spacing only)
+
+================================================================================
+  HOW THIS FILE CONNECTS TO THE REST OF THE APP
+================================================================================
+  This file is used by the frontend components to handle data and logic.
+================================================================================

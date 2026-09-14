@@ -1,0 +1,313 @@
+================================================================================
+
+   RIDEWISE PROJECT -- WHERE TO START
+   Your Complete Guide to Reading and Learning the Code
+
+   Project  : RideWise
+   Location : E:\My projects\RideWise\frontend\src
+   Author   : Gokula Kumaran
+   Created  : September 2026
+
+================================================================================
+
+
+   WHAT IS THIS FOLDER?
+   --------------------
+   This folder contains one plain-text explanation file for each important
+   source code file in the RideWise frontend. Each explanation file shows
+   every line of the original code followed by a simple, plain-English
+   description of exactly what that line does.
+
+   You do NOT need to know programming to read these files. Everything is
+   explained from scratch like a beginner's tutorial.
+
+
+================================================================================
+   WHAT IS RIDEWISE (IN ONE PARAGRAPH)?
+================================================================================
+
+   RideWise is a web app for motorcycle riders. You open it in your browser,
+   create an account, and can then plan a ride from one place to another,
+   see your route on a live map, track your GPS position as you ride,
+   save your ride history, and connect with other nearby riders. The app
+   has two parts: a FRONTEND (what you see in the browser -- the screens,
+   buttons, map) built with React, and a BACKEND (the server that stores
+   your data) built with Spring Boot. These two files explain that connection:
+   the frontend sends data to the backend, and the backend stores it.
+
+
+================================================================================
+   THE READING ORDER -- START WITH THESE FILES IN ORDER
+================================================================================
+
+   Read the explanation files in this order. Each one builds on the last.
+   If you are completely new, go one by one. If you know a topic already,
+   skip ahead.
+
+   -----------------------------------------------------------------------
+   STAGE 1 -- HOW THE APP IS SET UP (Foundation)
+   -----------------------------------------------------------------------
+
+   1.  01_vite.config.js.txt
+       ----------------------
+       START HERE. This file explains how the development server is set up
+       and -- most importantly -- how the frontend talks to the backend.
+       When you type localhost:5173 in your browser, this is what makes
+       everything work. Read this first because everything else depends on it.
+       Time to read: ~5 minutes.
+
+   2.  02_main.jsx.txt
+       ----------------
+       This is the very first file React loads. It is only 10 lines but it
+       starts the whole application. Understanding this tells you "how does
+       the app begin?". Read it second.
+       Time to read: ~3 minutes.
+
+   3.  03_App.jsx.txt
+       ---------------
+       This is the traffic controller. It defines all the pages (Home, Riders,
+       Login, etc.) and decides which page to show based on the URL.
+       For example: if the URL is /home, it shows Home.jsx. Read third.
+       Time to read: ~10 minutes.
+
+   -----------------------------------------------------------------------
+   STAGE 2 -- AUTHENTICATION (Login, Signup, Staying Logged In)
+   -----------------------------------------------------------------------
+
+   4.  04_AuthContext.jsx.txt
+       -----------------------
+       This is the brain of the login system. It holds all information about
+       the logged-in user (name, email, id) and shares it with every page.
+       Read this to understand how login/signup/logout works.
+       Time to read: ~20 minutes.
+
+   5.  05_ProtectedRoute.jsx.txt
+       --------------------------
+       This is the security gate. If you are not logged in and try to visit
+       /home, this file sends you back to the login screen automatically.
+       Read this after AuthContext to understand how protection works.
+       Time to read: ~8 minutes.
+
+   6.  06_Login.jsx.txt
+       -----------------
+       This is the visual signup and login screen -- the first thing a new
+       user sees. It has the email/password form and the sign-up tab.
+       Read after AuthContext so you understand what happens when you submit.
+       Time to read: ~25 minutes.
+
+   -----------------------------------------------------------------------
+   STAGE 3 -- THE BACKEND CONNECTION (API Calls)
+   -----------------------------------------------------------------------
+
+   7.  07_rideApi.js.txt
+       ------------------
+       This file handles all communication with the backend for rides.
+       When you start a ride, this file sends the data to the server.
+       When you load your ride history, this file asks the server for it.
+       Read this to understand how the frontend and backend talk to each other.
+       Time to read: ~15 minutes.
+
+   8.  08_ridersApi.js.txt
+       --------------------
+       Same idea as rideApi.js but for the Riders feature -- finding nearby
+       riders, adding/removing connections, searching by name.
+       Time to read: ~10 minutes.
+
+   9.  09_routingApi.js.txt
+       ---------------------
+       This file talks to external map services (not your own backend).
+       It converts a place name like "Chennai" into GPS coordinates,
+       and calculates the best road route between two points.
+       Read this to understand how the map routing works.
+       Time to read: ~20 minutes.
+
+   10. 10_locationService.js.txt
+       --------------------------
+       This file wraps the browser's built-in GPS. It asks the device
+       "where am I right now?" and gives back coordinates. It also
+       continuously tracks your position while you ride.
+       Time to read: ~12 minutes.
+
+   -----------------------------------------------------------------------
+   STAGE 4 -- THE MAIN SCREENS (Pages)
+   -----------------------------------------------------------------------
+
+   11. 11_Home.jsx.txt
+       ----------------
+       The main dashboard you see after login. It shows your active rides,
+       ride history, the Start Ride button, theme switcher, and voice commands.
+       This is the most complex page. Read after you understand auth and APIs.
+       Time to read: ~30 minutes.
+
+   12. 12_Riders.jsx.txt
+       ------------------
+       The community page. Three tabs: Search, Near Me, My Connections.
+       Read this to understand how the riders/social feature works.
+       Time to read: ~20 minutes.
+
+   -----------------------------------------------------------------------
+   STAGE 5 -- THE RIDE EXPERIENCE (Maps and GPS)
+   -----------------------------------------------------------------------
+
+   13. 13_StartRideModal.jsx.txt
+       --------------------------
+       The bottom sheet that slides up when you tap "Start a Ride".
+       It lets you type your origin and destination, shows a route preview
+       on a mini map, then creates the ride. This is the entry point to
+       the whole ride experience.
+       Time to read: ~20 minutes.
+
+   14. 14_ActiveRideOverlay.jsx.txt
+       ------------------------------
+       The full-screen map that appears DURING a live ride. It tracks your
+       GPS, moves the blue dot, shows your speed, and guides you turn by turn.
+       This is the most exciting file in the project.
+       Time to read: ~30 minutes.
+
+   15. 15_RideMap.jsx.txt
+       -------------------
+       The actual map drawing engine. It uses MapLibre GL to show the
+       OpenStreetMap base map, draw the route line, place markers, and
+       animate the GPS dot. Read after ActiveRideOverlay.
+       Time to read: ~25 minutes.
+
+   -----------------------------------------------------------------------
+   STAGE 6 -- THEME AND NAVIGATION
+   -----------------------------------------------------------------------
+
+   16. 16_useTheme.js.txt
+       -------------------
+       The theme system. Four themes: light, dark, warm, midnight.
+       It automatically picks a theme based on the time of day and lets
+       users switch themes. Read this last -- it is simpler than the others.
+       Time to read: ~10 minutes.
+
+
+================================================================================
+   HOW EACH EXPLANATION FILE IS STRUCTURED
+================================================================================
+
+   Every explanation file follows this format:
+
+   -----------------------------------------------------------------------
+
+   (1) FILE HEADER
+       Shows the file name, where it is located, and what it does
+       in the app in plain English.
+
+   (2) KEY CONCEPTS
+       A short list of the important ideas in this file -- explained
+       simply before you start reading the code.
+
+   (3) LINE-BY-LINE CODE EXPLANATION
+       The actual code from the file, shown one line at a time, each
+       followed by a plain-English explanation like:
+
+         LINE 5:   tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+                   -- This line connects the map to OpenStreetMap's tile server.
+                      The map images you see are loaded from this URL. {z} is
+                      the zoom level, {x} and {y} are tile coordinates.
+
+   (4) HOW THIS FILE CONNECTS TO THE REST OF THE APP
+       Explains which other files use this one and why.
+
+   -----------------------------------------------------------------------
+
+
+================================================================================
+   QUICK GLOSSARY (Words You Will See Often)
+================================================================================
+
+   React        -- A JavaScript library for building user interfaces.
+                   You describe what the screen should look like, React
+                   makes it appear in the browser.
+
+   Component    -- One piece of the UI (a button, a page, a modal).
+                   Every .jsx file is a component. Components combine
+                   to build the full screen.
+
+   JSX          -- A way of writing HTML inside JavaScript files.
+                   The .jsx extension means the file mixes JS and HTML-like code.
+
+   Props        -- Short for "properties". Data passed INTO a component
+                   from its parent. Like arguments to a function.
+
+   State        -- Data stored inside a component that can change over time.
+                   When state changes, React updates what you see on screen.
+
+   Hook         -- A special React function that adds features to a component.
+                   useState, useEffect are built-in hooks. useTheme is a custom hook.
+
+   useState     -- A hook that lets a component remember a value.
+                   e.g. const [name, setName] = useState("") stores a name.
+
+   useEffect    -- A hook that runs code when something changes or when
+                   the component first appears on screen.
+
+   Import       -- Brings code from another file into this file.
+                   Like opening a toolbox to use a specific tool.
+
+   Export       -- Makes code in this file available for other files to import.
+
+   async/await  -- Used with code that takes time (like fetching data from
+                   the internet). async marks the function, await pauses
+                   until the result arrives.
+
+   fetch()      -- Browser built-in function that sends a request to a server
+                   and gets data back (like asking the backend for ride history).
+
+   API          -- Application Programming Interface. A set of rules for
+                   how two programs talk to each other. Here: the set of
+                   URLs the frontend calls to talk to the backend.
+
+   Proxy        -- A middleman. Vite's proxy forwards /api/* calls from
+                   the browser to the backend server at port 8080.
+
+   Tailwind CSS -- A CSS framework where you style elements by adding
+                   class names directly to HTML. e.g. "bg-black text-white"
+                   makes a black background with white text.
+
+   GPS          -- Global Positioning System. navigator.geolocation in the
+                   browser gives access to the device's GPS chip.
+
+   MapLibre     -- An open-source JavaScript library for showing interactive
+                   maps. Used in RideMap.jsx to draw the route and GPS dot.
+
+   localStorage -- A storage area in the browser that survives page refreshes.
+                   RideWise stores your login session here so you stay logged
+                   in even after closing and reopening the browser.
+
+
+================================================================================
+   FILE OVERVIEW TABLE
+================================================================================
+
+   File Name             | What It Does                        | Importance
+   ----------------------|-------------------------------------|------------
+   vite.config.js        | Dev server + proxy to backend       | Critical
+   main.jsx              | App entry point                     | Critical
+   App.jsx               | Page routing                        | Critical
+   AuthContext.jsx       | Login/signup/logout state           | Critical
+   ProtectedRoute.jsx    | Blocks unauthenticated access       | High
+   Login.jsx             | Login and signup screen             | High
+   rideApi.js            | Ride data API calls                 | Critical
+   ridersApi.js          | Riders/connections API calls        | High
+   routingApi.js         | Geocoding + route calculation       | Critical
+   locationService.js    | GPS tracking wrapper                | High
+   Home.jsx              | Main dashboard page                 | Critical
+   Riders.jsx            | Riders community page               | High
+   StartRideModal.jsx    | Create a new ride                   | Critical
+   ActiveRideOverlay.jsx | Live ride map and GPS tracking      | Critical
+   RideMap.jsx           | Map drawing engine                  | Critical
+   useTheme.js           | Theme system (dark/light/etc)       | Medium
+
+
+================================================================================
+
+   You are ready to start! Open file:  01_vite.config.js.txt
+
+   Take your time, read one file per day if needed.
+   After finishing all 16 files you will understand 100% of how
+   RideWise works from the browser to the server.
+
+================================================================================

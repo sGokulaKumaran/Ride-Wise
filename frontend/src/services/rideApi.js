@@ -69,22 +69,22 @@ export async function createRide(rideData) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(rideData), // send all fields to backend
       });
-      if (!res.ok) throw new Error(`Create ride failed: ${res.status}`);
+      if (!res.ok) throw new Error(`Create ride failed: ${res.status}`);// res.status is the 
       const saved = await res.json();
       // Also add to local cache so getActiveRides works offline
-      const cached = lsLoad();
-      cached.push(saved);
-      lsSave(cached);
-      return saved;
+      const cached = lsLoad();// Here the cache variable get the isLoad function 
+      cached.push(saved);// here in that isLoad funtion I add new ride detail so that has the updated rides in the array
+      lsSave(cached);// Then in this line the cache is update in the in the isSave
+      return saved; //Then the saved is return
     },
-    // ---- Fallback: save to localStorage ----
-    () => {
+    // ---- Fallback: save to localStorage ---- if the backend is not feched then the local storage in the web Browser is used
+    () => {// this is a arrow funciton for the fallbackFn
       const ride = {
         ...rideData,
-        id: "local_" + Date.now(),       // local-only id
+        id: "local_" + Date.now(),       // local-only id // its give the date of that ride created
         status: "active",                // new rides start active
-        createdAt: new Date().toISOString(),
-        endedAt: null,
+        createdAt: new Date().toISOString(),// its convert that data into the standard text format for feature use 
+        endedAt: null,// for now at the create of tha ride the endedAt seems null
       };
       const cached = lsLoad();
       cached.push(ride);
@@ -108,7 +108,7 @@ export async function getUserRides(userId) {
     () => {
       // Fallback: filter local cache by userId
       return lsLoad()
-        .filter(r => String(r.userId) === String(userId))
+        .filter(r => String(r.userId) === String(userId)) 
         .reverse(); // newest first
     }
   );
@@ -116,7 +116,7 @@ export async function getUserRides(userId) {
 
 // ============================================================
 // GET ACTIVE RIDES FOR A USER
-// GET /api/rides/user/{userId}/active
+// GET /api/rides/user/{userId}/active   
 // ============================================================
 export async function getActiveRides(userId) {
   return withFallback(
@@ -176,11 +176,11 @@ export async function deleteRide(rideId) {
       const res = await fetch(`${BASE}/${rideId}`, { method: "DELETE" });
       if (!res.ok) throw new Error(`Delete ride failed: ${res.status}`);
       // Remove from local cache too
-      lsSave(lsLoad().filter(r => String(r.id) !== String(rideId)));
+      lsSave(lsLoad().filter(r => String(r.id) !== String(rideId)));// in this code this will filter the id object
     },
     () => {
       // Fallback: remove from local cache
-      lsSave(lsLoad().filter(r => String(r.id) !== String(rideId)));
+      lsSave(lsLoad().filter(r => String(r.id) !== String(rideId)));// Like that it also filter that array with remove of that id 
     }
   );
 }
@@ -192,11 +192,11 @@ export async function deleteRide(rideId) {
 export async function getRide(rideId) {
   return withFallback(
     async () => {
-      const res = await fetch(`${BASE}/${rideId}`);
+      const res = await fetch(`${BASE}/${rideId}`);// here its go the backend database and get the id
       if (!res.ok) throw new Error(`Get ride failed: ${res.status}`);
       return res.json();
     },
-    () => lsLoad().find(r => String(r.id) === String(rideId)) || null
+    () => lsLoad().find(r => String(r.id) === String(rideId)) || null // if its find the id then retrun, if not its return null
   );
 }
 
@@ -216,11 +216,13 @@ export async function getRide(rideId) {
 // silently skip. GPS dot and route trimming still work client-side.
 // ============================================================
 export async function updateUserLocation(rideId, lat, lng) {
+
   try {
     // Build the location update payload with an ISO timestamp
     const payload = {
       lat,                                // decimal degrees (e.g. 13.0827)
       lng,                                // decimal degrees (e.g. 80.2707)
+
       timestamp: new Date().toISOString(), // when this fix was captured
     };
 
@@ -240,3 +242,4 @@ export async function updateUserLocation(rideId, lat, lng) {
     console.warn("[rideApi] updateUserLocation skipped (backend unreachable):", err.message);
   }
 }
+//This only post the lat, lan with the time and date

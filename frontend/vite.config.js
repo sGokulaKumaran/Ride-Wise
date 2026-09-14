@@ -2,12 +2,12 @@ import react from '@vitejs/plugin-react'
 import path from 'path'
 import { defineConfig } from 'vite'
 
-// https://vite.dev/config/
+// https://vite.dev/config/      This link provide vite official doc 
 export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src')
+      '@': path.resolve(__dirname, './src') //this point the src file always with @ 
     }
   },
   server: {

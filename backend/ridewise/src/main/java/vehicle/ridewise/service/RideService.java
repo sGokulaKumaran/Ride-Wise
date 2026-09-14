@@ -28,6 +28,7 @@ public class RideService { // Define class
         ride.setDestinationLat(req.getDestinationLat()); // Set dest lat
         ride.setDestinationLng(req.getDestinationLng()); // Set dest lng
         ride.setRouteCoordinates(req.getRouteCoordinates()); // Set route
+        ride.setRouteSteps(req.getRouteSteps()); // Set route steps (turn-by-turn navigation)
         ride.setDistanceMeters(req.getDistanceMeters()); // Set distance
         ride.setDurationSeconds(req.getDurationSeconds()); // Set duration
         ride.setRideType(req.getRideType()); // Set type

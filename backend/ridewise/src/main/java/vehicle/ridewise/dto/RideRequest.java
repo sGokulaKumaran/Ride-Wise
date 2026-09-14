@@ -10,6 +10,7 @@ public class RideRequest { // Define class
     private Double destinationLat; // Destination latitude field
     private Double destinationLng; // Destination longitude field
     private String routeCoordinates; // Route coordinates field
+    private String routeSteps;       // Route turn-by-turn steps (JSON) field
     private Double distanceMeters; // Distance field
     private Double durationSeconds; // Duration field
     private String rideType; // Ride type field
@@ -77,6 +78,14 @@ public class RideRequest { // Define class
 
     public void setRouteCoordinates(String routeCoordinates) { // Set routeCoordinates
         this.routeCoordinates = routeCoordinates; // Assign routeCoordinates
+    } // End setter
+
+    public String getRouteSteps() { // Get routeSteps
+        return routeSteps; // Return routeSteps
+    } // End getter
+
+    public void setRouteSteps(String routeSteps) { // Set routeSteps
+        this.routeSteps = routeSteps; // Assign routeSteps
     } // End setter
 
     public Double getDistanceMeters() { // Get distanceMeters

@@ -1,663 +1,508 @@
+﻿// ============================================================
+// RideMap.jsx — MapLibre Map with OSRM Route + Live GPS Dot
+//
+// FIXES (this version):
+//   Route line (blue OSRM path) always draws — sources/layers are
+//   created BEFORE drawRoute() is ever called, eliminating the race.
+//   Blue GPS pulsing dot always shows when myLocation is provided.
+//   Direction arrow rotates correctly with bearing.
+//   Fallback OSRM fetch works correctly for rides missing routeCoordinates.
 // ============================================================
-// 🗺️ RideMap.jsx — Full-screen MapLibre GL map (Navigation Edition)
-//
-// ── FEATURES ─────────────────────────────────────────────
-//   • Thick BLUE route line (Google Maps style — white border + blue fill)
-//   • Faded GREY "already traveled" dashed line that shrinks as user moves
-//   • Pulsing blue GPS dot with BEARING ARROW that rotates to face direction
-//     of travel — so the marker acts like a real navigation chevron
-//   • Camera-follow mode — map auto-pans + tilts to keep user centred
-//   • Green A-pin at start, red B-pin at destination (with popups)
-//   • Popup on A-pin: start area name + ride type badge
-//   • Popup on B-pin: destination name + live remaining km & ETA
-//
-// ── BEARING / HEADING ─────────────────────────────────────
-//   The GPS marker's outer arrow ring rotates using CSS transform:rotate().
-//   The bearing is calculated via bearingBetween(prevLoc, currentLoc) each
-//   GPS tick and stored in bearingRef.current. The makeMeEl() function now
-//   renders a chevron-style arrow (▲) on top of the pulsing dot, mirroring
-//   Google Maps' blue navigation arrow.
-//
-// ── CAMERA FOLLOW ─────────────────────────────────────────
-//   When followRef.current = true (default when isLive=true), every GPS tick
-//   runs map.easeTo({ center: [lng, lat], bearing, pitch: 20, duration: 600 })
-//   to smoothly pan the map and keep the user centered. The user can drag the
-//   map to temporarily disengage follow mode (followRef becomes false), and a
-//   "Re-center" button appears to re-engage it.
-//
-// ── ROOT CAUSE FIX (stale closures) — unchanged from original ────────────
-//   rideRef.current + isLiveRef.current are always-fresh refs updated on
-//   every render so the map.on("load") closure sees the latest values.
-//
-// ── COORDINATE ORDER ─────────────────────────────────────
-//   GPS gives: { lat, lng }
-//   MapLibre / GeoJSON expect: [lng, lat]  ← longitude FIRST
-//   This is applied consistently throughout this file.
-//
-// ── PROPS ────────────────────────────────────────────────
-//   ride        — { fromLat, fromLng, fromName,
-//                   destinationLat, destinationLng, destinationName,
-//                   routeCoordinates (JSON "[[lng,lat],...] or array"),
-//                   distanceMeters, durationSeconds, rideType }
-//   myLocation  — { lat, lng, speed? (m/s), heading? (deg) } | null
-//   isLive      — boolean (true = enable dynamic route trimming + follow)
-//   onRecenter  — optional callback when map auto-re-centers
-// ============================================================
-
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import {
-  formatDistance, formatDuration, haversineDistance, bearingBetween,
+  haversineDistance,
+  bearingBetween,
+  formatDistance,
+  formatDuration,
+  getRoute,
 } from "../../../services/routingApi";
 
-// ────────────────────────────────────────────────────────────
-// MAP STYLE — OpenStreetMap raster tiles (free, no API key)
-// ────────────────────────────────────────────────────────────
-const OSM_RASTER_STYLE = {
+const MAP_STYLE = {
   version: 8,
   sources: {
     osm: {
-      type:        "raster",
-      tiles:       ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-      tileSize:    256,
-      maxzoom:     19,
+      type: "raster",
+      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+      tileSize: 256,
+      maxzoom: 19,
       attribution: "© OpenStreetMap contributors",
     },
   },
   layers: [{ id: "osm-tiles", type: "raster", source: "osm" }],
 };
 
-const DEFAULT_CENTER = [80.2707, 13.0827]; // [lng, lat] — Chennai
-const DEFAULT_ZOOM   = 12;
+const DEFAULT_CENTER = [80.2707, 13.0827];
+const DEFAULT_ZOOM = 13;
 
-// ── MapLibre source and layer IDs ──
-const SRC_REMAINING   = "rw-remaining-src";
-const SRC_TRAVELED    = "rw-traveled-src";
-const LYR_REM_OUTLINE = "rw-rem-outline";
-const LYR_REM_FILL    = "rw-rem-fill";
-const LYR_TRV_LINE    = "rw-traveled-line";
+const SRC_REM = "rw-remaining";
+const SRC_TRV = "rw-traveled";
+const LAYER_BORDER = "rw-rem-border";
+const LAYER_REMAINING = "rw-rem-line";
+const LAYER_TRAVELED = "rw-trv-line";
 
-// ── Inject GPS pulse + bearing arrow keyframe once into <head> ──
-if (typeof document !== "undefined" && !document.getElementById("rw-kf")) {
+// Inject pulse + spin CSS once
+(function injectCss() {
+  if (typeof document === "undefined") return;
+  if (document.getElementById("rw-gps-style")) return;
   const s = document.createElement("style");
-  s.id = "rw-kf";
+  s.id = "rw-gps-style";
   s.textContent = `
-    @keyframes rw-gps-ring {
-      0%   { transform: scale(0.8); opacity: 0.9; }
-      70%  { transform: scale(2.6); opacity: 0;   }
-      100% { transform: scale(0.8); opacity: 0;   }
+    @keyframes rw-pulse {
+      0%   { transform: scale(0.85); opacity: 0.9; }
+      60%  { transform: scale(2.6);  opacity: 0;   }
+      100% { transform: scale(0.85); opacity: 0;   }
     }
-    @keyframes rw-bearing-pulse {
-      0%, 100% { opacity: 0.9; }
-      50%      { opacity: 0.6; }
-    }
+    @keyframes rw-spin { to { transform: rotate(360deg); } }
   `;
   document.head.appendChild(s);
-}
+}());
 
-// ════════════════════════════════════════════════════════════
-// MODULE-LEVEL PURE HELPER FUNCTIONS (no React closures)
-// ════════════════════════════════════════════════════════════
-
-function parseCoords(routeCoordinates) {
-  if (!routeCoordinates) return null;
+// ── Pure helpers ────────────────────────────────────────────
+function parseCoords(raw) {
+  if (!raw) return null;
   try {
-    const arr = typeof routeCoordinates === "string"
-      ? JSON.parse(routeCoordinates)
-      : routeCoordinates;
+    const arr = typeof raw === "string" ? JSON.parse(raw) : raw;
     if (!Array.isArray(arr) || arr.length < 2) return null;
+    if (!Array.isArray(arr[0]) || arr[0].length < 2) return null;
     return arr;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
-function buildLine(coordinates) {
-  return {
-    type: "Feature",
-    geometry: { type: "LineString", coordinates },
-    properties: {},
-  };
+function buildGeoJSON(coords) {
+  return { type: "Feature", geometry: { type: "LineString", coordinates: coords }, properties: {} };
+}
+
+function projectOnSegment(pLat, pLng, aLat, aLng, bLat, bLng) {
+  const dx = bLng - aLng, dy = bLat - aLat;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return { lat: aLat, lng: aLng };
+  const t = Math.max(0, Math.min(1, ((pLng - aLng) * dx + (pLat - aLat) * dy) / lenSq));
+  return { lat: aLat + t * dy, lng: aLng + t * dx };
 }
 
 function sliceRoute(fullCoords, userLng, userLat) {
-  if (!fullCoords || fullCoords.length < 2) {
-    return { traveled: [], remaining: [] };
+  if (!fullCoords || fullCoords.length < 2)
+    return { remaining: fullCoords || [], traveled: [], snapLng: userLng, snapLat: userLat };
+  let bestIdx = 0, bestDist = Infinity, bestSnap = { lat: fullCoords[0][1], lng: fullCoords[0][0] };
+  for (let i = 0; i < fullCoords.length - 1; i++) {
+    const [lng1, lat1] = fullCoords[i], [lng2, lat2] = fullCoords[i + 1];
+    const snap = projectOnSegment(userLat, userLng, lat1, lng1, lat2, lng2);
+    const d = haversineDistance(userLat, userLng, snap.lat, snap.lng);
+    if (d < bestDist) { bestDist = d; bestIdx = i; bestSnap = snap; }
   }
-  let nearestIdx = 0;
-  let minDist    = Infinity;
-  for (let i = 0; i < fullCoords.length; i++) {
-    const [lng, lat] = fullCoords[i];
-    const d = haversineDistance(userLat, userLng, lat, lng);
-    if (d < minDist) { minDist = d; nearestIdx = i; }
-  }
+  const snapped = [bestSnap.lng, bestSnap.lat];
   return {
-    traveled:  fullCoords.slice(0, nearestIdx + 1),
-    remaining: fullCoords.slice(nearestIdx),
+    remaining: [snapped, ...fullCoords.slice(bestIdx + 1)],
+    traveled: [...fullCoords.slice(0, bestIdx + 1), snapped],
+    snapLng: bestSnap.lng, snapLat: bestSnap.lat,
   };
 }
 
-function buildFromHTML(ride) {
-  const shortName = (ride.fromName || "Start").split(",")[0].trim();
-  const fullName  = ride.fromName || "Start location";
-  const typeEmoji = ride.rideType === "solo" ? "🏍️" : "👥";
-  const typeLabel = ride.rideType === "solo" ? "Solo Ride" : "Group Ride";
-  return `
-    <div style="font-family:system-ui,sans-serif;min-width:170px;padding:4px 0">
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
-        <span style="background:#22c55e;color:#fff;border-radius:50%;width:20px;height:20px;
-          display:inline-flex;align-items:center;justify-content:center;
-          font-size:10px;font-weight:900;flex-shrink:0">A</span>
-        <strong style="font-size:14px;color:#111">${shortName}</strong>
-      </div>
-      <p style="margin:0 0 8px;font-size:11px;color:#555;line-height:1.4">${fullName}</p>
-      <div style="height:1px;background:#eee;margin-bottom:8px"></div>
-      <div style="display:inline-flex;align-items:center;gap:4px;
-        background:#f0fdf4;border:1px solid #bbf7d0;border-radius:50px;
-        padding:2px 10px;font-size:11px;color:#15803d">
-        ${typeEmoji} ${typeLabel}
-      </div>
-    </div>
-  `;
-}
-
-function buildToHTML(ride, myLocation) {
-  const shortName = (ride.destinationName || "Destination").split(",")[0].trim();
-  const fullName  = ride.destinationName || "Destination";
-  let   distStr   = "—";
-  let   timeStr   = "—";
-
-  if (myLocation?.lat && ride.destinationLat) {
-    const distM = haversineDistance(
-      myLocation.lat, myLocation.lng,
-      ride.destinationLat, ride.destinationLng
-    );
-    distStr = formatDistance(distM);
-    if (ride.distanceMeters > 0 && ride.durationSeconds > 0) {
-      const avgSpeed = ride.distanceMeters / ride.durationSeconds;
-      timeStr = formatDuration(distM / avgSpeed);
-    }
-  } else if (ride.distanceMeters) {
-    distStr = formatDistance(ride.distanceMeters);
-    timeStr = formatDuration(ride.durationSeconds);
-  }
-
-  return `
-    <div style="font-family:system-ui,sans-serif;min-width:190px;padding:4px 0">
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
-        <span style="background:#ef4444;color:#fff;border-radius:50%;width:20px;height:20px;
-          display:inline-flex;align-items:center;justify-content:center;
-          font-size:10px;font-weight:900;flex-shrink:0">B</span>
-        <strong style="font-size:14px;color:#111">${shortName}</strong>
-      </div>
-      <p style="margin:0 0 8px;font-size:11px;color:#555;line-height:1.4">${fullName}</p>
-      <div style="height:1px;background:#eee;margin-bottom:8px"></div>
-      <div style="display:flex;gap:12px">
-        <div style="text-align:center">
-          <div style="font-size:15px;font-weight:900;color:#ef4444">${distStr}</div>
-          <div style="font-size:9px;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-top:1px">Remaining</div>
-        </div>
-        <div style="width:1px;background:#eee;align-self:stretch"></div>
-        <div style="text-align:center">
-          <div style="font-size:15px;font-weight:900;color:#111">${timeStr}</div>
-          <div style="font-size:9px;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-top:1px">ETA</div>
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-function makeFromEl() {
-  const wrap = document.createElement("div");
-  wrap.style.cssText = "width:32px;height:38px;cursor:pointer";
+// ── DOM marker builders ──────────────────────────────────────
+function makeMarkerA() {
+  const el = document.createElement("div");
+  el.style.cssText = "width:36px;height:44px;display:flex;flex-direction:column;align-items:center;cursor:pointer;filter:drop-shadow(0 4px 10px rgba(34,197,94,0.55))";
   const pin = document.createElement("div");
-  pin.style.cssText = `
-    width:32px;height:32px;
-    background:linear-gradient(135deg,#22c55e,#15803d);
-    border-radius:50% 50% 50% 0;transform:rotate(-45deg);
-    border:3px solid #fff;box-shadow:0 4px 14px rgba(34,197,94,.55);
-    display:flex;align-items:center;justify-content:center
-  `;
-  const lbl = document.createElement("span");
-  lbl.style.cssText = "transform:rotate(45deg);font-size:12px;font-weight:900;color:#fff;line-height:1";
-  lbl.textContent = "A";
-  pin.appendChild(lbl);
-  wrap.appendChild(pin);
-  return wrap;
+  pin.style.cssText = "width:36px;height:36px;background:linear-gradient(145deg,#22c55e,#15803d);border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid #fff;display:flex;align-items:center;justify-content:center;box-sizing:border-box";
+  const letter = document.createElement("span");
+  letter.textContent = "A";
+  letter.style.cssText = "transform:rotate(45deg);font-size:13px;font-weight:900;color:#fff;line-height:1;font-family:system-ui";
+  pin.appendChild(letter); el.appendChild(pin); return el;
 }
 
-function makeToEl() {
-  const wrap = document.createElement("div");
-  wrap.style.cssText = "width:32px;height:38px;cursor:pointer";
+function makeMarkerB() {
+  const el = document.createElement("div");
+  el.style.cssText = "width:36px;height:44px;display:flex;flex-direction:column;align-items:center;cursor:pointer;filter:drop-shadow(0 4px 10px rgba(239,68,68,0.55))";
   const pin = document.createElement("div");
-  pin.style.cssText = `
-    width:32px;height:32px;
-    background:linear-gradient(135deg,#ef4444,#b91c1c);
-    border-radius:50% 50% 50% 0;transform:rotate(-45deg);
-    border:3px solid #fff;box-shadow:0 4px 14px rgba(239,68,68,.55);
-    display:flex;align-items:center;justify-content:center
-  `;
-  const lbl = document.createElement("span");
-  lbl.style.cssText = "transform:rotate(45deg);font-size:12px;font-weight:900;color:#fff;line-height:1";
-  lbl.textContent = "B";
-  pin.appendChild(lbl);
-  wrap.appendChild(pin);
-  return wrap;
+  pin.style.cssText = "width:36px;height:36px;background:linear-gradient(145deg,#ef4444,#b91c1c);border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid #fff;display:flex;align-items:center;justify-content:center;box-sizing:border-box";
+  const letter = document.createElement("span");
+  letter.textContent = "B";
+  letter.style.cssText = "transform:rotate(45deg);font-size:13px;font-weight:900;color:#fff;line-height:1;font-family:system-ui";
+  pin.appendChild(letter); el.appendChild(pin); return el;
 }
 
-// ── GPS marker with bearing arrow ──────────────────────────
-// Returns { wrap, arrow } so we can rotate `arrow` on bearing changes
-// without rebuilding the DOM.
-function makeMeEl() {
-  const wrap = document.createElement("div");
-  wrap.style.cssText = [
-    "position:relative",
-    "width:56px",
-    "height:56px",
-    "display:flex",
-    "align-items:center",
-    "justify-content:center",
-  ].join(";");
+function makeGpsDot() {
+  const el = document.createElement("div");
+  el.style.cssText = "position:relative;width:52px;height:52px;display:flex;align-items:center;justify-content:center;";
 
-  // Outer pulse ring
-  const r1 = document.createElement("div");
-  r1.style.cssText = "position:absolute;inset:0;border-radius:50%;background:rgba(59,130,246,.25);animation:rw-gps-ring 2.2s ease-out infinite;pointer-events:none";
-  wrap.appendChild(r1);
+  const ring1 = document.createElement("div");
+  ring1.style.cssText = "position:absolute;inset:0;border-radius:50%;background:rgba(66,133,244,0.22);animation:rw-pulse 2.2s ease-out infinite;pointer-events:none;";
+  el.appendChild(ring1);
 
-  // Inner pulse ring (offset)
-  const r2 = document.createElement("div");
-  r2.style.cssText = "position:absolute;inset:8px;border-radius:50%;background:rgba(59,130,246,.18);animation:rw-gps-ring 2.2s ease-out 0.8s infinite;pointer-events:none";
-  wrap.appendChild(r2);
+  const ring2 = document.createElement("div");
+  ring2.style.cssText = "position:absolute;inset:0;border-radius:50%;background:rgba(66,133,244,0.12);animation:rw-pulse 2.2s ease-out 1.1s infinite;pointer-events:none;";
+  el.appendChild(ring2);
 
-  // Bearing direction arrow — an upward-pointing triangle above the dot.
-  // We rotate this element's parent (arrowWrap) via bearingRef.
-  const arrowWrap = document.createElement("div");
-  arrowWrap.id = "rw-arrow-wrap";
-  arrowWrap.style.cssText = [
-    "position:absolute",
-    "inset:0",
-    "display:flex",
-    "align-items:flex-start",   // arrow sits at top of wrapper
-    "justify-content:center",
-    "pointer-events:none",
-    "transition:transform 0.5s ease-out", // smooth rotation
-  ].join(";");
-
+  const arrowEl = document.createElement("div");
+  arrowEl.style.cssText = "position:absolute;inset:0;display:flex;align-items:flex-start;justify-content:center;pointer-events:none;transition:transform 0.55s cubic-bezier(0.4,0,0.2,1);";
   const arrow = document.createElement("div");
-  arrow.style.cssText = [
-    "width:0",
-    "height:0",
-    "border-left:6px solid transparent",
-    "border-right:6px solid transparent",
-    "border-bottom:14px solid rgba(96,165,250,0.9)",
-    "margin-top:2px",         // gap between arrow tip and dot edge
-    "filter:drop-shadow(0 0 4px rgba(59,130,246,0.8))",
-    "animation:rw-bearing-pulse 2s ease-in-out infinite",
-  ].join(";");
+  arrow.style.cssText = "width:0;height:0;margin-top:2px;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:15px solid rgba(66,133,244,0.9);filter:drop-shadow(0 0 4px rgba(66,133,244,0.7));";
+  arrowEl.appendChild(arrow);
+  el.appendChild(arrowEl);
 
-  arrowWrap.appendChild(arrow);
-  wrap.appendChild(arrowWrap);
+  const dotEl = document.createElement("div");
+  dotEl.style.cssText = "position:relative;z-index:2;width:20px;height:20px;background:linear-gradient(145deg,#60a5fa,#1d4ed8);border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 3px rgba(66,133,244,0.35),0 3px 12px rgba(66,133,244,0.75);transition:background 0.4s;";
+  el.appendChild(dotEl);
 
-  // Solid blue dot — always on top
-  const dot = document.createElement("div");
-  dot.style.cssText = [
-    "position:relative",
-    "width:20px",
-    "height:20px",
-    "background:linear-gradient(135deg,#60a5fa,#1d4ed8)",
-    "border-radius:50%",
-    "border:3px solid #fff",
-    "box-shadow:0 0 0 2px rgba(59,130,246,.4),0 4px 14px rgba(59,130,246,.8)",
-    "z-index:1",
-  ].join(";");
-  wrap.appendChild(dot);
-
-  return { wrap, arrowWrap };
+  return { el, arrowEl, dotEl };
 }
 
-// ────────────────────────────────────────────────────────────
-// applyRide — draw route + markers onto the map (no React closure)
-// ────────────────────────────────────────────────────────────
-function applyRide(map, ride, currentLoc, isLive, refs) {
-  const { fromMarkerRef, toMarkerRef, fromPopupRef, toPopupRef, fullCoordsRef } = refs;
+// ── Popup HTML ───────────────────────────────────────────────
+function popupHTML_A(ride) {
+  const name = (ride?.fromName || "Start").split(",")[0].trim();
+  const emoji = ride?.rideType === "solo" ? "🏍️" : "👥";
+  const type = ride?.rideType === "solo" ? "Solo Ride" : "Group Ride";
+  return `<div style="font-family:system-ui,sans-serif;min-width:160px;padding:4px 0"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="background:#22c55e;color:#fff;border-radius:50%;width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;flex-shrink:0">A</span><strong style="font-size:14px;color:#111">${name}</strong></div><div style="display:inline-flex;align-items:center;gap:5px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:50px;padding:3px 10px;font-size:11px;color:#166534;font-weight:600">${emoji} ${type}</div></div>`;
+}
 
-  if (!ride) {
-    const remSrc = map.getSource(SRC_REMAINING);
-    const trvSrc = map.getSource(SRC_TRAVELED);
-    if (remSrc) remSrc.setData(buildLine([]));
-    if (trvSrc) trvSrc.setData(buildLine([]));
-    fullCoordsRef.current = null;
-    return;
+function popupHTML_B(ride, myLoc) {
+  const name = (ride?.destinationName || "Destination").split(",")[0].trim();
+  let distStr = "—", etaStr = "—";
+  if (myLoc?.lat && ride?.destinationLat) {
+    const d = haversineDistance(myLoc.lat, myLoc.lng, ride.destinationLat, ride.destinationLng);
+    distStr = formatDistance(d);
+    if (ride.distanceMeters > 0 && ride.durationSeconds > 0)
+      etaStr = formatDuration(d / (ride.distanceMeters / ride.durationSeconds));
+  } else if (ride?.distanceMeters) {
+    distStr = formatDistance(ride.distanceMeters);
+    etaStr = formatDuration(ride.durationSeconds);
   }
-
-  const coords = parseCoords(ride.routeCoordinates);
-  fullCoordsRef.current = coords;
-
-  const remSrc = map.getSource(SRC_REMAINING);
-  if (remSrc) {
-    if (isLive && currentLoc && coords) {
-      const { remaining } = sliceRoute(coords, currentLoc.lng, currentLoc.lat);
-      remSrc.setData(buildLine(remaining));
-    } else {
-      remSrc.setData(buildLine(coords || []));
-    }
-  }
-
-  // FROM marker
-  if (ride.fromLat && ride.fromLng) {
-    const ll      = [ride.fromLng, ride.fromLat];
-    const popHTML = buildFromHTML(ride);
-    if (fromMarkerRef.current) {
-      fromMarkerRef.current.setLngLat(ll);
-      fromPopupRef.current?.setHTML(popHTML);
-    } else {
-      const popup = new maplibregl.Popup({ offset: 40, closeButton: false, maxWidth: "260px" })
-        .setHTML(popHTML);
-      fromPopupRef.current = popup;
-      fromMarkerRef.current = new maplibregl.Marker({ element: makeFromEl(), anchor: "bottom" })
-        .setLngLat(ll).setPopup(popup).addTo(map);
-    }
-  }
-
-  // TO marker
-  if (ride.destinationLat && ride.destinationLng) {
-    const ll      = [ride.destinationLng, ride.destinationLat];
-    const popHTML = buildToHTML(ride, currentLoc);
-    if (toMarkerRef.current) {
-      toMarkerRef.current.setLngLat(ll);
-      toPopupRef.current?.setHTML(popHTML);
-    } else {
-      const popup = new maplibregl.Popup({ offset: 40, closeButton: false, maxWidth: "280px" })
-        .setHTML(popHTML);
-      toPopupRef.current = popup;
-      toMarkerRef.current = new maplibregl.Marker({ element: makeToEl(), anchor: "bottom" })
-        .setLngLat(ll).setPopup(popup).addTo(map);
-    }
-  }
-
-  // Fit viewport
-  const bounds = new maplibregl.LngLatBounds();
-  let hasPts = false;
-  if (ride.fromLng && ride.fromLat)              { bounds.extend([ride.fromLng, ride.fromLat]); hasPts = true; }
-  if (ride.destinationLng && ride.destinationLat){ bounds.extend([ride.destinationLng, ride.destinationLat]); hasPts = true; }
-  if (coords) coords.forEach(c => bounds.extend(c));
-
-  if (hasPts && !bounds.isEmpty()) {
-    map.fitBounds(bounds, {
-      padding:  { top: 80, bottom: 200, left: 60, right: 60 },
-      duration: 800,
-      maxZoom:  15,
-    });
-  }
+  return `<div style="font-family:system-ui,sans-serif;min-width:180px;padding:4px 0"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="background:#ef4444;color:#fff;border-radius:50%;width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;flex-shrink:0">B</span><strong style="font-size:14px;color:#111">${name}</strong></div><div style="display:flex;gap:16px;padding-top:4px;border-top:1px solid #f0f0f0"><div style="text-align:center"><div style="font-size:17px;font-weight:900;color:#ef4444">${distStr}</div><div style="font-size:9px;color:#999;text-transform:uppercase;letter-spacing:.5px;margin-top:2px">Remaining</div></div><div style="width:1px;background:#f0f0f0"></div><div style="text-align:center"><div style="font-size:17px;font-weight:900;color:#333">${etaStr}</div><div style="font-size:9px;color:#999;text-transform:uppercase;letter-spacing:.5px;margin-top:2px">ETA</div></div></div></div>`;
 }
 
 // ════════════════════════════════════════════════════════════
-// RideMap — React component
+// RideMap component
 // ════════════════════════════════════════════════════════════
 export default function RideMap({ ride, myLocation, isLive = false }) {
   const containerRef = useRef(null);
   const mapRef       = useRef(null);
-  const readyRef     = useRef(false);
+  // true only after setupMapLayers() has run — gates all source.setData() calls
+  const mapReadyRef  = useRef(false);
 
-  // Always-fresh refs (avoids stale closures in async handlers)
-  const rideRef      = useRef(ride);
-  const isLiveRef    = useRef(isLive);
-  rideRef.current    = ride;
-  isLiveRef.current  = isLive;
+  // Always-fresh refs (avoid stale closures in async callbacks)
+  const rideRef  = useRef(ride);  rideRef.current  = ride;
+  const myLocRef = useRef(myLocation); myLocRef.current = myLocation;
 
-  // Marker / popup refs
-  const fromMarkerRef = useRef(null);
-  const toMarkerRef   = useRef(null);
-  const meMarkerRef   = useRef(null);
-  const meArrowRef    = useRef(null);   // arrowWrap div for rotation
-  const fromPopupRef  = useRef(null);
-  const toPopupRef    = useRef(null);
+  // MapLibre object refs
+  const markerARef = useRef(null);
+  const markerBRef = useRef(null);
+  const gpsDotRef  = useRef(null);
+  const arrowElRef = useRef(null);
+  const dotElRef   = useRef(null);
+  const popupBRef  = useRef(null);
 
-  const fullCoordsRef = useRef(null);
+  const coordsRef  = useRef(null); // full OSRM coords array
+  const prevLocRef = useRef(null);
+  const bearingRef = useRef(0);
+  const followRef  = useRef(true);
+  const fetchingRef = useRef(false);
 
-  // Bearing / camera-follow state
-  const bearingRef    = useRef(0);     // current map/marker bearing (degrees)
-  const prevLocRef    = useRef(null);  // previous GPS location for bearing calc
-  const followRef     = useRef(true);  // camera follow mode enabled?
+  const [showReCenter, setShowReCenter] = useState(false);
+  const [routeLoading, setRouteLoading] = useState(false);
 
-  const [isFollowing, setIsFollowing] = useState(true); // mirrors followRef for UI
+  // ── setupMapLayers — called ONCE inside map.on("load") ────
+  // Creates GeoJSON sources + three line layers.
+  // Sets mapReadyRef = true so drawRoute/setData can run safely.
+  function setupMapLayers(map) {
+    map.addSource(SRC_REM, { type: "geojson", data: buildGeoJSON([]) });
+    map.addSource(SRC_TRV, { type: "geojson", data: buildGeoJSON([]) });
 
-  const markerRefs = { fromMarkerRef, toMarkerRef, fromPopupRef, toPopupRef, fullCoordsRef };
+    // White border — gives the Google Maps "road pill" appearance
+    map.addLayer({
+      id: LAYER_BORDER, type: "line", source: SRC_REM,
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint:  { "line-color": "#ffffff", "line-width": 20, "line-opacity": 0.88 },
+    });
+    // Blue route line (remaining)
+    map.addLayer({
+      id: LAYER_REMAINING, type: "line", source: SRC_REM,
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint:  { "line-color": "#4285F4", "line-width": 12, "line-opacity": 1.0 },
+    });
+    // Grey dashed traveled line
+    map.addLayer({
+      id: LAYER_TRAVELED, type: "line", source: SRC_TRV,
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint:  { "line-color": "#9ca3af", "line-width": 8, "line-opacity": 0.45, "line-dasharray": [2, 3] },
+    });
 
-  // Re-engage camera follow when user taps the re-center button
-  const reCenter = useCallback(() => {
-    followRef.current = true;
-    setIsFollowing(true);
-    if (mapRef.current && myLocation?.lat) {
-      mapRef.current.easeTo({
-        center:   [myLocation.lng, myLocation.lat],
-        bearing:  bearingRef.current,
-        pitch:    isLive ? 30 : 0,
-        zoom:     isLive ? 16 : DEFAULT_ZOOM,
-        duration: 700,
-      });
+    mapReadyRef.current = true;
+  }
+
+  // ── drawRoute — update line data + A/B markers ─────────────
+  // Safe to call only after setupMapLayers() has run.
+  function drawRoute(map, rideData) {
+    if (!map || !mapReadyRef.current) return;
+
+    const coords = parseCoords(rideData?.routeCoordinates);
+    coordsRef.current = coords;
+
+    map.getSource(SRC_REM).setData(buildGeoJSON(coords || []));
+    map.getSource(SRC_TRV).setData(buildGeoJSON([]));
+
+    if (!rideData) return;
+
+    // A marker
+    if (rideData.fromLat && rideData.fromLng) {
+      const ll = [rideData.fromLng, rideData.fromLat];
+      if (markerARef.current) {
+        markerARef.current.setLngLat(ll);
+      } else {
+        markerARef.current = new maplibregl.Marker({ element: makeMarkerA(), anchor: "bottom" })
+          .setLngLat(ll)
+          .setPopup(new maplibregl.Popup({ offset: 44, closeButton: false, maxWidth: "260px" }).setHTML(popupHTML_A(rideData)))
+          .addTo(map);
+      }
     }
-  }, [myLocation, isLive]);
+
+    // B marker
+    if (rideData.destinationLat && rideData.destinationLng) {
+      const ll = [rideData.destinationLng, rideData.destinationLat];
+      const popup = new maplibregl.Popup({ offset: 44, closeButton: false, maxWidth: "280px" })
+        .setHTML(popupHTML_B(rideData, myLocRef.current));
+      popupBRef.current = popup;
+      if (markerBRef.current) {
+        markerBRef.current.setLngLat(ll);
+      } else {
+        markerBRef.current = new maplibregl.Marker({ element: makeMarkerB(), anchor: "bottom" })
+          .setLngLat(ll).setPopup(popup).addTo(map);
+      }
+    }
+
+    // Fit viewport
+    if (coords && coords.length >= 2) {
+      const bounds = new maplibregl.LngLatBounds();
+      coords.forEach(c => bounds.extend(c));
+      if (rideData.fromLng)        bounds.extend([rideData.fromLng, rideData.fromLat]);
+      if (rideData.destinationLng) bounds.extend([rideData.destinationLng, rideData.destinationLat]);
+      map.fitBounds(bounds, { padding: { top: 90, bottom: 200, left: 60, right: 60 }, maxZoom: 15, duration: 900 });
+    } else if (rideData.fromLat && rideData.destinationLat) {
+      const bounds = new maplibregl.LngLatBounds();
+      bounds.extend([rideData.fromLng, rideData.fromLat]);
+      bounds.extend([rideData.destinationLng, rideData.destinationLat]);
+      map.fitBounds(bounds, { padding: { top: 90, bottom: 200, left: 60, right: 60 }, maxZoom: 14, duration: 900 });
+    }
+  }
+
+  // ── fetchAndDrawRoute — OSRM fallback ─────────────────────
+  async function fetchAndDrawRoute(map, rideData) {
+    if (!rideData?.fromLat || !rideData?.destinationLat) return;
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
+    setRouteLoading(true);
+    try {
+      const route = await getRoute(
+        { lat: rideData.fromLat, lng: rideData.fromLng },
+        { lat: rideData.destinationLat, lng: rideData.destinationLng }
+      );
+      if (route?.coordinates && mapReadyRef.current) {
+        rideRef.current = { ...rideData, routeCoordinates: JSON.stringify(route.coordinates) };
+        coordsRef.current = route.coordinates;
+        map.getSource(SRC_REM)?.setData(buildGeoJSON(route.coordinates));
+        const bounds = new maplibregl.LngLatBounds();
+        route.coordinates.forEach(c => bounds.extend(c));
+        map.fitBounds(bounds, { padding: { top: 90, bottom: 200, left: 60, right: 60 }, maxZoom: 15, duration: 900 });
+      }
+    } catch (e) {
+      console.warn("[RideMap] OSRM fetch failed:", e.message);
+    } finally {
+      setRouteLoading(false);
+      fetchingRef.current = false;
+    }
+  }
+
+  // ── placeGpsDot — create or move the GPS marker ───────────
+  function placeGpsDot(map, loc) {
+    const ll = [loc.lng, loc.lat];
+    if (gpsDotRef.current) {
+      gpsDotRef.current.setLngLat(ll);
+    } else {
+      const { el, arrowEl, dotEl } = makeGpsDot();
+      arrowElRef.current = arrowEl;
+      dotElRef.current   = dotEl;
+      gpsDotRef.current  = new maplibregl.Marker({ element: el, anchor: "center" })
+        .setLngLat(ll)
+        .setPopup(new maplibregl.Popup({ offset: 28, closeButton: false }).setHTML("<div style='font-family:system-ui;font-size:13px;font-weight:700'>📍 You are here</div>"))
+        .addTo(map);
+    }
+    if (dotElRef.current) {
+      const acc = loc.accuracy ?? 9999;
+      if (acc > 200) {
+        dotElRef.current.style.background = "linear-gradient(145deg,#fb923c,#ea580c)";
+        dotElRef.current.style.boxShadow  = "0 0 0 3px rgba(234,88,12,0.35),0 3px 12px rgba(234,88,12,0.75)";
+      } else {
+        dotElRef.current.style.background = "linear-gradient(145deg,#60a5fa,#1d4ed8)";
+        dotElRef.current.style.boxShadow  = "0 0 0 3px rgba(66,133,244,0.35),0 3px 12px rgba(66,133,244,0.75)";
+      }
+    }
+  }
 
   // ════════════════════════════════════════════════════════
-  // EFFECT 1 — Create the map exactly once
+  // EFFECT 1 — Create MapLibre map instance ONCE on mount
+  //
+  // CRITICAL ORDER inside map.on("load"):
+  //   1. setupMapLayers()  ← creates sources + layers
+  //   2. drawRoute()       ← safe now; sources exist
+  //   3. fetchAndDrawRoute()  ← OSRM fallback if needed
+  //   4. placeGpsDot()    ← draw dot if location already known
   // ════════════════════════════════════════════════════════
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
     const map = new maplibregl.Map({
-      container:       containerRef.current,
-      style:           OSM_RASTER_STYLE,
-      center:          DEFAULT_CENTER,
-      zoom:            DEFAULT_ZOOM,
-      scrollZoom:      true,
+      container: containerRef.current,
+      style: MAP_STYLE,
+      center: DEFAULT_CENTER,
+      zoom: DEFAULT_ZOOM,
+      scrollZoom: true,
       touchZoomRotate: true,
-      doubleClickZoom: true,
     });
     mapRef.current = map;
 
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), "top-right");
-    map.addControl(new maplibregl.ScaleControl({ unit: "metric" }),         "bottom-left");
+    map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
 
-    // Disengage camera follow when user manually pans
     map.on("dragstart", () => {
+      if (!isLive) return;
       followRef.current = false;
-      setIsFollowing(false);
+      setShowReCenter(true);
     });
 
     map.on("load", () => {
-      readyRef.current = true;
-
-      // ── REMAINING route source + layers ──
-      map.addSource(SRC_REMAINING, { type: "geojson", data: buildLine([]) });
-
-      // White border (Google Maps style)
-      map.addLayer({
-        id:     LYR_REM_OUTLINE,
-        type:   "line",
-        source: SRC_REMAINING,
-        layout: { "line-join": "round", "line-cap": "round" },
-        paint: {
-          "line-color":   "#ffffff",
-          "line-width":   ["interpolate", ["linear"], ["zoom"], 6, 12, 12, 16, 18, 22],
-          "line-opacity": 0.75,
-        },
-      });
-
-      // Blue fill (Google Maps #4285F4)
-      map.addLayer({
-        id:     LYR_REM_FILL,
-        type:   "line",
-        source: SRC_REMAINING,
-        layout: { "line-join": "round", "line-cap": "round" },
-        paint: {
-          "line-color":   "#4285F4",
-          "line-width":   ["interpolate", ["linear"], ["zoom"], 6, 7, 12, 12, 18, 17],
-          "line-opacity": 0.97,
-        },
-      });
-
-      // ── TRAVELED route source + layer ──
-      map.addSource(SRC_TRAVELED, { type: "geojson", data: buildLine([]) });
-
-      // Faded grey dashed line for already-driven portion
-      map.addLayer({
-        id:     LYR_TRV_LINE,
-        type:   "line",
-        source: SRC_TRAVELED,
-        layout: { "line-join": "round", "line-cap": "round" },
-        paint: {
-          "line-color":     "#9ca3af",
-          "line-width":     ["interpolate", ["linear"], ["zoom"], 6, 4, 12, 8, 18, 12],
-          "line-opacity":   0.45,
-          "line-dasharray": [2, 2],
-        },
-      });
-
-      if (rideRef.current) {
-        applyRide(map, rideRef.current, null, isLiveRef.current, markerRefs);
+      setupMapLayers(map);                       // 1. sources + layers first
+      drawRoute(map, rideRef.current);           // 2. draw stored coords
+      const curr = rideRef.current;
+      if (curr && !parseCoords(curr.routeCoordinates)) {
+        fetchAndDrawRoute(map, curr);            // 3. fetch from OSRM if needed
+      }
+      const loc = myLocRef.current;
+      if (loc?.lat && loc?.lng) {
+        placeGpsDot(map, loc);                  // 4. draw dot if already known
       }
     });
 
     return () => {
-      fromMarkerRef.current?.remove(); fromMarkerRef.current = null;
-      toMarkerRef.current?.remove();   toMarkerRef.current   = null;
-      meMarkerRef.current?.remove();   meMarkerRef.current   = null;
-      meArrowRef.current  = null;
-      fromPopupRef.current = null;
-      toPopupRef.current   = null;
-      map.remove();
-      mapRef.current    = null;
-      readyRef.current  = false;
-      fullCoordsRef.current = null;
+      mapReadyRef.current = false;
+      markerARef.current?.remove(); markerARef.current = null;
+      markerBRef.current?.remove(); markerBRef.current = null;
+      gpsDotRef.current?.remove();  gpsDotRef.current  = null;
+      arrowElRef.current = null; dotElRef.current = null;
+      popupBRef.current  = null; coordsRef.current = null;
+      map.remove(); mapRef.current = null;
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ════════════════════════════════════════════════════════
-  // EFFECT 2 — Redraw route when ride prop changes
+  // EFFECT 2 — Redraw when ride prop changes
+  //
+  // Only runs when map is already loaded (mapReadyRef = true).
+  // If map not loaded yet, Effect 1's load handler uses rideRef.
   // ════════════════════════════════════════════════════════
   useEffect(() => {
-    if (!mapRef.current || !readyRef.current) return;
-    applyRide(mapRef.current, ride, myLocation, isLive, markerRefs);
+    const map = mapRef.current;
+    if (!map || !mapReadyRef.current) return;
+    drawRoute(map, ride);
+    if (ride && !parseCoords(ride.routeCoordinates)) {
+      fetchAndDrawRoute(map, ride);
+    }
   }, [ride]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ════════════════════════════════════════════════════════
-  // EFFECT 3 — GPS tick: move dot + bearing arrow + trim route + follow
+  // EFFECT 3 — GPS tick
   // ════════════════════════════════════════════════════════
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !myLocation?.lat || !myLocation?.lng) return;
 
-    const lngLat = [myLocation.lng, myLocation.lat];
-
-    // ── Calculate bearing from previous → current position ──
-    // Prefer the browser-provided heading if available (mobile sensors)
-    let newBearing = bearingRef.current;
-    if (myLocation.heading != null && !isNaN(myLocation.heading)) {
-      // Browser compass heading (alpha) — already 0-360
-      newBearing = myLocation.heading;
-    } else if (prevLocRef.current) {
-      const prev = prevLocRef.current;
-      const distMoved = haversineDistance(prev.lat, prev.lng, myLocation.lat, myLocation.lng);
-      // Only update bearing if user moved more than 5m (avoids jitter when stationary)
-      if (distMoved > 5) {
-        newBearing = bearingBetween(prev.lat, prev.lng, myLocation.lat, myLocation.lng);
+    const doUpdate = () => {
+      // Trim route line
+      if (isLive && coordsRef.current && mapReadyRef.current) {
+        const { remaining, traveled } = sliceRoute(coordsRef.current, myLocation.lng, myLocation.lat);
+        map.getSource(SRC_REM)?.setData(buildGeoJSON(remaining));
+        map.getSource(SRC_TRV)?.setData(buildGeoJSON(traveled));
+        if (popupBRef.current && rideRef.current)
+          popupBRef.current.setHTML(popupHTML_B(rideRef.current, myLocation));
       }
-    }
-    bearingRef.current = newBearing;
-    prevLocRef.current = myLocation;
 
-    // ── Move or create the blue GPS dot with bearing arrow ──
-    if (meMarkerRef.current) {
-      meMarkerRef.current.setLngLat(lngLat);
+      // GPS dot
+      placeGpsDot(map, myLocation);
+
+      // Bearing + arrow rotation
+      let bearing = bearingRef.current;
+      if (myLocation.heading != null && !isNaN(myLocation.heading)) {
+        bearing = myLocation.heading;
+      } else if (prevLocRef.current) {
+        const moved = haversineDistance(prevLocRef.current.lat, prevLocRef.current.lng, myLocation.lat, myLocation.lng);
+        if (moved > 8)
+          bearing = bearingBetween(prevLocRef.current.lat, prevLocRef.current.lng, myLocation.lat, myLocation.lng);
+      }
+      bearingRef.current = bearing;
+      prevLocRef.current = myLocation;
+      if (arrowElRef.current)
+        arrowElRef.current.style.transform = `rotate(${bearing}deg)`;
+
+      // Camera follow
+      if (isLive && followRef.current) {
+        map.easeTo({ center: [myLocation.lng, myLocation.lat], bearing, pitch: 28, zoom: 16.5, duration: 650 });
+      }
+    };
+
+    if (map.isStyleLoaded()) {
+      doUpdate();
     } else {
-      const { wrap, arrowWrap } = makeMeEl();
-      meArrowRef.current = arrowWrap;
-      meMarkerRef.current = new maplibregl.Marker({ element: wrap, anchor: "center" })
-        .setLngLat(lngLat)
-        .setPopup(
-          new maplibregl.Popup({ offset: 28, closeButton: false })
-            .setHTML("<b>📍 You are here</b>")
-        )
-        .addTo(map);
+      map.once("load", doUpdate);
     }
+  }, [myLocation, isLive]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Rotate the bearing arrow to face direction of travel
-    if (meArrowRef.current) {
-      meArrowRef.current.style.transform = `rotate(${newBearing}deg)`;
-    }
-
-    // ── Dynamic route trimming (isLive mode only) ──
-    if (isLive && readyRef.current && fullCoordsRef.current) {
-      const { traveled, remaining } = sliceRoute(
-        fullCoordsRef.current,
-        myLocation.lng,
-        myLocation.lat
-      );
-      const remSrc = map.getSource(SRC_REMAINING);
-      const trvSrc = map.getSource(SRC_TRAVELED);
-      if (remSrc) remSrc.setData(buildLine(remaining));
-      if (trvSrc) trvSrc.setData(buildLine(traveled));
-
-      if (toPopupRef.current && ride) {
-        toPopupRef.current.setHTML(buildToHTML(ride, myLocation));
-      }
-    }
-
-    // ── Camera follow — smooth pan to user with bearing + slight pitch ──
-    if (isLive && followRef.current) {
-      map.easeTo({
-        center:   lngLat,
-        bearing:  newBearing,
-        pitch:    25,          // slight 3D tilt for nav feel
-        zoom:     16.5,        // street-level zoom while navigating
-        duration: 600,         // smooth 600ms transition
-      });
-    }
-  }, [myLocation, isLive, ride]);
-
+  // ════════════════════════════════════════════════════════
+  // RENDER
+  // ════════════════════════════════════════════════════════
   return (
-    <div style={{ width: "100%", height: "100%", position: "relative", background: "#1a1a2e" }}>
-      {/* Map canvas */}
+    <div style={{ width: "100%", height: "100%", position: "relative", background: "#e8e0d8" }}>
       <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
 
-      {/* Re-center button — shown when user has manually panned away */}
-      {isLive && !isFollowing && (
+      {routeLoading && (
+        <div style={{
+          position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
+          zIndex: 20, background: "rgba(0,0,0,0.72)", backdropFilter: "blur(8px)",
+          borderRadius: "14px", padding: "12px 20px",
+          display: "flex", alignItems: "center", gap: "10px",
+          color: "white", fontSize: "13px", fontWeight: 700, fontFamily: "system-ui",
+        }}>
+          <div style={{
+            width: "18px", height: "18px", borderRadius: "50%",
+            border: "3px solid rgba(255,255,255,0.3)", borderTopColor: "#4285F4",
+            animation: "rw-spin 0.8s linear infinite",
+          }} />
+          Loading route…
+        </div>
+      )}
+
+      {isLive && showReCenter && (
         <button
-          onClick={reCenter}
           title="Re-center on your location"
+          onClick={() => {
+            followRef.current = true;
+            setShowReCenter(false);
+            const loc = myLocRef.current;
+            if (mapRef.current && loc)
+              mapRef.current.easeTo({ center: [loc.lng, loc.lat], bearing: bearingRef.current, pitch: 28, zoom: 16.5, duration: 700 });
+          }}
           style={{
-            position:       "absolute",
-            bottom:         "100px",
-            right:          "16px",
-            zIndex:         20,
-            width:          "44px",
-            height:         "44px",
-            borderRadius:   "12px",
-            background:     "rgba(15,15,26,0.9)",
-            backdropFilter: "blur(12px)",
-            border:         "1.5px solid rgba(66,133,244,0.5)",
-            color:          "#4285F4",
-            cursor:         "pointer",
-            display:        "flex",
-            alignItems:     "center",
-            justifyContent: "center",
-            fontSize:       "18px",
-            boxShadow:      "0 4px 20px rgba(0,0,0,0.4)",
-            animation:      "rcFadeIn 0.25s ease-out both",
+            position: "absolute", bottom: "110px", right: "16px", zIndex: 20,
+            width: "46px", height: "46px", borderRadius: "13px",
+            background: "rgba(255,255,255,0.95)", backdropFilter: "blur(10px)",
+            border: "2px solid rgba(66,133,244,0.6)", color: "#4285F4",
+            cursor: "pointer", display: "flex", alignItems: "center",
+            justifyContent: "center", fontSize: "18px",
+            boxShadow: "0 2px 16px rgba(0,0,0,0.18)",
           }}
         >
           <i className="fa fa-location-crosshairs" />
         </button>
       )}
-
-      <style>{`
-        @keyframes rcFadeIn {
-          from { opacity:0; transform: scale(0.8); }
-          to   { opacity:1; transform: scale(1);   }
-        }
-      `}</style>
     </div>
   );
 }
