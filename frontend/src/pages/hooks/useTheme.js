@@ -64,25 +64,65 @@ export const themes = {
   },
 };
 
-export function useTheme() {
-  // Load saved theme OR auto-detect by time
-  const [theme, setTheme] = useState(() => {
+// ── Build a per-user localStorage key ──────────────────────────
+// When userId is available the key is "ridewise-theme-<id>".
+// When not logged in (userId is null/undefined) we fall back to
+// the legacy global key so the login page still has a theme.
+function themeKey(userId) {
+  return userId ? `ridewise-theme-${userId}` : "ridewise-theme";
+}
+
+// ── Auto-detect theme by time of day ───────────────────────────
+function detectThemeByTime() {
+  const hour = new Date().getHours();
+  if (hour >= 6  && hour < 12) return "warm";
+  if (hour >= 12 && hour < 18) return "light";
+  if (hour >= 18 && hour < 22) return "dark";
+  return "midnight";
+}
+
+// ── useTheme hook ───────────────────────────────────────────────
+// userId  — pass user?.id so the theme is scoped per account.
+//           Omit (or pass null) on public pages.
+export function useTheme(userId) {
+  const [theme, setThemeState] = useState(() => {
     try {
-      const saved = localStorage.getItem("ridewise-theme");
-      if (saved && themes[saved]) return saved;
+      // 1. Try the per-user key first
+      if (userId) {
+        const perUser = localStorage.getItem(themeKey(userId));
+        if (perUser && themes[perUser]) return perUser;
+      }
+      // 2. Fall back to the legacy global key (handles first login after old data)
+      const legacy = localStorage.getItem("ridewise-theme");
+      if (legacy && themes[legacy]) return legacy;
     } catch (_) {}
-    // Auto-detect: morning=warm, day=light, evening=dark, night=midnight
-    const hour = new Date().getHours();
-    if (hour >= 6 && hour < 12) return "warm";
-    if (hour >= 12 && hour < 18) return "light";
-    if (hour >= 18 && hour < 22) return "dark";
-    return "midnight";
+    // 3. Auto-detect by time
+    return detectThemeByTime();
   });
 
-  // Save theme to localStorage whenever it changes
+  // Re-read from localStorage (and re-detect) whenever userId changes.
+  // This ensures switching accounts immediately loads the correct theme.
   useEffect(() => {
-    try { localStorage.setItem("ridewise-theme", theme); } catch (_) {}
-  }, [theme]);
+    try {
+      if (userId) {
+        const saved = localStorage.getItem(themeKey(userId));
+        if (saved && themes[saved]) {
+          setThemeState(saved);
+          return;
+        }
+      }
+    } catch (_) {}
+    // New user with no saved theme → auto-detect
+    setThemeState(detectThemeByTime());
+  }, [userId]);
+
+  // Persist theme under the per-user key whenever it changes
+  const setTheme = (newTheme) => {
+    setThemeState(newTheme);
+    try {
+      localStorage.setItem(themeKey(userId), newTheme);
+    } catch (_) {}
+  };
 
   return { theme, setTheme, tc: themes[theme], allThemes: themes };
   // tc = "theme classes" — the bundle for current theme

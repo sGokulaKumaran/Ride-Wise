@@ -10,19 +10,44 @@
 //
 // BEHAVIOR:
 //   - Theme toggle applies immediately (uses useTheme hook)
-//   - All other toggles are local state for now (no backend persistence yet)
-//   - Each toggle shows a clear on/off visual
+//   - All settings are persisted per-user in localStorage under
+//     "ridewise-settings-<userId>" so switching accounts loads
+//     the correct settings for that account.
 //
 // BACKEND-READY:
 //   When backend is ready, save each setting with:
 //   await axios.put('/api/user/settings', { theme, notifications, ... })
 //   You can add a debounced auto-save or an explicit "Save" button.
 // ============================================================
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTheme } from "./hooks/useTheme";
+import { useAuth } from "../context/AuthContext";
 import Sidebar from "./components/layout/Sidebar";
 import TopBar from "./components/layout/TopBar";
 import MobileNav from "./components/layout/MobileNav";
+
+// ── Per-user settings localStorage key ──────────────────────
+function settingsKey(userId) {
+  return userId ? `ridewise-settings-${userId}` : "ridewise-settings";
+}
+
+// ── Load saved settings for this user (or return defaults) ──
+function loadSettings(userId) {
+  try {
+    const raw = localStorage.getItem(settingsKey(userId));
+    if (raw) return JSON.parse(raw);
+  } catch (_) {}
+  return {
+    textSize:        "medium",
+    reduceMotion:    false,
+    highContrast:    false,
+    notifyRides:     true,
+    notifyMessages:  true,
+    notifyCommunity: false,
+    profilePublic:   true,
+    showOnlineStatus: true,
+  };
+}
 
 // ── Small reusable toggle component ─────────────────────────
 // Renders a label + description on the left, a switch on the right.
@@ -68,22 +93,31 @@ function SectionHeader({ icon, title, tc }) {
 }
 
 export default function Settings() {
-  // Pull current theme + setter from the global theme hook
-  const { theme, setTheme, tc, allThemes } = useTheme();
+  const { user } = useAuth();
+  const userId   = user?.id;
 
-  // ── Accessibility settings (local state for now) ─────────────
-  const [textSize,      setTextSize]      = useState("medium");  // small | medium | large
-  const [reduceMotion,  setReduceMotion]  = useState(false);
-  const [highContrast,  setHighContrast]  = useState(false);
+  // Pull current theme + setter — scoped to this user
+  const { theme, setTheme, tc, allThemes } = useTheme(userId);
 
-  // ── Notification settings ────────────────────────────────────
-  const [notifyRides,     setNotifyRides]     = useState(true);
-  const [notifyMessages,  setNotifyMessages]  = useState(true);
-  const [notifyCommunity, setNotifyCommunity] = useState(false);
+  // ── Load initial settings from per-user localStorage ─────────
+  const [settings, setSettings] = useState(() => loadSettings(userId));
 
-  // ── Privacy settings ─────────────────────────────────────────
-  const [profilePublic,    setProfilePublic]    = useState(true);
-  const [showOnlineStatus, setShowOnlineStatus] = useState(true);
+  // Re-load settings whenever the logged-in user changes
+  // (covers the case where two sessions exist in the same tab)
+  useEffect(() => {
+    setSettings(loadSettings(userId));
+  }, [userId]);
+
+  // Persist settings to localStorage whenever any value changes
+  useEffect(() => {
+    try {
+      localStorage.setItem(settingsKey(userId), JSON.stringify(settings));
+    } catch (_) {}
+  }, [settings, userId]);
+
+  // ── Convenience updater ──────────────────────────────────────
+  const update = (key) => (value) =>
+    setSettings((prev) => ({ ...prev, [key]: value }));
 
   // Theme options (pulled from useTheme's allThemes)
   const themeOptions = [
@@ -150,9 +184,9 @@ export default function Settings() {
                 {["small", "medium", "large"].map((size) => (
                   <button
                     key={size}
-                    onClick={() => setTextSize(size)}
+                    onClick={() => update("textSize")(size)}
                     className={`flex-1 py-2 rounded-xl border text-xs font-bold capitalize transition-all hover:scale-[1.02] ${
-                      textSize === size
+                      settings.textSize === size
                         ? "border-orange-500 bg-orange-500/10 text-orange-400"
                         : `${tc.card} hover:border-orange-500/40`
                     }`}
@@ -165,16 +199,16 @@ export default function Settings() {
 
             <div className={`border-t ${tc.divider}`} />
             <Toggle
-              checked={reduceMotion}
-              onChange={setReduceMotion}
+              checked={settings.reduceMotion}
+              onChange={update("reduceMotion")}
               label="Reduce Motion"
               sub="Disables animations and transitions"
               tc={tc}
             />
             <div className={`border-t ${tc.divider}`} />
             <Toggle
-              checked={highContrast}
-              onChange={setHighContrast}
+              checked={settings.highContrast}
+              onChange={update("highContrast")}
               label="High Contrast"
               sub="Increases text and border contrast"
               tc={tc}
@@ -190,24 +224,24 @@ export default function Settings() {
               Choose which updates you want to receive.
             </p>
             <Toggle
-              checked={notifyRides}
-              onChange={setNotifyRides}
+              checked={settings.notifyRides}
+              onChange={update("notifyRides")}
               label="Ride Alerts"
               sub="When riders near you start a public ride"
               tc={tc}
             />
             <div className={`border-t ${tc.divider}`} />
             <Toggle
-              checked={notifyMessages}
-              onChange={setNotifyMessages}
+              checked={settings.notifyMessages}
+              onChange={update("notifyMessages")}
               label="Messages"
               sub="New messages from other riders"
               tc={tc}
             />
             <div className={`border-t ${tc.divider}`} />
             <Toggle
-              checked={notifyCommunity}
-              onChange={setNotifyCommunity}
+              checked={settings.notifyCommunity}
+              onChange={update("notifyCommunity")}
               label="Community Updates"
               sub="New posts and events in the community"
               tc={tc}
@@ -223,16 +257,16 @@ export default function Settings() {
               Control who can see your profile and activity.
             </p>
             <Toggle
-              checked={profilePublic}
-              onChange={setProfilePublic}
+              checked={settings.profilePublic}
+              onChange={update("profilePublic")}
               label="Public Profile"
               sub="Other riders can discover your profile"
               tc={tc}
             />
             <div className={`border-t ${tc.divider}`} />
             <Toggle
-              checked={showOnlineStatus}
-              onChange={setShowOnlineStatus}
+              checked={settings.showOnlineStatus}
+              onChange={update("showOnlineStatus")}
               label="Show Online Status"
               sub="Let others see when you're active"
               tc={tc}

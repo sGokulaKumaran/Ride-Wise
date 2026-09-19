@@ -153,12 +153,20 @@ export function AuthProvider({ children }) {
 
   // ── LOGOUT ──
   const logout = () => {
-    setUser(null);
-    setIsAuthenticated(false);
-    setIsFullyOnboarded(false);
+    // Wipe per-user scoped keys for the current user
+    if (user?.id) {
+      localStorage.removeItem(`ridewise-theme-${user.id}`);
+      localStorage.removeItem(`ridewise-settings-${user.id}`);
+    }
+    // Wipe shared auth keys + the legacy global theme key
     localStorage.removeItem("ridewise-user");
     localStorage.removeItem("ridewise-authenticated");
     localStorage.removeItem("ridewise-onboarded");
+    localStorage.removeItem("ridewise-theme"); // legacy global key — remove so next account starts fresh
+
+    setUser(null);
+    setIsAuthenticated(false);
+    setIsFullyOnboarded(false);
   };
 
   // ── COMPUTED: avatar letter ──

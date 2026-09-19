@@ -45,8 +45,9 @@ import { getUserRides, endRide, deleteRide } from "../services/rideApi";
 import { formatDistance, formatDuration }    from "../services/routingApi";
 
 export default function Home() {
-  const { theme, setTheme, tc } = useTheme();
   const { user }                = useAuth();
+  // Pass user?.id so each account gets its own theme stored separately
+  const { theme, setTheme, tc } = useTheme(user?.id);
 
   // ── MODAL VISIBILITY ────────────────────────────────────────
   const [showStart,   setShowStart]   = useState(false); // StartRideModal
@@ -58,6 +59,17 @@ export default function Home() {
   const [mapRide,   setMapRide]   = useState(null);
   const [rides,     setRides]     = useState([]);   // all rides for history
   const [loading,   setLoading]   = useState(true); // loading history on mount
+
+  // ── RESET STATE ON USER SWITCH ───────────────────────────────
+  // If the logged-in account changes (e.g. logout → login as someone else),
+  // wipe all in-memory ride state so the previous user's data is never shown.
+  useEffect(() => {
+    setMapRide(null);
+    setRides([]);
+    setShowStart(false);
+    setShowHistory(false);
+    setLoading(true);
+  }, [user?.id]);
 
   // ── MOUSE GLOW ───────────────────────────────────────────────
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });

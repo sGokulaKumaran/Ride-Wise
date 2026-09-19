@@ -92,8 +92,8 @@ function Field({ label, value, editValue, onChange, editing, type = "text", mult
 }
 
 export default function Account() {
-  const { theme, setTheme, tc } = useTheme();
   const { user, avatarLetter, updateProfile, logout } = useAuth();
+  const { theme, setTheme, tc } = useTheme(user?.id);
 
   // ── Edit mode state ──────────────────────────────────────────
   const [editing, setEditing] = useState(false);

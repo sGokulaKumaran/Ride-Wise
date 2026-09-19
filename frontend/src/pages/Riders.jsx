@@ -23,8 +23,8 @@ import {
 } from "../services/ridersApi";
 
 export default function Riders() {
-  const { theme, setTheme, tc } = useTheme();
   const { user } = useAuth();
+  const { theme, setTheme, tc } = useTheme(user?.id);
 
   // view: "all" | "add" | "remove" | "near"
   const [view, setView] = useState("all");
