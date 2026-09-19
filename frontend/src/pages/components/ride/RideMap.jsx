@@ -76,9 +76,9 @@ if (typeof document !== "undefined" && !document.getElementById("rw-leaflet-css"
   s.textContent = `
     @keyframes rw-pulse { 0%{transform:scale(0.85);opacity:0.9} 60%{transform:scale(2.6);opacity:0} 100%{transform:scale(0.85);opacity:0} }
     .leaflet-container { width:100%; height:100%; }
-    .leaflet-routing-container { display: none !important; } //this is line that was use to hide the routing continer
-    /* Push Leaflet controls down so they don't hide under the top panel */
-    .leaflet-top { top: 80px !important; }
+    .leaflet-routing-container { display: none !important; }
+    /* Hide Leaflet controls at the top */
+    .leaflet-top { display: none !important; }
     /* Push Leaflet controls up so they don't hide under the bottom panel */
     .leaflet-bottom { bottom: 120px !important; }
     /* Make sure our custom overlay controls are always clickable and on top */
@@ -283,6 +283,7 @@ export default function RideMap({ ride, myLocation, isLive = false }) {
     <div style={{ position: "absolute", inset: 0 }}>
 
       <MapContainer
+        attributionControl={false /* hides the built-in OpenStreetMap attribution box */}
         center={center}
         zoom={12}
         scrollWheelZoom
@@ -307,12 +308,12 @@ export default function RideMap({ ride, myLocation, isLive = false }) {
       </MapContainer>
 
       {/* ── Tile switcher (overlay, outside MapContainer so pointer events work) ── */}
-      <div className="rw-custom-control" style={{ position: "absolute", top: "170px", right: "10px", zIndex: 9999 }}>
+      <div className="rw-custom-control" style={{ position: "absolute", top: "110px", left: "10px", zIndex: 9999 }}>
         <button
           title="Switch map style"
           onClick={() => setShowTiles(v => !v)}
           style={{
-            width: "50px", height: "50px", borderRadius: "8px",
+            width: "40px", height: "40px", borderRadius: "8px",
             background: "rgba(255,255,255,0.95)",
             border: "2px solid rgba(200,200,200,0.6)",
             boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
@@ -323,7 +324,7 @@ export default function RideMap({ ride, myLocation, isLive = false }) {
 
         {showTiles && (
           <div style={{
-            position: "absolute", top: 0, right: "42px",
+            position: "absolute", top: 0, left: "42px",
             background: "rgba(15,15,26,0.96)",
             backdropFilter: "blur(16px)",
             border: "1px solid rgba(255,255,255,0.1)",
@@ -365,7 +366,7 @@ export default function RideMap({ ride, myLocation, isLive = false }) {
             }));
           }}
           style={{
-            position: "absolute", bottom: "110px", right: "10px", zIndex: 9999,
+            position: "absolute", bottom: "130px", left: "10px", zIndex: 9999,
             width: "46px", height: "46px", borderRadius: "13px",
             background: "rgba(255,255,255,0.95)",
             border: "2px solid rgba(66,133,244,0.6)",

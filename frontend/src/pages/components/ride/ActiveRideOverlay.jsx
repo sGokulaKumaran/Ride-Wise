@@ -160,7 +160,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
       <div
         style={{
           position:       "fixed",
-          bottom:         "8px",
+          bottom:         "100px",
           left:           "50%",
           transform:      "translateX(-50%)",
           zIndex:         9999, // this is the minimize
@@ -236,8 +236,8 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
             display:        "flex",
             alignItems:     "center",
             gap:            "12px",
-            background:     "rgba(15,15,26,0.92)",
-            backdropFilter: "blur(16px)",
+            background:     "rgba(15,15,26,0.42)",
+            backdropFilter: "blur(26px)",
             border:         "1px solid rgba(255,255,255,0.08)",
             borderRadius:   "16px",
             padding:        "12px 16px",
@@ -453,7 +453,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
             GPS: {gpsError}
           </div>
         )}
-
+        
         {/* ── Speed HUD chip (bottom-left) — only during active rides ── */}
         {isActiveRide && myLocation?.speed != null && myLocation.speed >= 0 && (
           <div style={{
@@ -482,9 +482,9 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
         {steps.length > 0 && isActiveRide && (
           <div style={{
             position:       "absolute",
-            bottom:         "170px",
+            bottom:         "140px",
             right:          "16px",
-            zIndex:         999,
+            zIndex:         9999,
             background:     "rgba(15,15,26,0.9)",
             backdropFilter: "blur(12px)",
             border:         "1px solid rgba(255,255,255,0.1)",
@@ -511,7 +511,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
         bottom:     0, left: 0, right: 0,
         zIndex:     999,
         background: "linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.8) 60%, transparent 100%)",
-        padding:    "20px 16px 24px",
+        padding:    "10px 6px 4px",
       }}>
 
         {/* ── Stats row ── */}
@@ -571,7 +571,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
                 style={{
                   flex: 1, padding: "14px",
                   background:   "rgba(255,255,255,0.1)",
-                  border:       "1px solid rgba(255,255,255,0.2)",
+                  border:       "1px solid rgba(255,255,255,0.1)",
                   borderRadius: "14px",
                   color:        "white",
                   fontWeight:   700,
