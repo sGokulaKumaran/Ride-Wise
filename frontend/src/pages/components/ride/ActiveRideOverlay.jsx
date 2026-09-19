@@ -190,54 +190,108 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
   // ====================================================================
   if (minimized) {
     return (
-      <div
-        style={{
-          position:       "fixed",
-          ...(miniPosition
-            ? { left: `${miniPosition.left}px`, top: `${miniPosition.top}px` }
-            : { right: "18px", bottom: "18px" }),
-          zIndex:         9999,
-          display:        "flex",
-          alignItems:     "center",
-          justifyContent: "center",
-          width:          "98px",
-          height:         "54px",
-          background:     "linear-gradient(135deg, #2563eb, #1d4ed8)",
-          border:         "2px solid rgba(255,255,255,0.9)",
-          borderRadius:   "999px",
-          boxShadow:      "0 8px 24px rgba(0,0,0,0.45), 0 0 0 4px rgba(37,99,235,0.2)",
-          cursor:         "grab",
-          touchAction:    "none",
-          userSelect:     "none",
-        }}
-        title="Drag to move · tap to reopen the map"
-        onPointerDown={handleMiniPointerDown}
-        onPointerMove={handleMiniPointerMove}
-        onPointerUp={handleMiniPointerUp}
-        onPointerCancel={handleMiniPointerUp}
-      >
-        <span style={{
-          position: "absolute",
-          top: "7px", right: "7px",
-          
-          width: "9px", height: "9px", borderRadius: "50%",
-          background: isActiveRide ? "#22c55e" : "#9ca3af",
-          animation: isActiveRide ? "pulse 2s ease-in-out infinite" : "none",
-        }} />
-        <i className="fa fa-map" style={{ color: "white", fontSize: "17px", pointerEvents: "none" }} />
-        
-        <span style={{
-            color: "white",
-            fontWeight: 800,
-            fontSize: "14px",
-            gap: "10",
-            letterSpacing: "0.4px",
+      <>
+        <style>{`
+          @keyframes miniMapPulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50%       { opacity: 0.55; transform: scale(1.4); }
+          }
+          @keyframes miniMapGlow {
+            0%, 100% { box-shadow: 0 0 0 0px rgba(59,130,246,0.55), 0 8px 28px rgba(0,0,0,0.55); }
+            50%       { box-shadow: 0 0 0 7px rgba(59,130,246,0.0),  0 8px 28px rgba(0,0,0,0.55); }
+          }
+          .mini-map-btn:hover {
+            transform: scale(1.06) !important;
+            filter: brightness(1.12);
+          }
+          .mini-map-btn:active {
+            transform: scale(0.97) !important;
+          }
+        `}</style>
+
+        <div
+          className="mini-map-btn"
+          style={{
+            position:        "fixed",
+            ...(miniPosition
+              ? { left: `${miniPosition.left}px`, top: `${miniPosition.top}px` }
+              : { right: "20px", bottom: "22px" }),
+            zIndex:          9999,
+            display:         "flex",
+            alignItems:      "center",
+            justifyContent:  "center",
+            gap:             "7px",
+            width:           "104px",
+            height:          "46px",
+            background:      "linear-gradient(135deg, #3b82f6 0%, #1d4ed8 60%, #1e3a8a 100%)",
+            border:          "1.5px solid rgba(255,255,255,0.22)",
+            borderRadius:    "999px",
+            boxShadow:       "0 0 0 0px rgba(59,130,246,0.55), 0 8px 28px rgba(0,0,0,0.55)",
+            animation:       "miniMapGlow 2.6s ease-in-out infinite",
+            cursor:          "grab",
+            touchAction:     "none",
+            userSelect:      "none",
+            transition:      "transform 0.18s ease, filter 0.18s ease",
+            /* glass sheen */
+            backdropFilter:  "blur(6px)",
+            WebkitBackdropFilter: "blur(6px)",
+            overflow:        "hidden",
+          }}
+          title="Drag to move · tap to reopen the map"
+          onPointerDown={handleMiniPointerDown}
+          onPointerMove={handleMiniPointerMove}
+          onPointerUp={handleMiniPointerUp}
+          onPointerCancel={handleMiniPointerUp}
+        >
+          {/* Top-left sheen highlight */}
+          <div style={{
+            position:     "absolute",
+            top: 0, left: 0,
+            width:        "60%",
+            height:       "50%",
+            background:   "linear-gradient(135deg, rgba(255,255,255,0.18) 0%, transparent 100%)",
+            borderRadius: "999px 999px 60% 0",
+            pointerEvents:"none",
+          }} />
+
+          {/* Live status dot */}
+          <span style={{
+            position:     "absolute",
+            top:          "8px",
+            right:        "9px",
+            width:        "8px",
+            height:       "8px",
+            borderRadius: "50%",
+            background:   isActiveRide ? "#4ade80" : "#6b7280",
+            boxShadow:    isActiveRide ? "0 0 6px #4ade80" : "none",
+            animation:    isActiveRide ? "miniMapPulse 2s ease-in-out infinite" : "none",
+            border:       "1.5px solid rgba(255,255,255,0.6)",
+          }} />
+
+          {/* Map icon */}
+          <i
+            className="fa fa-map"
+            style={{
+              color:        "rgba(255,255,255,0.95)",
+              fontSize:     "16px",
+              pointerEvents:"none",
+              filter:       "drop-shadow(0 1px 3px rgba(0,0,0,0.4))",
+            }}
+          />
+
+          {/* Label */}
+          <span style={{
+            color:         "rgba(255,255,255,0.95)",
+            fontWeight:    700,
+            fontSize:      "13.5px",
+            letterSpacing: "0.5px",
             pointerEvents: "none",
+            textShadow:    "0 1px 4px rgba(0,0,0,0.35)",
           }}>
             Map
-        </span>
-        <style>{`@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(1.3)} }`}</style>
-      </div>
+          </span>
+        </div>
+      </>
     );
   }
 
