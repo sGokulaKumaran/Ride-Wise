@@ -67,8 +67,10 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
   const [confirmEnd,      setConfirmEnd]       = useState(false);
   const [ending,          setEnding]           = useState(false);
   const [showDirections,  setShowDirections]   = useState(false);
+  const [miniPosition,    setMiniPosition]     = useState(null);
 
   const stopGpsRef = useRef(null);
+  const miniDragRef = useRef({ pointerId: null, offsetX: 0, offsetY: 0, moved: false });
 
   // ── Determine if ride is active (live navigation) or view-only ──
   // Completed/cancelled rides open in view-only mode — no End Ride button,
@@ -152,55 +154,88 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
   // ── Derive current step distance (to next maneuver) ──
   const stepDist = currentStep?.distance || 0;
 
+  // ── Minimized-map bubble: tap to restore, drag to reposition ──
+  const handleMiniPointerDown = (event) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    miniDragRef.current = {
+      pointerId: event.pointerId,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+      moved: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleMiniPointerMove = (event) => {
+    const drag = miniDragRef.current;
+    if (drag.pointerId !== event.pointerId) return;
+
+    const bubbleSize = 58;
+    const left = Math.min(Math.max(10, event.clientX - drag.offsetX), window.innerWidth - bubbleSize - 10);
+    const top  = Math.min(Math.max(10, event.clientY - drag.offsetY), window.innerHeight - bubbleSize - 10);
+    drag.moved = true;
+    setMiniPosition({ left, top });
+  };
+
+  const handleMiniPointerUp = (event) => {
+    const drag = miniDragRef.current;
+    if (drag.pointerId !== event.pointerId) return;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    miniDragRef.current.pointerId = null;
+    if (!drag.moved) setMinimized(false);
+  };
+
   // ====================================================================
-  // MINIMIZED state — floating chip
+  // MINIMIZED state — compact draggable map bubble
   // ====================================================================
   if (minimized) {
     return (
       <div
         style={{
           position:       "fixed",
-          bottom:         "100px",
-          left:           "50%",
-          transform:      "translateX(-50%)",
-          zIndex:         9999, // this is the minimize
+          ...(miniPosition
+            ? { left: `${miniPosition.left}px`, top: `${miniPosition.top}px` }
+            : { right: "18px", bottom: "18px" }),
+          zIndex:         9999,
           display:        "flex",
           alignItems:     "center",
-          gap:            "12px",
-          background:     "linear-gradient(135deg, rgba(10,10,10,0.95), rgba(20,20,30,0.95))",
-          backdropFilter: "blur(20px)",
-          border:         "1px solid rgba(66,133,244,0.4)",
-          borderRadius:   "50px",
-          padding:        "10px 20px",
-          boxShadow:      "0 8px 40px rgba(0,0,0,0.6), 0 0 20px rgba(66,133,244,0.15)",
-          cursor:         "pointer",
-          whiteSpace:     "nowrap",
+          justifyContent: "center",
+          width:          "98px",
+          height:         "54px",
+          background:     "linear-gradient(135deg, #2563eb, #1d4ed8)",
+          border:         "2px solid rgba(255,255,255,0.9)",
+          borderRadius:   "999px",
+          boxShadow:      "0 8px 24px rgba(0,0,0,0.45), 0 0 0 4px rgba(37,99,235,0.2)",
+          cursor:         "grab",
+          touchAction:    "none",
+          userSelect:     "none",
         }}
-        onClick={() => setMinimized(false)}
+        title="Drag to move · tap to reopen the map"
+        onPointerDown={handleMiniPointerDown}
+        onPointerMove={handleMiniPointerMove}
+        onPointerUp={handleMiniPointerUp}
+        onPointerCancel={handleMiniPointerUp}
       >
         <span style={{
-          width: "10px", height: "10px", borderRadius: "50%",
+          position: "absolute",
+          top: "7px", right: "7px",
+          
+          width: "9px", height: "9px", borderRadius: "50%",
           background: isActiveRide ? "#22c55e" : "#9ca3af",
           animation: isActiveRide ? "pulse 2s ease-in-out infinite" : "none",
-          flexShrink: 0,
         }} />
-        <span style={{ color: "white", fontWeight: 700, fontSize: "13px" }}>
-          {(ride.fromName || "From").split(",")[0]} → {(ride.destinationName || "Destination").split(",")[0]}
-        </span>
-        {remainingDist != null && (
-          <span style={{
-            background:   "rgba(66,133,244,0.2)",
-            border:       "1px solid rgba(66,133,244,0.4)",
-            borderRadius: "50px",
-            padding:      "2px 8px",
-            color:        "#60a5fa",
-            fontSize:     "11px",
-            fontWeight:   700,
+        <i className="fa fa-map" style={{ color: "white", fontSize: "17px", pointerEvents: "none" }} />
+        
+        <span style={{
+            color: "white",
+            fontWeight: 800,
+            fontSize: "14px",
+            gap: "10",
+            letterSpacing: "0.4px",
+            pointerEvents: "none",
           }}>
-            {formatDistance(remainingDist)}
-          </span>
-        )}
-        <i className="fa fa-map" style={{ color: "#4285F4", fontSize: "14px" }} />
+            Map
+        </span>
         <style>{`@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(1.3)} }`}</style>
       </div>
     );
