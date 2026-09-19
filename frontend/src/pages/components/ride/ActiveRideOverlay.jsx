@@ -160,7 +160,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
       <div
         style={{
           position:       "fixed",
-          bottom:         "80px",
+          bottom:         "8px",
           left:           "50%",
           transform:      "translateX(-50%)",
           zIndex:         9999, // this is the minimize
@@ -241,16 +241,16 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
             border:         "1px solid rgba(255,255,255,0.08)",
             borderRadius:   "16px",
             padding:        "12px 16px",
-            marginBottom:   "8px",
+            marginBottom:   "px",
             boxShadow:      "0 4px 24px rgba(0,0,0,0.5)",
             pointerEvents:  "auto",
           }}>
 
             {/* Maneuver icon circle */}
             <div style={{
-              width:          "48px",
-              height:         "48px",
-              borderRadius:   "14px",
+              width:          "38px",
+              height:         "38px",
+              borderRadius:   "120px",
               background:     "linear-gradient(135deg, rgba(66,133,244,0.3), rgba(66,133,244,0.15))",
               border:         "1.5px solid rgba(66,133,244,0.4)",
               display:        "flex",
@@ -296,7 +296,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
             </div>
 
             {/* Right: control buttons */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px", pointerEvents: "auto" }}>
+            <div style={{ display: "flex", flexDirection: "row", gap: "6px", pointerEvents: "auto" }}>
               {/* Directions list toggle */}
               <button
                 onClick={() => setShowDirections(v => !v)}
@@ -455,22 +455,22 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
         )}
 
         {/* ── Speed HUD chip (bottom-left) — only during active rides ── */}
-        {myLocation?.speed != null && myLocation.speed >= 0 && isActiveRide && (
+        {isActiveRide && myLocation?.speed != null && myLocation.speed >= 0 && (
           <div style={{
             position:       "absolute",
-            bottom:         "170px",
+            bottom:         "120px",
             left:           "16px",
-            zIndex:         20,
+            zIndex:         9999,
             background:     "rgba(15,15,26,0.9)",
             backdropFilter: "blur(12px)",
             border:         "1px solid rgba(255,255,255,0.1)",
             borderRadius:   "14px",
-            padding:        "10px 14px",
+            padding:        "8px 10px",
             textAlign:      "center",
-            minWidth:       "60px",
+            minWidth:       "30px",
           }}>
             <p style={{ color: "white", fontWeight: 900, fontSize: "20px", margin: 0, lineHeight: 1 }}>
-              {Math.round(myLocation.speed * 3.6)}
+             {Math.round(myLocation.speed * 3.6)}
             </p>
             <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "9px", margin: "3px 0 0", textTransform: "uppercase", letterSpacing: "1px" }}>
               km/h
@@ -488,7 +488,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
             background:     "rgba(15,15,26,0.9)",
             backdropFilter: "blur(12px)",
             border:         "1px solid rgba(255,255,255,0.1)",
-            borderRadius:   "14px",
+            borderRadius:   "140px",
             padding:        "10px 14px",
             textAlign:      "center",
             minWidth:       "60px",
@@ -676,7 +676,7 @@ const topBtnStyle = {
   background:     "rgba(0,0,0,0.6)",
   backdropFilter: "blur(12px)",
   border:         "1px solid rgba(255,255,255,0.15)",
-  color:          "white",
+  color:          "red",
   cursor:         "pointer",
   display:        "flex",
   alignItems:     "center",

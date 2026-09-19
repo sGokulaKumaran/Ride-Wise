@@ -76,6 +76,7 @@ if (typeof document !== "undefined" && !document.getElementById("rw-leaflet-css"
   s.textContent = `
     @keyframes rw-pulse { 0%{transform:scale(0.85);opacity:0.9} 60%{transform:scale(2.6);opacity:0} 100%{transform:scale(0.85);opacity:0} }
     .leaflet-container { width:100%; height:100%; }
+    .leaflet-routing-container { display: none !important; } //this is line that was use to hide the routing continer
     /* Push Leaflet controls down so they don't hide under the top panel */
     .leaflet-top { top: 80px !important; }
     /* Push Leaflet controls up so they don't hide under the bottom panel */
@@ -115,11 +116,11 @@ function RoutingMachine({ from, to }) {
           { color: "#4285F4", weight: 12, opacity: 1.0 },
         ],
       },
-      show:               true,
+      show:               false,
       addWaypoints:       false,
       routeWhileDragging: false,
       draggableWaypoints: false,
-      fitSelectedRoutes:  true,
+      fitSelectedRoutes:  false,
       showAlternatives:   false,
     });
 
