@@ -335,12 +335,23 @@ function MapInternals({ ride, myLocation, isLive, tileLayerRef, activeTileIdx })
   useEffect(() => {
     if (!map || !myLocation?.lat) return;
     const ll = [myLocation.lat, myLocation.lng];
-    if (gpsDotRef.current) {
+       if (gpsDotRef.current) {
       gpsDotRef.current.setLatLng(ll);
     } else {
-      gpsDotRef.current = L.marker(ll, { icon: GPS_ICON, zIndexOffset: 1000 })
-        .addTo(map)
-        .bindPopup("<div style='font-family:system-ui;font-size:13px;font-weight:700'>📍 You are here</div>");
+      gpsDotRef.current = L.marker(ll, { 
+        icon: GPS_ICON, 
+        zIndexOffset: 1000,
+        draggable: true
+      })
+      .addTo(map)
+      .bindPopup("<div style='font-family:system-ui;font-size:13px;font-weight:700'>📍 You are here</div>");
+      //this is after line is used for to drag the pointer in the map
+      gpsDotRef.current.on('dragend', function(event) {
+        const position = event.target.getLatLng();
+        window.dispatchEvent(new CustomEvent("simulate-gps", {
+          detail: { lat: position.lat, lng: position.lng }
+        }));
+      });
     }
     if (isLive && followRef.current) {
       map.setView(ll, Math.max(map.getZoom(), 16), { animate: true, duration: 0.5 });

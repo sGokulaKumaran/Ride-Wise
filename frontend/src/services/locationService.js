@@ -87,6 +87,22 @@ export function getCurrentLocation() {
 // Returns a stop() function — call it to cancel tracking.
 // ============================================================
 
+const activeListeners = new Set();
+let isSimulating = false;
+
+window.addEventListener("simulate-gps", (e) => {
+  isSimulating = true;
+  const fakeLocation = {
+    lat: e.detail.lat,
+    lng: e.detail.lng,
+    accuracy: 5,
+    speed: 10,
+    heading: null,
+    timestamp: Date.now()
+  };
+  activeListeners.forEach(onUpdate => onUpdate(fakeLocation));
+});
+
 export function watchLocation(onUpdate, onError) {
   if (!navigator.geolocation) {
     console.warn("[locationService] Geolocation not supported.");
@@ -94,22 +110,31 @@ export function watchLocation(onUpdate, onError) {
     return () => {};
   }
 
+  activeListeners.add(onUpdate);
+
   let lastEmitTime = 0;
 
   const watchId = navigator.geolocation.watchPosition(
     (pos) => {
+      if (isSimulating) return;
+
       const now = Date.now();
       if (now - lastEmitTime < THROTTLE_MS) return;
       lastEmitTime = now;
       onUpdate(posToLocation(pos));
     },
     (err) => {
-      console.warn("[locationService] GPS error:", err.message);
-      if (onError) onError(err);
+      if (!isSimulating) {
+        console.warn("[locationService] GPS error:", err.message);
+        if (onError) onError(err);
+      }
     },
     GPS_OPTIONS
   );
 
-  return () => navigator.geolocation.clearWatch(watchId);
+  return () => {
+    navigator.geolocation.clearWatch(watchId);
+    activeListeners.delete(onUpdate);
+    isSimulating = false;
+  };
 }
-
