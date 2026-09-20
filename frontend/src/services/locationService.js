@@ -90,6 +90,7 @@ export function getCurrentLocation() {
 const activeListeners = new Set();
 let isSimulating = false;
 
+// 1. Listen for dragging the marker
 window.addEventListener("simulate-gps", (e) => {
   isSimulating = true;
   const fakeLocation = {
@@ -101,6 +102,37 @@ window.addEventListener("simulate-gps", (e) => {
     timestamp: Date.now()
   };
   activeListeners.forEach(onUpdate => onUpdate(fakeLocation));
+});
+
+// 2. Listen for the Re-Center button
+window.addEventListener("resume-real-gps", () => {
+  isSimulating = false; 
+  
+  // A. Instantly snap to the last known real location (if we have one)
+  if (window.lastRealLocation) {
+    activeListeners.forEach(onUpdate => onUpdate(window.lastRealLocation));
+    window.dispatchEvent(new CustomEvent("rw-recenter", {
+      detail: { lat: window.lastRealLocation.lat, lng: window.lastRealLocation.lng }
+    }));
+  }
+
+  // B. GUARANTEE a fresh coordinate by forcing the hardware sensors to ping
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const freshLoc = posToLocation(pos);
+      window.lastRealLocation = freshLoc; // Save it
+      
+      // Update the map and camera one more time with the fresh coordinate
+      if (!isSimulating) {
+        activeListeners.forEach(onUpdate => onUpdate(freshLoc));
+        window.dispatchEvent(new CustomEvent("rw-recenter", {
+          detail: { lat: freshLoc.lat, lng: freshLoc.lng }
+        }));
+      }
+    },
+    (err) => console.warn("Forced GPS failed:", err),
+    GPS_OPTIONS
+  );
 });
 
 export function watchLocation(onUpdate, onError) {
@@ -116,12 +148,15 @@ export function watchLocation(onUpdate, onError) {
 
   const watchId = navigator.geolocation.watchPosition(
     (pos) => {
+      // ALWAYS silently save the real hardware GPS in the background
+      window.lastRealLocation = posToLocation(pos);
+
       if (isSimulating) return;
 
       const now = Date.now();
       if (now - lastEmitTime < THROTTLE_MS) return;
       lastEmitTime = now;
-      onUpdate(posToLocation(pos));
+      onUpdate(window.lastRealLocation);
     },
     (err) => {
       if (!isSimulating) {

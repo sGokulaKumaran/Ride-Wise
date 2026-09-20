@@ -547,8 +547,8 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
         {isActiveRide && myLocation?.speed != null && myLocation.speed >= 0 && (
           <div style={{
             position:       "absolute",
-            bottom:         "120px",
-            left:           "16px",
+            bottom:         "200px",
+            right:           "16px",
             zIndex:         9999,
             background:     "rgba(15,15,26,0.9)",
             backdropFilter: "blur(12px)",
@@ -571,7 +571,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
         {steps.length > 0 && isActiveRide && (
           <div style={{
             position:       "absolute",
-            bottom:         "140px",
+            bottom:         "120px",
             right:          "16px",
             zIndex:         9999,
             background:     "rgba(15,15,26,0.9)",

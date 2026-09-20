@@ -456,17 +456,14 @@ export default function RideMap({ ride, myLocation, isLive = false }) {
         )}
       </div>
 
-      {/* ── Re-center button (live rides only) ── */}
+         {/* ── Re-center button (live rides only) ── */}
       {isLive && myLocation?.lat && (
         <button
           className="rw-custom-control"
           title="Re-center on your location"
           onClick={() => {
-            /* trigger via map ref is tricky outside MapContainer —
-               so we just dispatch a custom event that MapInternals listens to */
-            window.dispatchEvent(new CustomEvent("rw-recenter", {
-              detail: { lat: myLocation.lat, lng: myLocation.lng }
-            }));
+            // Tell locationService to turn off simulation and snap back to real GPS!
+            window.dispatchEvent(new Event("resume-real-gps"));
           }}
           style={{
             position: "absolute", bottom: "130px", left: "10px", zIndex: 9999,
