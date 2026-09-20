@@ -1,9 +1,9 @@
 // ============================================================
-// RideMap.jsx — Leaflet Map (react-leaflet + leaflet-routing-machine)
+// RideMap.jsx — Leaflet Map (react-leaflet)
 //
-// Copied from react-leaflet-demo approach:
 //   • MapContainer + TileLayer  → renders the map tiles
-//   • RoutingMachine control    → calls OSRM & draws the blue route line
+//   • DynamicRouteLine          → draws the road-following polyline from
+//                                 stored OSRM coordinates; trims behind GPS
 //   • L.Marker                  → A (start) and B (destination) pins
 //   • Live GPS dot              → updates as myLocation changes
 //   • Tile switcher overlay     → change map style at runtime
@@ -13,8 +13,9 @@ import { useEffect, useRef, useState } from "react";
 import { MapContainer, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import "leaflet-routing-machine";
-import "leaflet-routing-machine/dist/leaflet-routing-machine.css";
+// NOTE: leaflet-routing-machine intentionally removed.
+// We draw polylines directly from stored OSRM coordinates (DynamicRouteLine)
+// so we don't need the routing-machine library at all.
 
 // Fix Leaflet marker icon (broken in Vite — same fix as demo)
 import markerIconPng   from "leaflet/dist/images/marker-icon.png";
@@ -76,7 +77,6 @@ if (typeof document !== "undefined" && !document.getElementById("rw-leaflet-css"
   s.textContent = `
     @keyframes rw-pulse { 0%{transform:scale(0.85);opacity:0.9} 60%{transform:scale(2.6);opacity:0} 100%{transform:scale(0.85);opacity:0} }
     .leaflet-container { width:100%; height:100%; }
-    .leaflet-routing-container { display: none !important; }
     /* Hide Leaflet controls at the top */
     .leaflet-top { display: none !important; }
     /* Push Leaflet controls up so they don't hide under the bottom panel */
@@ -88,55 +88,147 @@ if (typeof document !== "undefined" && !document.getElementById("rw-leaflet-css"
 }
 
 // ===========================================================================
-// RoutingMachine — exact same pattern as demo's RoutingComponent.jsx
-// Must be inside <MapContainer> to use useMap()
+// DynamicRouteLine — Smart route drawing:
+//   • ON-ROUTE  (within 300m of saved path) → trims polyline behind GPS
+//   • OFF-ROUTE (more than 300m away)       → fetches fresh OSRM road route
+//                                             from current GPS to destination
 // ===========================================================================
-function RoutingMachine({ from, to }) {
+
+// How far (metres) the GPS must be from the saved route before we reroute
+const OFF_ROUTE_THRESHOLD_M = 300;
+// Only call OSRM reroute again if GPS moved more than this since last call
+const REROUTE_DEBOUNCE_M    = 150;
+// OSRM endpoint (same as routingApi.js)
+const OSRM_BASE = "https://router.project-osrm.org/route/v1/driving";
+
+// Haversine distance in metres (self-contained — no external import needed)
+function getDistance(lat1, lon1, lat2, lon2) {
+  const R  = 6371e3;
+  const p1 = lat1 * Math.PI / 180;
+  const p2 = lat2 * Math.PI / 180;
+  const dp = (lat2 - lat1) * Math.PI / 180;
+  const dl = (lon2 - lon1) * Math.PI / 180;
+  const a  = Math.sin(dp/2)**2 + Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// Draw (or redraw) a two-layer polyline (white outline + blue fill)
+function drawPolyline(map, routeRef, coords) {
+  if (routeRef.current) { map.removeLayer(routeRef.current); }
+  const outline = L.polyline(coords, { color: "#ffffff", weight: 20, opacity: 0.9 });
+  const inline  = L.polyline(coords, { color: "#4285F4", weight: 12, opacity: 1.0 });
+  routeRef.current = L.layerGroup([outline, inline]).addTo(map);
+}
+
+function DynamicRouteLine({ ride, myLocation, isLive }) {
   const map = useMap();
-  const controlRef = useRef(null);
+
+  // Refs — we use refs (not state) to avoid re-render loops
+  const routeRef              = useRef(null); // current drawn layer group
+  const reroutedRef           = useRef(null); // cached off-route OSRM coords
+  const lastReroutePos        = useRef(null); // GPS position of last OSRM call
+  const isFetchingRef         = useRef(false);// guard against concurrent fetches
 
   useEffect(() => {
-    if (!map || !from || !to) return;
+    if (!map || !ride?.routeCoordinates) return;
 
-    // Remove previous control if from/to changed
-    if (controlRef.current) {
-      try { map.removeControl(controlRef.current); } catch (_) {}
-      controlRef.current = null;
+    // ── 1. Parse the saved OSRM coordinates ──────────────────────────────
+    let savedCoords; // [[lat,lng], ...] for Leaflet
+    try {
+      const raw = typeof ride.routeCoordinates === "string"
+        ? JSON.parse(ride.routeCoordinates)
+        : ride.routeCoordinates;
+      // OSRM stores [lng, lat] — flip to Leaflet's [lat, lng]
+      savedCoords = raw.map(pt => [pt[1], pt[0]]);
+    } catch (e) {
+      console.error("[DynamicRouteLine] Failed to parse routeCoordinates:", e);
+      return;
     }
 
-    // Exact same API as demo's createRoutineMachineLayer
-    const control = L.Routing.control({
-      waypoints: [
-        L.latLng(from.lat, from.lng),
-        L.latLng(to.lat,   to.lng),
-      ],
-      lineOptions: {
-        styles: [
-          { color: "#ffffff", weight: 20, opacity: 0.9 },
-          { color: "#4285F4", weight: 12, opacity: 1.0 },
-        ],
-      },
-      show:               false,
-      addWaypoints:       false,
-      routeWhileDragging: false,
-      draggableWaypoints: false,
-      fitSelectedRoutes:  false,
-      showAlternatives:   false,
-    });
+    // ── 2. Non-live / no GPS → draw full saved route ──────────────────────
+    if (!isLive || !myLocation?.lat) {
+      drawPolyline(map, routeRef, savedCoords);
+      return;
+    }
 
-    control.addTo(map);
-    controlRef.current = control;
+    // ── 3. Find the closest point on the saved route to current GPS ───────
+    let minDist      = Infinity;
+    let closestIndex = 0;
+    for (let i = 0; i < savedCoords.length; i++) {
+      const d = getDistance(myLocation.lat, myLocation.lng, savedCoords[i][0], savedCoords[i][1]);
+      if (d < minDist) { minDist = d; closestIndex = i; }
+    }
 
+    // ── 4. ON-ROUTE: trim the saved polyline ──────────────────────────────
+    if (minDist <= OFF_ROUTE_THRESHOLD_M) {
+      // Clear any cached reroute — we're back on the original path
+      reroutedRef.current    = null;
+      lastReroutePos.current = null;
+
+      // Slice off everything behind us; add exact GPS as first point for smooth connection
+      const trimmed = [
+        [myLocation.lat, myLocation.lng],
+        ...savedCoords.slice(closestIndex),
+      ];
+      drawPolyline(map, routeRef, trimmed);
+      return;
+    }
+
+    // ── 5. OFF-ROUTE: use cached reroute while fetching ───────────────────
+    if (reroutedRef.current) {
+      // We already have a rerouted path — draw it immediately so map isn't blank
+      drawPolyline(map, routeRef, reroutedRef.current);
+    }
+
+    // ── 6. OFF-ROUTE: debounce — only call OSRM if moved enough ──────────
+    const lastPos = lastReroutePos.current;
+    const movedSinceLastReroute = !lastPos
+      || getDistance(myLocation.lat, myLocation.lng, lastPos.lat, lastPos.lng) > REROUTE_DEBOUNCE_M;
+
+    if (!movedSinceLastReroute || isFetchingRef.current) return;
+
+    // ── 7. OFF-ROUTE: fetch fresh road route from OSRM ───────────────────
+    isFetchingRef.current  = true;
+    lastReroutePos.current = { lat: myLocation.lat, lng: myLocation.lng };
+
+    const destLat = ride.destinationLat;
+    const destLng = ride.destinationLng;
+    const url     = `${OSRM_BASE}/${myLocation.lng},${myLocation.lat};${destLng},${destLat}?overview=full&geometries=geojson`;
+
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        if (data.code === "Ok" && data.routes?.[0]) {
+          // Flip [lng,lat] → [lat,lng] for Leaflet
+          const newCoords = data.routes[0].geometry.coordinates.map(pt => [pt[1], pt[0]]);
+          reroutedRef.current = newCoords;
+          drawPolyline(map, routeRef, newCoords);
+        }
+      })
+      .catch(err => {
+        console.warn("[DynamicRouteLine] Reroute fetch failed:", err.message);
+        // Fallback: draw straight remaining segment so map isn't blank
+        const fallback = [
+          [myLocation.lat, myLocation.lng],
+          ...savedCoords.slice(closestIndex),
+        ];
+        drawPolyline(map, routeRef, fallback);
+      })
+      .finally(() => { isFetchingRef.current = false; });
+
+  }, [map, ride?.routeCoordinates, ride?.destinationLat, ride?.destinationLng, isLive, myLocation?.lat, myLocation?.lng]);
+
+  // Cleanup on unmount
+  useEffect(() => {
     return () => {
-      if (controlRef.current) {
-        try { map.removeControl(controlRef.current); } catch (_) {}
-        controlRef.current = null;
-      }
+      if (routeRef.current) { map?.removeLayer(routeRef.current); }
     };
-  }, [map, from?.lat, from?.lng, to?.lat, to?.lng]); // eslint-disable-line
+  }, [map]);
 
   return null;
 }
+
+
 
 // ===========================================================================
 // MapInternals — all hook-based components inside MapContainer
@@ -294,8 +386,8 @@ export default function RideMap({ ride, myLocation, isLive = false }) {
           attribution={TILE_LAYERS[0].attr}
         />
 
-        {/* Route line — same as demo's RoutingComponent */}
-        {from && to && <RoutingMachine from={from} to={to} />}
+        {/* Dynamic Route line — automatically trims based on myLocation */}
+        <DynamicRouteLine ride={ride} myLocation={myLocation} isLive={isLive} />
 
         {/* Markers + GPS dot + tile ref capture */}
         <MapInternals
