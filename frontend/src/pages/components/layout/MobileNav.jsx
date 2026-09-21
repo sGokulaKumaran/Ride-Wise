@@ -35,8 +35,13 @@ export default function MobileNav({ tc, onStartRide }) {
 
         {/* ── Center: Start Ride FAB ───────────────────────────── */}
         {/* Elevated, gradient, the hero action on mobile */}
+        {/* On /home the parent opens the modal directly; from any other
+            page we deep-link to /home?startRide=1 and Home opens it once */}
         <button
-          onClick={onStartRide}
+          onClick={() => {
+            if (location.pathname === "/home" && onStartRide) onStartRide();
+            else navigate("/home?startRide=1");
+          }}
           className="flex-shrink-0 -mt-6 w-14 h-14 rounded-full text-white transition-all hover:scale-110 active:scale-90 flex flex-col items-center justify-center shadow-2xl"
           style={{
             background: "linear-gradient(135deg, #f97316, #ec4899)",

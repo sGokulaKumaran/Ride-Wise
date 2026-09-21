@@ -46,8 +46,18 @@ public class RidersService {
         return users.stream().map(this::toResponse).collect(Collectors.toList());
     }
 
-    // Add a rider to connections
+    // Add a rider to connections (bidirectional, deduplicated)
+    @Transactional
     public boolean addRider(Long userId, Long riderId) {
+        if (userId == null || riderId == null) {
+            throw vehicle.ridewise.exception.ApiException.badRequest("userId and riderId are required");
+        }
+        if (userId.equals(riderId)) {
+            throw vehicle.ridewise.exception.ApiException.badRequest("You cannot connect with yourself");
+        }
+        if (!userRepository.existsById(userId) || !userRepository.existsById(riderId)) {
+            throw vehicle.ridewise.exception.ApiException.notFound("User not found");
+        }
         if (connectionRepository.existsByUserIdAndConnectedUserId(userId, riderId)) {
             return false; // Already connected
         }
@@ -55,7 +65,7 @@ public class RidersService {
         conn.setUserId(userId);
         conn.setConnectedUserId(riderId);
         connectionRepository.save(conn);
-        
+
         if (!connectionRepository.existsByUserIdAndConnectedUserId(riderId, userId)) {
             Connection reverseConn = new Connection();
             reverseConn.setUserId(riderId);

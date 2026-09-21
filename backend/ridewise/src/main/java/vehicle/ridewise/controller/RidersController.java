@@ -1,10 +1,13 @@
 package vehicle.ridewise.controller;
 
-import vehicle.ridewise.dto.UserResponse;
-import vehicle.ridewise.service.RidersService;
-import org.springframework.beans.factory.annotation.Autowired;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import vehicle.ridewise.config.SessionAuthInterceptor;
+import vehicle.ridewise.dto.UserResponse;
+import vehicle.ridewise.exception.ApiException;
+import vehicle.ridewise.service.RidersService;
+
 import java.util.List;
 import java.util.Map;
 
@@ -12,47 +15,63 @@ import java.util.Map;
 @RequestMapping("/api/riders")
 public class RidersController {
 
-    @Autowired
-    private RidersService ridersService;
+    private final RidersService ridersService;
 
-    // GET /api/riders/search?query=alice&userId=1
+    public RidersController(RidersService ridersService) {
+        this.ridersService = ridersService;
+    }
+
     @GetMapping("/search")
     public ResponseEntity<List<UserResponse>> search(
             @RequestParam String query,
-            @RequestParam Long userId) {
-        List<UserResponse> results = ridersService.searchRiders(query, userId);
-        return ResponseEntity.ok(results);
+            @RequestParam(required = false) Long userId,
+            HttpServletRequest request) {
+        Long currentUserId = SessionAuthInterceptor.requireUserId(request);
+        assertRequestedUserMatches(currentUserId, userId);
+        return ResponseEntity.ok(ridersService.searchRiders(query, currentUserId));
     }
 
-    // GET /api/riders/nearby?userId=1
     @GetMapping("/nearby")
-    public ResponseEntity<List<UserResponse>> nearby(@RequestParam Long userId) {
-        List<UserResponse> results = ridersService.getNearRiders(userId);
-        return ResponseEntity.ok(results);
+    public ResponseEntity<List<UserResponse>> nearby(
+            @RequestParam(required = false) Long userId,
+            HttpServletRequest request) {
+        Long currentUserId = SessionAuthInterceptor.requireUserId(request);
+        assertRequestedUserMatches(currentUserId, userId);
+        return ResponseEntity.ok(ridersService.getNearRiders(currentUserId));
     }
 
-    // GET /api/riders/connections?userId=1
     @GetMapping("/connections")
-    public ResponseEntity<List<UserResponse>> connections(@RequestParam Long userId) {
-        List<UserResponse> results = ridersService.getConnections(userId);
-        return ResponseEntity.ok(results);
+    public ResponseEntity<List<UserResponse>> connections(
+            @RequestParam(required = false) Long userId,
+            HttpServletRequest request) {
+        Long currentUserId = SessionAuthInterceptor.requireUserId(request);
+        assertRequestedUserMatches(currentUserId, userId);
+        return ResponseEntity.ok(ridersService.getConnections(currentUserId));
     }
 
-    // POST /api/riders/add — body: { userId: 1, riderId: 2 }
     @PostMapping("/add")
-    public ResponseEntity<Map<String, Object>> addRider(@RequestBody Map<String, Long> body) {
-        Long userId = body.get("userId");
-        Long riderId = body.get("riderId");
-        boolean success = ridersService.addRider(userId, riderId);
+    public ResponseEntity<Map<String, Object>> addRider(
+            @RequestBody Map<String, Long> body,
+            HttpServletRequest request) {
+        Long currentUserId = SessionAuthInterceptor.requireUserId(request);
+        assertRequestedUserMatches(currentUserId, body.get("userId"));
+        boolean success = ridersService.addRider(currentUserId, body.get("riderId"));
         return ResponseEntity.ok(Map.of("success", success));
     }
 
-    // POST /api/riders/remove — body: { userId: 1, riderId: 2 }
     @PostMapping("/remove")
-    public ResponseEntity<Map<String, Object>> removeRider(@RequestBody Map<String, Long> body) {
-        Long userId = body.get("userId");
-        Long riderId = body.get("riderId");
-        boolean success = ridersService.removeRider(userId, riderId);
+    public ResponseEntity<Map<String, Object>> removeRider(
+            @RequestBody Map<String, Long> body,
+            HttpServletRequest request) {
+        Long currentUserId = SessionAuthInterceptor.requireUserId(request);
+        assertRequestedUserMatches(currentUserId, body.get("userId"));
+        boolean success = ridersService.removeRider(currentUserId, body.get("riderId"));
         return ResponseEntity.ok(Map.of("success", success));
+    }
+
+    private void assertRequestedUserMatches(Long currentUserId, Long requestedUserId) {
+        if (requestedUserId != null && !currentUserId.equals(requestedUserId)) {
+            throw ApiException.forbidden("You can only access your own rider data");
+        }
     }
 }

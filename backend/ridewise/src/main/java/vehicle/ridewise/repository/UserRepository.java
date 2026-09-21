@@ -9,11 +9,14 @@ import java.util.Optional;
 
 public interface UserRepository extends JpaRepository<User, Long> {
 
-    // Find user by email (used during login)
-    Optional<User> findByEmail(String email);
+    // Find user by email (used during login) — case-insensitive
+    Optional<User> findByEmailIgnoreCase(String email);
 
-    // Check if email exists (used during signup)
-    boolean existsByEmail(String email);
+    // Check if email exists (used during signup) — case-insensitive
+    boolean existsByEmailIgnoreCase(String email);
+
+    // Username uniqueness checks (used during onboarding/profile edit)
+    Optional<User> findByUsernameIgnoreCase(String username);
 
     // Search users by username OR email (for Add Rider search)
     // Excludes the current user so you don't find yourself

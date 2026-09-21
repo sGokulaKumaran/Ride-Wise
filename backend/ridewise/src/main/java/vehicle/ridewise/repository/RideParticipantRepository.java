@@ -25,6 +25,9 @@ public interface RideParticipantRepository extends JpaRepository<RideParticipant
     @Query("SELECT rp.rideId FROM RideParticipant rp WHERE rp.userId = :userId AND rp.status = 'active'")
     List<Long> findActiveRideIdsByUserId(@Param("userId") Long userId);
 
+    @Query("SELECT rp.rideId FROM RideParticipant rp WHERE rp.userId = :userId AND rp.status <> 'left'")
+    List<Long> findVisibleRideIdsByUserId(@Param("userId") Long userId);
+
     @Modifying
     @Transactional
     void deleteByRideId(Long rideId);

@@ -269,8 +269,10 @@ export default function TopBar({
                           }
                           if (n.rideId) {
                             setShowNotifDropdown(false);
-                            // Dispatch event for Home.jsx to handle opening the ride
-                            window.dispatchEvent(new CustomEvent("rw-open-ride", { detail: { rideId: n.rideId } }));
+                            // Navigate to Home with the ride id in the URL so it
+                            // works from ANY page (Account/Riders/Settings too).
+                            // Home handles the openRide param once, then clears it.
+                            navigate(`/home?openRide=${n.rideId}`, { state: { openRideId: n.rideId } });
                           }
                         }}
                         style={{

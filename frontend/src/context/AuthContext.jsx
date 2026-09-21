@@ -52,27 +52,40 @@ export function AuthProvider({ children }) {
   const [isFullyOnboarded, setIsFullyOnboarded] = useState(false);
   const [loading,          setLoading]          = useState(true);
 
-  // ── RESTORE SESSION FROM LOCALSTORAGE ON APP LOAD ──
+  // ── RESTORE SESSION FROM THE SERVER ON APP LOAD ──
+  // localStorage is only a UI cache. /api/auth/me confirms that the
+  // server-side session cookie is still valid before protected pages render.
   useEffect(() => {
-    try {
-      const savedUser  = localStorage.getItem("ridewise-user");
-      const savedAuth  = localStorage.getItem("ridewise-authenticated");
-      const savedBoard = localStorage.getItem("ridewise-onboarded");
+    let cancelled = false;
 
-      if (savedUser && savedAuth === "true") {
-        const parsed = JSON.parse(savedUser);
-        setUser(parsed);
+    const restore = async () => {
+      try {
+        const res = await fetch("/api/auth/me", { credentials: "include" });
+        if (!res.ok) throw new Error("Not authenticated");
+        const serverUser = await res.json();
+        if (cancelled) return;
+
+        localStorage.setItem("ridewise-user", JSON.stringify(serverUser));
+        localStorage.setItem("ridewise-authenticated", "true");
+        localStorage.setItem("ridewise-onboarded", serverUser.username ? "true" : "false");
+        setUser(serverUser);
         setIsAuthenticated(true);
-        setIsFullyOnboarded(savedBoard === "true" && Boolean(parsed.username));
+        setIsFullyOnboarded(Boolean(serverUser.username));
+      } catch (_) {
+        if (cancelled) return;
+        localStorage.removeItem("ridewise-user");
+        localStorage.removeItem("ridewise-authenticated");
+        localStorage.removeItem("ridewise-onboarded");
+        setUser(null);
+        setIsAuthenticated(false);
+        setIsFullyOnboarded(false);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-    } catch (err) {
-      // Corrupted data — wipe everything
-      localStorage.removeItem("ridewise-user");
-      localStorage.removeItem("ridewise-authenticated");
-      localStorage.removeItem("ridewise-onboarded");
-    } finally {
-      setLoading(false);
-    }
+    };
+
+    restore();
+    return () => { cancelled = true; };
   }, []);
 
   // ── SIGNUP — POST /api/auth/signup ──
@@ -84,6 +97,7 @@ export function AuthProvider({ children }) {
     const res = await fetch("/api/auth/signup", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body:    JSON.stringify({ email: email.trim().toLowerCase(), password }),
     });
 
@@ -108,6 +122,7 @@ export function AuthProvider({ children }) {
     const res = await fetch("/api/auth/login", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body:    JSON.stringify({ email: email.trim().toLowerCase(), password }),
     });
 
@@ -131,6 +146,7 @@ export function AuthProvider({ children }) {
     const res = await fetch(`/api/auth/profile/${user.id}`, {
       method:  "PATCH",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body:    JSON.stringify(patch),
       // patch can include: { username, mobile, address }
     });
@@ -152,17 +168,23 @@ export function AuthProvider({ children }) {
   };
 
   // ── LOGOUT ──
-  const logout = () => {
-    // Wipe per-user scoped keys for the current user
+  const logout = async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+    } catch (_) {
+      // Still clear local state if the network request fails
+    }
+
     if (user?.id) {
       localStorage.removeItem(`ridewise-theme-${user.id}`);
       localStorage.removeItem(`ridewise-settings-${user.id}`);
+      localStorage.removeItem(`ridewise-rides-local-${user.id}`);
     }
-    // Wipe shared auth keys + the legacy global theme key
+    localStorage.removeItem("ridewise-rides-local"); // legacy shared cache
     localStorage.removeItem("ridewise-user");
     localStorage.removeItem("ridewise-authenticated");
     localStorage.removeItem("ridewise-onboarded");
-    localStorage.removeItem("ridewise-theme"); // legacy global key — remove so next account starts fresh
+    localStorage.removeItem("ridewise-theme");
 
     setUser(null);
     setIsAuthenticated(false);

@@ -10,9 +10,16 @@ import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(vehicle.ridewise.exception.ApiException.class)
+    public ResponseEntity<Map<String, String>> handleApiException(vehicle.ridewise.exception.ApiException ex) {
+        String msg = ex.getMessage() != null ? ex.getMessage() : "Request failed";
+        // Return both keys: "message" (new consistent contract) and "error" (legacy compatibility)
+        return ResponseEntity.status(ex.getStatus()).body(Map.of("message", msg, "error", msg));
+    }
+
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Map<String, String>> handleRuntimeException(RuntimeException ex) {
-        String msg = ex.getMessage();
+        String msg = ex.getMessage() != null ? ex.getMessage() : "Request failed";
         HttpStatus status = HttpStatus.BAD_REQUEST;
 
         if ("Email already registered".equals(msg)) {
@@ -23,6 +30,6 @@ public class GlobalExceptionHandler {
             status = HttpStatus.NOT_FOUND;
         }
 
-        return ResponseEntity.status(status).body(Map.of("error", msg));
+        return ResponseEntity.status(status).body(Map.of("message", msg, "error", msg));
     }
 }

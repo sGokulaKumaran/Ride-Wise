@@ -1,20 +1,27 @@
 package vehicle.ridewise.config;
 
-// CORS configuration — allows frontend (React on port5173) to call this API
+// CORS + API session authentication configuration
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
-@Configuration // Tells Spring this class contains configuration
+@Configuration
 public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
-        // Allow requests from your React frontend
-        registry.addMapping("/api/**")  // All API endpoints
+        registry.addMapping("/api/**")
                 .allowedOrigins("http://localhost:5173", "http://localhost:3000")
                 .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                 .allowedHeaders("*")
                 .allowCredentials(true);
+    }
+
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(new SessionAuthInterceptor())
+                .addPathPatterns("/api/**")
+                .excludePathPatterns("/api/auth/login", "/api/auth/signup");
     }
 }

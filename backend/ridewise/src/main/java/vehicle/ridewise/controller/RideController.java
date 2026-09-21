@@ -1,7 +1,9 @@
 package vehicle.ridewise.controller; // Package declaration
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.*; // Import web annotations
 import org.springframework.http.ResponseEntity; // Import ResponseEntity
+import vehicle.ridewise.config.SessionAuthInterceptor;
 import vehicle.ridewise.service.RideService; // Import RideService
 import vehicle.ridewise.service.LocationUpdateService; // Import LocationUpdateService
 import vehicle.ridewise.dto.RideRequest; // Import RideRequest dto
@@ -44,7 +46,8 @@ public class RideController { // Define class
     // Body: RideRequest JSON
     // Returns: RideResponse JSON with generated id + createdAt
     @PostMapping({"", "/"}) // Post endpoint for creating rides
-    public ResponseEntity<RideResponse> createRide(@RequestBody RideRequest request) { // Create ride handler
+    public ResponseEntity<RideResponse> createRide(@RequestBody RideRequest request, HttpServletRequest httpRequest) { // Create ride handler
+        request.setUserId(SessionAuthInterceptor.requireUserId(httpRequest)); // Session identity is authoritative
         RideResponse res = rideService.createRide(request); // Call service
         return ResponseEntity.ok(res); // Return 200 OK with body
     } // End handler
@@ -53,45 +56,53 @@ public class RideController { // Define class
     // GET /api/rides/user/{userId}
     // Returns: List of RideResponse, newest first
     @GetMapping("/user/{userId}") // Get user rides endpoint
-    public ResponseEntity<List<RideResponse>> getUserRides(@PathVariable Long userId) { // Get user rides handler
-        List<RideResponse> res = rideService.getUserRides(userId); // Call service
-        return ResponseEntity.ok(res); // Return 200 OK with list
+    public ResponseEntity<List<RideResponse>> getUserRides(@PathVariable Long userId, HttpServletRequest request) { // Get user rides handler
+        Long currentUserId = SessionAuthInterceptor.requireUserId(request);
+        if (!currentUserId.equals(userId)) throw vehicle.ridewise.exception.ApiException.forbidden("You can only view your own rides");
+        return ResponseEntity.ok(rideService.getUserRides(currentUserId)); // Return 200 OK with list
     } // End handler
 
     // ── GET ACTIVE RIDES FOR USER ────────────────────────────
     // GET /api/rides/user/{userId}/active
     // Returns: List of active RideResponse (status = "active")
     @GetMapping("/user/{userId}/active") // Get active rides endpoint
-    public ResponseEntity<List<RideResponse>> getActiveRides(@PathVariable Long userId) { // Get active rides handler
-        List<RideResponse> res = rideService.getActiveRides(userId); // Call service
-        return ResponseEntity.ok(res); // Return list
+    public ResponseEntity<List<RideResponse>> getActiveRides(@PathVariable Long userId, HttpServletRequest request) { // Get active rides handler
+        Long currentUserId = SessionAuthInterceptor.requireUserId(request);
+        if (!currentUserId.equals(userId)) throw vehicle.ridewise.exception.ApiException.forbidden("You can only view your own rides");
+        return ResponseEntity.ok(rideService.getActiveRides(currentUserId)); // Return list
     } // End handler
 
     // ── UPDATE RIDE STATUS ───────────────────────────────────
     // PATCH /api/rides/{rideId}/status
     // Body: { "status": "completed" }
+    // ── UPDATE RIDE STATUS ───────────────────────────────────
+    // PATCH /api/rides/{rideId}/status
+    // Body: { "status": "completed", "userId": "123" }  (userId optional)
+    // For GROUP rides, ending (completed/cancelled) requires userId of the
+    // active admin participant / ride owner. Omitting userId keeps legacy behavior.
     @PatchMapping("/{rideId}/status") // Patch status endpoint
     public ResponseEntity<RideResponse> updateStatus(
             @PathVariable Long rideId,
-            @RequestBody Map<String, String> body) { // Update status handler
+            @RequestBody Map<String, String> body,
+            HttpServletRequest request) { // Update status handler
         String status = body.get("status"); // Extract status from body
-        RideResponse res = rideService.updateStatus(rideId, status); // Call service
+        RideResponse res = rideService.updateStatus(rideId, status, SessionAuthInterceptor.requireUserId(request)); // Call service
         return ResponseEntity.ok(res); // Return updated ride
     } // End handler
 
     // ── DELETE RIDE ──────────────────────────────────────────
     // DELETE /api/rides/{rideId}
     @DeleteMapping("/{rideId}") // Delete endpoint
-    public ResponseEntity<Void> deleteRide(@PathVariable Long rideId) { // Delete ride handler
-        rideService.deleteRide(rideId); // Call service
+    public ResponseEntity<Void> deleteRide(@PathVariable Long rideId, HttpServletRequest request) { // Delete ride handler
+        rideService.deleteRide(rideId, SessionAuthInterceptor.requireUserId(request)); // Call service
         return ResponseEntity.noContent().build(); // Return 204 No Content
     } // End handler
 
     // ── GET SINGLE RIDE ──────────────────────────────────────
     // GET /api/rides/{rideId}
     @GetMapping("/{rideId}") // Get single ride endpoint
-    public ResponseEntity<RideResponse> getRide(@PathVariable Long rideId) { // Get ride handler
-        RideResponse res = rideService.getRide(rideId); // Call service
+    public ResponseEntity<RideResponse> getRide(@PathVariable Long rideId, HttpServletRequest request) { // Get ride handler
+        RideResponse res = rideService.getRide(rideId, SessionAuthInterceptor.requireUserId(request)); // Call service
         return ResponseEntity.ok(res); // Return ride
     } // End handler
 
@@ -106,7 +117,9 @@ public class RideController { // Define class
     @PostMapping("/{rideId}/location") // Save GPS position endpoint
     public ResponseEntity<LocationUpdateResponse> saveLocation(
             @PathVariable Long rideId,
-            @RequestBody LocationUpdateRequest req) { // Save location handler
+            @RequestBody LocationUpdateRequest req,
+            HttpServletRequest request) { // Save location handler
+        req.setUserId(SessionAuthInterceptor.requireUserId(request)); // Session identity is authoritative
         LocationUpdateResponse res = locationService.saveLocation(rideId, req); // Delegate to service
         return ResponseEntity.ok(res); // Return 200 OK with saved row data
     } // End handler
@@ -117,22 +130,52 @@ public class RideController { // Define class
     //
     // Used by ride history to show the actual path driven on a map.
     @GetMapping("/{rideId}/location") // Get GPS track endpoint
-    public ResponseEntity<List<LocationUpdateResponse>> getTrack(@PathVariable Long rideId) { // Get track handler
-        List<LocationUpdateResponse> res = locationService.getTrack(rideId); // Delegate to service
+    public ResponseEntity<List<LocationUpdateResponse>> getTrack(@PathVariable Long rideId, HttpServletRequest request) { // Get track handler
+        List<LocationUpdateResponse> res = locationService.getTrack(rideId, SessionAuthInterceptor.requireUserId(request)); // Delegate to service
         return ResponseEntity.ok(res); // Return GPS track
     } // End handler
     
     // ── GROUP RIDE PARTICIPANTS ──────────────────────────────
+    // GET /api/rides/{rideId}/participants → ACTIVE participants only (live map)
     @GetMapping("/{rideId}/participants")
-    public ResponseEntity<List<vehicle.ridewise.dto.RideParticipantResponse>> getParticipants(@PathVariable Long rideId) {
-        return ResponseEntity.ok(rideService.getParticipants(rideId));
+    public ResponseEntity<List<vehicle.ridewise.dto.RideParticipantResponse>> getParticipants(@PathVariable Long rideId, HttpServletRequest request) {
+        return ResponseEntity.ok(rideService.getParticipants(rideId, SessionAuthInterceptor.requireUserId(request)));
     }
 
+    // POST /api/rides/{rideId}/participants
+    // Body: { "adminId": "1", "userId": "2" }
+    // Only the active group ride admin can add; the user must exist and be a
+    // connected friend. Rejoins left participants; duplicates are rejected.
+    @PostMapping("/{rideId}/participants")
+    public ResponseEntity<vehicle.ridewise.dto.RideParticipantResponse> addParticipant(
+            @PathVariable Long rideId, @RequestBody Map<String, String> body, HttpServletRequest request) {
+        Long adminId = SessionAuthInterceptor.requireUserId(request);
+        Long userId = parseLong(body.get("userId"));
+        return ResponseEntity.ok(rideService.addParticipant(rideId, adminId, userId));
+    }
+
+    // PATCH /api/rides/{rideId}/participants/{userId}/status
+    // Body: { "status": "left", "actorUserId": "2" }
+    // A non-admin active participant leaves themself. Members cannot end the
+    // ride via this route (admin uses PATCH /api/rides/{rideId}/status).
     @PatchMapping("/{rideId}/participants/{userId}/status")
     public ResponseEntity<Map<String, Object>> updateParticipantStatus(
-        @PathVariable Long rideId, @PathVariable Long userId, @RequestBody Map<String, String> body) {
+        @PathVariable Long rideId, @PathVariable Long userId, @RequestBody Map<String, String> body, HttpServletRequest request) {
         String status = body.get("status");
-        rideService.updateParticipantStatus(rideId, userId, status);
+        Long actorUserId = SessionAuthInterceptor.requireUserId(request);
+        rideService.updateParticipantStatus(rideId, userId, status, actorUserId);
         return ResponseEntity.ok(Map.of("success", true));
+    }
+
+    // Safely parse a nullable string ID (accepts null/blank without failing)
+    private static Long parseLong(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.valueOf(value.trim());
+        } catch (NumberFormatException ex) {
+            throw vehicle.ridewise.exception.ApiException.badRequest("Invalid numeric id: " + value);
+        }
     }
 } // End of class

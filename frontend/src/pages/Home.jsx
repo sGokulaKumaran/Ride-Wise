@@ -30,6 +30,7 @@
 // ============================================================
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useAuth }          from "../context/AuthContext";
 import MobileNav            from "./components/layout/MobileNav";
 import Sidebar              from "./components/layout/Sidebar";
@@ -73,6 +74,27 @@ export default function Home() {
     window.addEventListener("rw-open-ride", handler);
     return () => window.removeEventListener("rw-open-ride", handler);
   }, []);
+
+  // ── DEEP LINKS (handled ONCE, then the param is cleared) ─────────
+  //   /home?openRide=<id>  → notification clicked from any page → open that ride's map
+  //   /home?startRide=1    → mobile FAB pressed on Account/Riders/Settings → open Start Ride modal
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const openRideId = searchParams.get("openRide");
+    const startRide  = searchParams.get("startRide");
+    if (!openRideId && startRide !== "1") return;
+
+    // Clear params FIRST so the action can't fire twice on re-render
+    setSearchParams({}, { replace: true });
+
+    if (startRide === "1") setShowStart(true);
+
+    if (openRideId) {
+      getRide(openRideId)
+        .then(ride => { if (ride) setMapRide(ride); })
+        .catch(err => console.warn("[Home] Failed to open ride from link:", err.message));
+    }
+  }, [searchParams, setSearchParams]);
 
   // ── RESET STATE ON USER SWITCH ───────────────────────────────
   // If the logged-in account changes (e.g. logout → login as someone else),
@@ -170,12 +192,20 @@ export default function Home() {
     // Close map immediately — prevents re-opening a stale active ride object
     setMapRide(null);
     try {
-      await endRide(rideId);  // PATCH status → "completed" in backend
+      await endRide(rideId, user?.id);  // PATCH status → "completed" in backend (admin identity included)
     } catch(e) {
       console.error("End ride failed:", e);
     } finally {
       refreshRides();             // refresh history list to show completed status
     }
+  };
+
+  // ── LEAVE RIDE (group member, non-admin) ──────────────────────────
+  // The overlay already marked this user as "left" on the backend.
+  // Here we just close the map and refresh so the live card disappears.
+  const handleLeaveRide = () => {
+    setMapRide(null);
+    refreshRides();
   };
 
   // Called from RideHistoryPanel or home page history section
@@ -457,6 +487,7 @@ export default function Home() {
           ride={mapRide}
           onClose={handleCloseMap}
           onEnd={handleEndRide}
+          onLeave={handleLeaveRide}
         />
       )}
 

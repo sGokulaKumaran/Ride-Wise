@@ -137,14 +137,19 @@ export async function getActiveRides(userId) {
 // ============================================================
 // END A RIDE (change status to "completed")
 // PATCH /api/rides/{rideId}/status
+// Body: { status: "completed", userId } — userId is the ride admin
+// (backend enforces admin-only ending for group rides)
 // ============================================================
-export async function endRide(rideId) {
+export async function endRide(rideId, userId) {
   return withFallback(
     async () => {
       const res = await fetch(`${BASE}/${rideId}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "completed" }), // tell backend to mark complete
+        body: JSON.stringify({
+          status: "completed",                 // tell backend to mark complete
+          ...(userId != null ? { userId } : {}), // admin identity for group rides
+        }),
       });
       if (!res.ok) throw new Error(`End ride failed: ${res.status}`);
       const updated = await res.json();
@@ -260,13 +265,39 @@ export async function getGroupRideParticipants(rideId) {
   }
 }
 
-export async function updateParticipantStatus(rideId, userId, status) {
+// ============================================================
+// UPDATE A PARTICIPANT'S STATUS (e.g. "left")
+// PATCH /api/rides/{rideId}/participants/{userId}/status
+// Body: { status, actorUserId } — actorUserId is the user performing
+// the action (a rider leaving marks themselves as "left").
+// ============================================================
+export async function updateParticipantStatus(rideId, userId, status, actorUserId) {
   const res = await fetch(`${BASE}/${rideId}/participants/${userId}/status`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ status }),
+    body: JSON.stringify({
+      status,
+      ...(actorUserId != null ? { actorUserId } : {}),
+    }),
   });
   if (!res.ok) throw new Error(`Update participant status failed: ${res.status}`);
+  return await res.json();
+}
+
+// ============================================================
+// ADD A PARTICIPANT TO A LIVE GROUP RIDE (admin only)
+// POST /api/rides/{rideId}/participants
+// Body: { adminId, userId } — adminId must be the ride admin;
+// userId is the friend being added to the ride.
+// Returns the created RideParticipantResponse.
+// ============================================================
+export async function addGroupRideParticipant(rideId, adminId, userId) {
+  const res = await fetch(`${BASE}/${rideId}/participants`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ adminId, userId }),
+  });
+  if (!res.ok) throw new Error(`Add participant failed: ${res.status}`);
   return await res.json();
 }
 

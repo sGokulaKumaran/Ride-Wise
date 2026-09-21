@@ -27,7 +27,7 @@
 //   onEnd   — called when "End Ride" is confirmed
 // ============================================================
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import RideMap         from "./RideMap";
 import DirectionsPanel from "./DirectionsPanel";
 import { watchLocation } from "../../../services/locationService";
@@ -37,7 +37,7 @@ import {
   haversineDistance,
   findActiveStep,
 } from "../../../services/routingApi";
-import { updateUserLocation, getGroupRideParticipants } from "../../../services/rideApi";
+import { updateUserLocation, getGroupRideParticipants, updateParticipantStatus } from "../../../services/rideApi";
 import GroupRidersPanel from "./GroupRidersPanel";
 import { useAuth } from "../../../context/AuthContext";
 
@@ -56,7 +56,7 @@ function parseSteps(ride) {
   return [];
 }
 
-export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
+export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
   // ── Live GPS state ──
   const [myLocation,    setMyLocation]   = useState(null);
   const [gpsError,      setGpsError]     = useState(null);
@@ -73,6 +73,8 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
   const [minimized,       setMinimized]       = useState(false);
   const [confirmEnd,      setConfirmEnd]       = useState(false);
   const [ending,          setEnding]           = useState(false);
+  const [confirmLeave,    setConfirmLeave]     = useState(false);
+  const [leaving,         setLeaving]          = useState(false);
   const [showDirections,  setShowDirections]   = useState(false);
   const [miniPosition,    setMiniPosition]     = useState(null);
 
@@ -89,15 +91,52 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
   // no GPS tracking started (to avoid unnecessary battery drain).
   const isActiveRide = ride?.status === "active";
 
-  useEffect(() => {
+  // ====================================================================
+  // ROLE DETECTION (group rides)
+  // Admin = ride creator (ride.userId) OR a participant with role "admin".
+  //   • Admin               → sees "End Ride" only
+  //   • Non-admin member    → sees "Leave Ride" only
+  //   • Solo rides          → unchanged (creator always sees "End Ride")
+  // ====================================================================
+  const isGroupRide = ride?.rideType === "group";
+  const isAdmin = !isGroupRide
+    ? true // solo rides preserve existing End Ride behavior
+    : String(ride?.userId) === String(user?.id) ||
+      participants.some(
+        p => String(p.userId) === String(user?.id) && p.role === "admin"
+      );
+  const showEndRide   = isActiveRide && (!isGroupRide || isAdmin);
+  const showLeaveRide = isActiveRide && isGroupRide && !isAdmin;
+
+  // ====================================================================
+  // PARTICIPANTS — initial fetch + live refresh
+  // GET /api/rides/{id}/participants returns ACTIVE riders only, so
+  // re-fetching automatically drops riders who left (their markers
+  // disappear) and picks up riders the admin adds mid-ride.
+  // Demo-dragged marker positions live in `participantLocations` (keyed
+  // by userId) and are merged in at render time, so they survive polls.
+  // ====================================================================
+  const refreshParticipants = useCallback(() => {
     if (ride?.rideType === "group" && ride?.id) {
       getGroupRideParticipants(ride.id)
         .then(list => setParticipants(list || []))
-        .catch(() => setParticipants([]));
+        .catch(() => {});
     } else {
       setParticipants([]);
     }
   }, [ride?.id, ride?.rideType]);
+
+  useEffect(() => {
+    refreshParticipants();
+  }, [refreshParticipants]);
+
+  // Poll every 10s while the overlay shows a LIVE group ride so
+  // added/left riders update without a manual refresh
+  useEffect(() => {
+    if (!isActiveRide || ride?.rideType !== "group" || !ride?.id) return;
+    const interval = setInterval(refreshParticipants, 10000);
+    return () => clearInterval(interval);
+  }, [isActiveRide, ride?.id, ride?.rideType, refreshParticipants]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -184,6 +223,33 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
   };
 
   const cancelEnd = () => setConfirmEnd(false);
+
+  // ====================================================================
+  // LEAVE RIDE handler (two-click confirm) — non-admin group members only
+  // Stops GPS, marks this user as "left" on the backend, closes the
+  // overlay and asks Home to refresh (ride itself stays active for
+  // everyone else).
+  // ====================================================================
+  const handleLeaveRide = async () => {
+    if (!confirmLeave) { setConfirmLeave(true); return; }
+    setLeaving(true);
+    setConfirmLeave(false);
+    // Stop GPS tracking — leaving riders no longer share their location
+    stopGpsRef.current?.();
+    stopGpsRef.current = null;
+    try {
+      // PATCH /api/rides/{id}/participants/{userId}/status { status: "left", actorUserId }
+      await updateParticipantStatus(ride.id, user?.id, "left", user?.id);
+    } catch (err) {
+      console.warn("[ActiveRideOverlay] leave ride failed:", err.message);
+    }
+    setLeaving(false);
+    // Close overlay + refresh Home (falls back to onClose if no onLeave given)
+    if (onLeave) onLeave();
+    else onClose?.();
+  };
+
+  const cancelLeave = () => setConfirmLeave(false);
 
   // ── Derive current step distance (to next maneuver) ──
   const stepDist = currentStep?.distance || 0;
@@ -571,6 +637,9 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
                 <GroupRidersPanel
                   participants={participantsWithLocations}
                   currentUserId={user?.id}
+                  isAdmin={isAdmin}
+                  rideId={isActiveRide ? ride?.id : null}
+                  onParticipantsChanged={refreshParticipants}
                   onRiderClick={(p) => {
                     if (p.lat && p.lng) {
                       window.dispatchEvent(new CustomEvent("rw-recenter", {
@@ -713,9 +782,74 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
           </div>
         </div>
 
-        {/* ── End Ride button — only for ACTIVE rides ── */}
+        {/* ── Action button — only for ACTIVE rides ── */}
+        {/* Admin/solo: End Ride · Non-admin group member: Leave Ride */}
         {/* BUG FIX: completed/cancelled rides show a "Close" button instead */}
         {isActiveRide ? (
+          showLeaveRide ? (
+            // ── LEAVE RIDE (non-admin group member, two-click confirm) ──
+            confirmLeave ? (
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button
+                  onClick={cancelLeave}
+                  style={{
+                    flex: 1, padding: "14px",
+                    background:   "rgba(255,255,255,0.1)",
+                    border:       "1px solid rgba(255,255,255,0.1)",
+                    borderRadius: "14px",
+                    color:        "white",
+                    fontWeight:   700,
+                    fontSize:     "14px",
+                    cursor:       "pointer",
+                  }}
+                >
+                  <i className="fa fa-arrow-left" style={{ marginRight: "8px" }} />
+                  Stay
+                </button>
+                <button
+                  onClick={handleLeaveRide}
+                  disabled={leaving}
+                  style={{
+                    flex: 1, padding: "14px",
+                    background:   "linear-gradient(135deg, #f97316, #ea580c)",
+                    border:       "none",
+                    borderRadius: "14px",
+                    color:        "white",
+                    fontWeight:   900,
+                    fontSize:     "14px",
+                    cursor:       leaving ? "not-allowed" : "pointer",
+                    opacity:      leaving ? 0.7 : 1,
+                    boxShadow:    "0 4px 20px rgba(249,115,22,0.4)",
+                  }}
+                >
+                  {leaving
+                    ? <><i className="fa fa-spinner fa-spin" style={{ marginRight: "8px" }} />Leaving...</>
+                    : <><i className="fa fa-person-walking-arrow-right" style={{ marginRight: "8px" }} />Confirm Leave</>
+                  }
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={handleLeaveRide}
+                style={{
+                  width:          "100%",
+                  padding:        "15px",
+                  background:     "rgba(249,115,22,0.15)",
+                  border:         "1.5px solid rgba(249,115,22,0.5)",
+                  borderRadius:   "14px",
+                  color:          "#fb923c",
+                  fontWeight:     900,
+                  fontSize:       "15px",
+                  cursor:         "pointer",
+                  backdropFilter: "blur(8px)",
+                }}
+              >
+                <i className="fa fa-person-walking-arrow-right" style={{ marginRight: "8px" }} />
+                Leave Ride
+              </button>
+            )
+          ) : showEndRide ? (
+          // ── END RIDE (admin / solo, two-click confirm) ──
           confirmEnd ? (
             <div style={{ display: "flex", gap: "8px" }}>
               <button
@@ -776,6 +910,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
               End Ride
             </button>
           )
+          ) : null
         ) : (
           // View-only mode for completed/cancelled rides
           <button

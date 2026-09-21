@@ -38,8 +38,11 @@ public class NotificationService {
         return notificationRepository.countByUserIdAndIsReadFalse(userId);
     }
     
-    public void markAsRead(Long notificationId) {
+    public void markAsRead(Long notificationId, Long userId) {
         notificationRepository.findById(notificationId).ifPresent(notification -> {
+            if (!notification.getUserId().equals(userId)) {
+                throw vehicle.ridewise.exception.ApiException.forbidden("You can only read your own notifications");
+            }
             notification.setIsRead(true);
             notificationRepository.save(notification);
         });
