@@ -14,7 +14,7 @@ export default function GroupRidersPanel({ participants = [], currentUserId, onR
 
   // Count excluding self
   const otherCount = participants.filter(p => p.userId !== currentUserId).length;
-  const totalCount = participants.length + 1; // +1 for self (if not in participants list)
+  const totalCount = participants.length; // +1 for self (if not in participants list)
 
   // ── Collapsed: Small pill button ──
   if (!expanded) {
