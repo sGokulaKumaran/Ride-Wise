@@ -215,11 +215,12 @@ export async function getRide(rideId) {
 // This is "fire-and-forget" — if backend is unreachable we log and
 // silently skip. GPS dot and route trimming still work client-side.
 // ============================================================
-export async function updateUserLocation(rideId, lat, lng) {
+export async function updateUserLocation(rideId, lat, lng, userId) {
 
   try {
     // Build the location update payload with an ISO timestamp
     const payload = {
+      userId: userId || null,
       lat,                                // decimal degrees (e.g. 13.0827)
       lng,                                // decimal degrees (e.g. 80.2707)
 
@@ -243,3 +244,28 @@ export async function updateUserLocation(rideId, lat, lng) {
   }
 }
 //This only post the lat, lan with the time and date
+
+// ============================================================
+// GROUP RIDE API FUNCTIONS
+// ============================================================
+
+export async function getGroupRideParticipants(rideId) {
+  try {
+    const res = await fetch(`${BASE}/${rideId}/participants`);
+    if (!res.ok) throw new Error(`Get participants failed: ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    console.warn("[rideApi] getGroupRideParticipants failed:", err.message);
+    return [];
+  }
+}
+
+export async function updateParticipantStatus(rideId, userId, status) {
+  const res = await fetch(`${BASE}/${rideId}/participants/${userId}/status`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+  if (!res.ok) throw new Error(`Update participant status failed: ${res.status}`);
+  return await res.json();
+}

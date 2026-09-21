@@ -41,7 +41,7 @@ import { useTheme }         from "./hooks/useTheme";
 import ActiveRideOverlay    from "./components/ride/ActiveRideOverlay";
 import RideHistoryPanel     from "./components/ride/RideHistoryPanel";
 
-import { getUserRides, endRide, deleteRide } from "../services/rideApi";
+import { getUserRides, endRide, deleteRide, getRide } from "../services/rideApi";
 import { formatDistance, formatDuration }    from "../services/routingApi";
 
 export default function Home() {
@@ -59,6 +59,20 @@ export default function Home() {
   const [mapRide,   setMapRide]   = useState(null);
   const [rides,     setRides]     = useState([]);   // all rides for history
   const [loading,   setLoading]   = useState(true); // loading history on mount
+
+  useEffect(() => {
+    const handler = async (e) => {
+      const { rideId } = e.detail;
+      try {
+        const ride = await getRide(rideId);
+        if (ride) setMapRide(ride);
+      } catch (err) {
+        console.warn("[Home] Failed to open ride from notification:", err.message);
+      }
+    };
+    window.addEventListener("rw-open-ride", handler);
+    return () => window.removeEventListener("rw-open-ride", handler);
+  }, []);
 
   // ── RESET STATE ON USER SWITCH ───────────────────────────────
   // If the logged-in account changes (e.g. logout → login as someone else),
@@ -206,6 +220,7 @@ export default function Home() {
       <TopBar
         theme={theme} setTheme={setTheme} tc={tc}
         voiceMode={voiceMode} startVoice={startVoice}
+        userId={user?.id}
       />
       <MobileNav tc={tc} onStartRide={() => setShowStart(true)} />
 
@@ -528,6 +543,54 @@ function RideCard({ ride, onOpen, tc, isLive }) {
 
       {/* Right: status + open icon */}
       <div className="flex items-center gap-2 shrink-0">
+        {ride.rideType === "group" && (
+          <span style={{
+            background: "rgba(139,92,246,0.15)",
+            border: "1px solid rgba(139,92,246,0.3)",
+            borderRadius: "50px",
+            padding: "2px 8px",
+            fontSize: "10px",
+            fontWeight: 700,
+            color: "#a78bfa",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "4px",
+          }}>
+            👥 Group
+          </span>
+        )}
+        {ride.participants && ride.participants.length > 0 && (
+          <div style={{ display: "flex", alignItems: "center", marginLeft: "4px" }}>
+            {ride.participants.slice(0, 3).map((p, i) => (
+              <div
+                key={i}
+                style={{
+                  width: "20px", height: "20px", borderRadius: "50%",
+                  background: "linear-gradient(135deg, #f97316, #ec4899)",
+                  border: "2px solid rgba(15,15,26,1)",
+                  marginLeft: i > 0 ? "-8px" : "0",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: "9px", fontWeight: "bold", color: "white",
+                  zIndex: 3 - i
+                }}
+              >
+                {(p.username || p.name || p.id || "?")[0].toUpperCase()}
+              </div>
+            ))}
+            {ride.participants.length > 3 && (
+              <div style={{
+                width: "20px", height: "20px", borderRadius: "50%",
+                background: "rgba(255,255,255,0.1)",
+                border: "2px solid rgba(15,15,26,1)",
+                marginLeft: "-8px",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: "8px", color: "white", zIndex: 0
+              }}>
+                +{ride.participants.length - 3}
+              </div>
+            )}
+          </div>
+        )}
         {isLive ? (
           <span className="text-xs font-bold text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full border border-green-500/20">
             Live

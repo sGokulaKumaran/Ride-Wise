@@ -37,7 +37,14 @@ import {
   haversineDistance,
   findActiveStep,
 } from "../../../services/routingApi";
-import { updateUserLocation } from "../../../services/rideApi";
+import { updateUserLocation, getGroupRideParticipants } from "../../../services/rideApi";
+import GroupRidersPanel from "./GroupRidersPanel";
+import { useAuth } from "../../../context/AuthContext";
+
+const RIDER_COLORS = [
+  "#8b5cf6", "#14b8a6", "#f59e0b", "#ec4899", "#06b6d4",
+  "#10b981", "#f43f5e", "#6366f1", "#84cc16", "#e11d48",
+];
 
 // ── Parse steps — ride.routeSteps is stored as JSON string in DB ──
 function parseSteps(ride) {
@@ -69,6 +76,11 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
   const [showDirections,  setShowDirections]   = useState(false);
   const [miniPosition,    setMiniPosition]     = useState(null);
 
+  const [participants, setParticipants] = useState([]);
+  const [participantLocations, setParticipantLocations] = useState({});
+
+  const { user } = useAuth();
+
   const stopGpsRef = useRef(null);
   const miniDragRef = useRef({ pointerId: null, offsetX: 0, offsetY: 0, moved: false });
 
@@ -76,6 +88,28 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
   // Completed/cancelled rides open in view-only mode — no End Ride button,
   // no GPS tracking started (to avoid unnecessary battery drain).
   const isActiveRide = ride?.status === "active";
+
+  useEffect(() => {
+    if (ride?.rideType === "group" && ride?.id) {
+      getGroupRideParticipants(ride.id)
+        .then(list => setParticipants(list || []))
+        .catch(() => setParticipants([]));
+    } else {
+      setParticipants([]);
+    }
+  }, [ride?.id, ride?.rideType]);
+
+  useEffect(() => {
+    const handler = (e) => {
+      const { userId, lat, lng } = e.detail;
+      setParticipantLocations(prev => ({
+        ...prev,
+        [userId]: { lat, lng },
+      }));
+    };
+    window.addEventListener("simulate-group-gps", handler);
+    return () => window.removeEventListener("simulate-group-gps", handler);
+  }, []);
 
   // Parse steps whenever ride changes
   useEffect(() => {
@@ -123,7 +157,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
 
         // ── Persist user position to backend ──
         if (ride?.id) {
-          updateUserLocation(ride.id, loc.lat, loc.lng).catch(err => {
+          updateUserLocation(ride.id, loc.lat, loc.lng, user?.id).catch(err => {
             console.warn("[ActiveRideOverlay] location update failed:", err.message);
           });
         }
@@ -515,11 +549,40 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
           MAP CANVAS
           ============================================================ */}
       <div style={{ flex: 1, position: "relative", height: 0, overflow: "hidden" }}>
-        <RideMap
-          ride={ride}
-          myLocation={myLocation}
-          isLive={isActiveRide}
-        />
+        {(() => {
+          const participantsWithLocations = participants.map((p, i) => ({
+            ...p,
+            lat: participantLocations[p.userId]?.lat || (ride?.fromLat ? ride.fromLat + (i + 1) * 0.003 : null),
+            lng: participantLocations[p.userId]?.lng || (ride?.fromLng ? ride.fromLng + (i + 1) * 0.003 : null),
+            color: RIDER_COLORS[i % RIDER_COLORS.length],
+          }));
+
+          return (
+            <>
+              <RideMap
+                ride={ride}
+                myLocation={myLocation}
+                isLive={isActiveRide}
+                participants={ride?.rideType === "group" ? participantsWithLocations : []}
+                currentUserId={user?.id}
+              />
+
+              {ride?.rideType === "group" && participantsWithLocations.length > 0 && (
+                <GroupRidersPanel
+                  participants={participantsWithLocations}
+                  currentUserId={user?.id}
+                  onRiderClick={(p) => {
+                    if (p.lat && p.lng) {
+                      window.dispatchEvent(new CustomEvent("rw-recenter", {
+                        detail: { lat: p.lat, lng: p.lng }
+                      }));
+                    }
+                  }}
+                />
+              )}
+            </>
+          );
+        })()}
 
         {/* GPS error banner */}
         {gpsError && isActiveRide && (
@@ -642,10 +705,10 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd }) {
           {/* Ride type */}
           <div style={{ textAlign: "center" }}>
             <p style={{ color: "white", fontWeight: 900, fontSize: "22px", margin: 0 }}>
-              {ride.rideType === "solo" ? "🏍️" : "👥"}
+              {ride.rideType === "solo" ? "🏍️" : `👥 ${participants.length + 1}`}
             </p>
             <p style={{ color: "rgba(255,255,255,0.45)", fontSize: "10px", margin: 0, textTransform: "uppercase", letterSpacing: "1px" }}>
-              {ride.rideType}
+              {ride.rideType === "solo" ? "solo" : "riders"}
             </p>
           </div>
         </div>

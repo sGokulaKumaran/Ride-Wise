@@ -29,9 +29,7 @@ import java.util.Map; // Import Map
 // ============================================================
 @RestController // Mark as REST controller (returns JSON by default)
 @RequestMapping("/api/rides") // All endpoints start with /api/rides
-@CrossOrigin("*") // Allow CORS from any origin (dev convenience; restrict in production)
 public class RideController { // Define class
-
     private final RideService rideService; // Service for ride operations
     private final LocationUpdateService locationService; // Service for GPS tracking
 
@@ -45,7 +43,7 @@ public class RideController { // Define class
     // POST /api/rides/
     // Body: RideRequest JSON
     // Returns: RideResponse JSON with generated id + createdAt
-    @PostMapping("/") // Post endpoint for creating rides
+    @PostMapping({"", "/"}) // Post endpoint for creating rides
     public ResponseEntity<RideResponse> createRide(@RequestBody RideRequest request) { // Create ride handler
         RideResponse res = rideService.createRide(request); // Call service
         return ResponseEntity.ok(res); // Return 200 OK with body
@@ -123,4 +121,18 @@ public class RideController { // Define class
         List<LocationUpdateResponse> res = locationService.getTrack(rideId); // Delegate to service
         return ResponseEntity.ok(res); // Return GPS track
     } // End handler
+    
+    // ── GROUP RIDE PARTICIPANTS ──────────────────────────────
+    @GetMapping("/{rideId}/participants")
+    public ResponseEntity<List<vehicle.ridewise.dto.RideParticipantResponse>> getParticipants(@PathVariable Long rideId) {
+        return ResponseEntity.ok(rideService.getParticipants(rideId));
+    }
+
+    @PatchMapping("/{rideId}/participants/{userId}/status")
+    public ResponseEntity<Map<String, Object>> updateParticipantStatus(
+        @PathVariable Long rideId, @PathVariable Long userId, @RequestBody Map<String, String> body) {
+        String status = body.get("status");
+        rideService.updateParticipantStatus(rideId, userId, status);
+        return ResponseEntity.ok(Map.of("success", true));
+    }
 } // End of class

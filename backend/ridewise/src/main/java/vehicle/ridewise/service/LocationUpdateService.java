@@ -38,6 +38,7 @@ public class LocationUpdateService { // Define class
         LocationUpdate lu = new LocationUpdate(); // Create entity
 
         lu.setRideId(rideId); // Link to ride
+        lu.setUserId(req.getUserId()); // Link to user
         lu.setLat(req.getLat()); // Set latitude
         lu.setLng(req.getLng()); // Set longitude
         lu.setCapturedAt(req.getTimestamp()); // Set client capture time

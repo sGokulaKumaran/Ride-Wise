@@ -22,6 +22,9 @@ public class RideResponse { // Define class
     private LocalDateTime createdAt; // Creation time field
     private LocalDateTime endedAt; // End time field
 
+    private java.util.List<RideParticipantResponse> participants;
+    private String creatorUsername;
+
     public static RideResponse from(Ride ride) { // Static factory method
         RideResponse res = new RideResponse(); // Create response instance
         res.setId(ride.getId()); // Set ID
@@ -171,4 +174,20 @@ public class RideResponse { // Define class
     public void setEndedAt(LocalDateTime endedAt) { // Set endedAt
         this.endedAt = endedAt; // Assign endedAt
     } // End setter
+
+    public java.util.List<RideParticipantResponse> getParticipants() {
+        return participants;
+    }
+
+    public void setParticipants(java.util.List<RideParticipantResponse> participants) {
+        this.participants = participants;
+    }
+
+    public String getCreatorUsername() {
+        return creatorUsername;
+    }
+
+    public void setCreatorUsername(String creatorUsername) {
+        this.creatorUsername = creatorUsername;
+    }
 } // End of class

@@ -26,9 +26,9 @@ public interface UserRepository extends JpaRepository<User, Long> {
     // Uses Haversine formula in SQL — 50 km radius
     @Query(value = "SELECT * FROM users WHERE id != :userId AND lat IS NOT NULL " +
                    "AND lng IS NOT NULL AND " +
-                   "(6371 * acos(cos(radians(:lat)) * cos(radians(lat)) * " +
+                   "(6371 * acos(LEAST(GREATEST(cos(radians(:lat)) * cos(radians(lat)) * " +
                    "cos(radians(lng) - radians(:lng)) + sin(radians(:lat)) * " +
-                   "sin(radians(lat)))) <= :radiusKm",
+                   "sin(radians(lat)), -1.0), 1.0))) <= :radiusKm",
            nativeQuery = true)
     List<User> findNearbyUsers(@Param("userId") Long userId,
                                @Param("lat") Double lat,

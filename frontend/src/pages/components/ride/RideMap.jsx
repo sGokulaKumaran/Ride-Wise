@@ -42,6 +42,36 @@ const TILE_LAYERS = [
 // ---------------------------------------------------------------------------
 // Custom pin icons
 // ---------------------------------------------------------------------------
+const RIDER_COLORS = [
+  "#8b5cf6", // purple
+  "#14b8a6", // teal
+  "#f59e0b", // amber
+  "#ec4899", // pink
+  "#06b6d4", // cyan
+  "#10b981", // emerald
+  "#f43f5e", // rose
+  "#6366f1", // indigo
+  "#84cc16", // lime
+  "#e11d48", // crimson
+];
+
+function makeRiderIcon(color, letter, name) {
+  return L.divIcon({
+    className: "",
+    html: `<div style="display:flex;flex-direction:column;align-items:center;filter:drop-shadow(0 4px 6px rgba(0,0,0,0.4))">
+      <div style="position:relative;width:44px;height:44px;background:${color};border-radius:50%;border:2px solid #fff;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 0 ${color}66;animation:rw-rider-pulse 3s infinite">
+        <span style="font-size:14px;font-weight:900;color:#fff;font-family:system-ui">${letter}</span>
+      </div>
+      <div style="margin-top:4px;background:rgba(0,0,0,0.6);padding:2px 6px;border-radius:4px;color:#fff;font-size:11px;font-family:system-ui;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,0.8)">
+        ${name}
+      </div>
+    </div>`,
+    iconSize:    [44, 60],
+    iconAnchor:  [22, 30],
+    popupAnchor: [0, -30],
+  });
+}
+
 function makePinIcon(color, letter) {
   return L.divIcon({
     className: "",
@@ -76,6 +106,7 @@ if (typeof document !== "undefined" && !document.getElementById("rw-leaflet-css"
   s.id = "rw-leaflet-css";
   s.textContent = `
     @keyframes rw-pulse { 0%{transform:scale(0.85);opacity:0.9} 60%{transform:scale(2.6);opacity:0} 100%{transform:scale(0.85);opacity:0} }
+    @keyframes rw-rider-pulse { 0%{box-shadow:0 0 0 0 rgba(255,255,255,0.4)} 70%{box-shadow:0 0 0 10px rgba(255,255,255,0)} 100%{box-shadow:0 0 0 0 rgba(255,255,255,0)} }
     .leaflet-container { width:100%; height:100%; }
     /* Hide Leaflet controls at the top */
     .leaflet-top { display: none !important; }
@@ -233,12 +264,75 @@ function DynamicRouteLine({ ride, myLocation, isLive }) {
 // ===========================================================================
 // MapInternals — all hook-based components inside MapContainer
 // ===========================================================================
-function MapInternals({ ride, myLocation, isLive, tileLayerRef, activeTileIdx }) {
+function MapInternals({ ride, myLocation, isLive, tileLayerRef, activeTileIdx, participants = [], currentUserId = null }) {
   const map = useMap();
   const markerARef = useRef(null);
   const markerBRef = useRef(null);
   const gpsDotRef  = useRef(null);
   const followRef  = useRef(true);
+  const riderMarkersRef = useRef({});
+
+  // ── Group Rider Markers ──
+  useEffect(() => {
+    if (!map) return;
+    
+    const currentMarkerIds = new Set();
+    
+    participants.forEach((p, index) => {
+      if (p.userId === currentUserId) return;
+      if (!p.lat || !p.lng) return;
+      
+      currentMarkerIds.add(p.userId);
+      const latLng = [p.lat, p.lng];
+      
+      if (riderMarkersRef.current[p.userId]) {
+        riderMarkersRef.current[p.userId].setLatLng(latLng);
+      } else {
+        const color = p.color || RIDER_COLORS[index % RIDER_COLORS.length];
+        const letter = p.avatarLetter || (p.username ? p.username.charAt(0).toUpperCase() : "?");
+        const icon = makeRiderIcon(color, letter, p.username);
+        
+        const marker = L.marker(latLng, {
+          icon,
+          zIndexOffset: 500,
+          draggable: true
+        }).addTo(map);
+        
+        marker.bindPopup(`
+          <div style="font-family:system-ui;text-align:center">
+            <strong>${p.username}</strong><br/>
+            <span style="font-size:11px;color:#666">${p.role === "admin" ? "👑 Admin" : "Rider"}</span>
+          </div>
+        `);
+        
+        marker.on('dragend', function(event) {
+          const position = event.target.getLatLng();
+          window.dispatchEvent(new CustomEvent("simulate-group-gps", {
+            detail: { userId: p.userId, lat: position.lat, lng: position.lng }
+          }));
+        });
+        
+        riderMarkersRef.current[p.userId] = marker;
+      }
+    });
+    
+    // Remove markers for participants no longer in the list
+    Object.keys(riderMarkersRef.current).forEach(id => {
+      if (!currentMarkerIds.has(id)) {
+        riderMarkersRef.current[id].remove();
+        delete riderMarkersRef.current[id];
+      }
+    });
+    
+  }, [map, participants, currentUserId]);
+
+  // Cleanup all rider markers on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(riderMarkersRef.current).forEach(m => m.remove());
+      riderMarkersRef.current = {};
+    };
+  }, []);
 
   // Store tile layer ref
   useEffect(() => {
@@ -365,7 +459,7 @@ function MapInternals({ ride, myLocation, isLive, tileLayerRef, activeTileIdx })
 // ===========================================================================
 // RideMap — exported component (same props as before, no parent changes)
 // ===========================================================================
-export default function RideMap({ ride, myLocation, isLive = false }) {
+export default function RideMap({ ride, myLocation, isLive = false, participants = [], currentUserId = null }) {
   const tileLayerRef  = useRef(null);
   const [showTiles,   setShowTiles]  = useState(false);
   const [activeTile,  setActiveTile] = useState(0);
@@ -407,6 +501,8 @@ export default function RideMap({ ride, myLocation, isLive = false }) {
           isLive={isLive}
           tileLayerRef={tileLayerRef}
           activeTileIdx={activeTile}
+          participants={participants}
+          currentUserId={currentUserId}
         />
       </MapContainer>
 

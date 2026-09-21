@@ -48,7 +48,7 @@ const POPULAR_PLACES = [
 // ---------------------------------------------------------------------------
 const STEP = { FROM: 1, DESTINATION: 2, PREVIEW: 3 };
 
-export default function RideSetupFlow({ rideType, userId, onRideCreated, onCancel, tc }) {
+export default function RideSetupFlow({ rideType, userId, participantIds = [], onRideCreated, onCancel, tc }) {
   // ---- Step tracker ----
   const [step, setStep] = useState(STEP.FROM);
 
@@ -226,6 +226,7 @@ export default function RideSetupFlow({ rideType, userId, onRideCreated, onCance
         distanceMeters:   routeData.distance,
         durationSeconds:  routeData.duration,
         rideType:         rideType, // "solo"
+        participantIds:   participantIds.length > 0 ? participantIds : undefined,
       };
 
       // Save to backend (or localStorage fallback)
@@ -499,6 +500,22 @@ export default function RideSetupFlow({ rideType, userId, onRideCreated, onCance
               </div>
             ))}
           </div>
+
+          {/* Group Ride Info */}
+          {participantIds.length > 0 && (
+            <div style={{
+              padding: "12px 16px", borderRadius: "12px",
+              background: "rgba(255,255,255,0.03)",
+              border: "1px solid rgba(255,255,255,0.06)",
+              fontSize: "12px",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+            }}>
+              <p style={{ margin: 0, fontWeight: 700 }}>👥 {participantIds.length + 1} riders</p>
+              <p style={{ margin: 0, opacity: 0.5 }}>(including you)</p>
+            </div>
+          )}
 
           {/* From → To summary */}
           <div style={{

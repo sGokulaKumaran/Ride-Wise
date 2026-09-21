@@ -27,6 +27,9 @@ public class LocationUpdate { // Define class
     @Column(name = "ride_id", nullable = false) // Column for ride ID
     private Long rideId; // The ride this GPS fix belongs to
 
+    @Column(name = "user_id") // Column for user ID
+    private Long userId; // The user who sent this GPS fix
+
     @Column(name = "lat", nullable = false) // Column for latitude
     private Double lat; // GPS latitude (decimal degrees, e.g. 13.0827)
 
@@ -66,6 +69,14 @@ public class LocationUpdate { // Define class
 
     public void setRideId(Long rideId) { // Set rideId
         this.rideId = rideId; // Assign rideId
+    } // End setter
+
+    public Long getUserId() { // Get userId
+        return userId; // Return userId
+    } // End getter
+
+    public void setUserId(Long userId) { // Set userId
+        this.userId = userId; // Assign userId
     } // End setter
 
     public Double getLat() { // Get lat

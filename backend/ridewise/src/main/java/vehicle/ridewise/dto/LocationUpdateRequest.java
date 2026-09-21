@@ -22,6 +22,8 @@ public class LocationUpdateRequest { // Define class
     // We store it as-is (not parsed) to preserve the client's exact value.
     private String timestamp; // Client-side capture time
 
+    private Long userId; // The user sending the fix
+
     // ── Getters and setters ──
 
     public Double getLat() { // Get lat
@@ -47,4 +49,12 @@ public class LocationUpdateRequest { // Define class
     public void setTimestamp(String timestamp) { // Set timestamp
         this.timestamp = timestamp; // Assign timestamp
     } // End setter
+
+    public Long getUserId() {
+        return userId;
+    }
+
+    public void setUserId(Long userId) {
+        this.userId = userId;
+    }
 } // End of class

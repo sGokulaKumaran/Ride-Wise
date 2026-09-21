@@ -7,6 +7,8 @@ public class AuthRequest {
     private String username;
     private String mobile;
     private String address;
+    private Double lat;
+    private Double lng;
 
     // ---- Getters ----
     public String getEmail()    { return email; }
@@ -14,6 +16,8 @@ public class AuthRequest {
     public String getUsername() { return username; }
     public String getMobile()   { return mobile; }
     public String getAddress()  { return address; }
+    public Double getLat()      { return lat; }
+    public Double getLng()      { return lng; }
 
     // ---- Setters ----
     public void setEmail(String email)       { this.email = email; }
@@ -21,4 +25,6 @@ public class AuthRequest {
     public void setUsername(String username) { this.username = username; }
     public void setMobile(String mobile)     { this.mobile = mobile; }
     public void setAddress(String address)   { this.address = address; }
+    public void setLat(Double lat)           { this.lat = lat; }
+    public void setLng(Double lng)           { this.lng = lng; }
 }

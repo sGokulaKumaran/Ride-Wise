@@ -3,6 +3,7 @@ package vehicle.ridewise.dto; // Package declaration
 public class RideRequest { // Define class
 
     private Long userId; // User ID field
+    private java.util.List<Long> participantIds; // Participant IDs field
     private String fromName; // Origin name field
     private Double fromLat; // Origin latitude field
     private Double fromLng; // Origin longitude field
@@ -23,6 +24,14 @@ public class RideRequest { // Define class
     public void setUserId(Long userId) { // Set userId
         this.userId = userId; // Assign userId
     } // End setter
+
+    public java.util.List<Long> getParticipantIds() {
+        return participantIds;
+    }
+
+    public void setParticipantIds(java.util.List<Long> participantIds) {
+        this.participantIds = participantIds;
+    }
 
     public String getFromName() { // Get fromName
         return fromName; // Return fromName

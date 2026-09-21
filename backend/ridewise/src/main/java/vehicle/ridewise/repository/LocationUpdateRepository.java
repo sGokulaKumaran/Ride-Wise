@@ -4,6 +4,9 @@ import org.springframework.data.jpa.repository.JpaRepository; // Import JpaRepos
 import vehicle.ridewise.entity.LocationUpdate; // Import entity
 import java.util.List; // Import List
 
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.jpa.repository.Modifying;
+
 // ============================================================
 // LocationUpdateRepository — Spring Data JPA repository
 //
@@ -20,4 +23,8 @@ public interface LocationUpdateRepository extends JpaRepository<LocationUpdate, 
     // ── Count how many GPS fixes were recorded for a ride ──
     // Use: quick stat in ride history without loading all coordinates
     long countByRideId(Long rideId); // Count by ride ID
+
+    @Transactional
+    @Modifying
+    void deleteByRideId(Long rideId);
 } // End of interface

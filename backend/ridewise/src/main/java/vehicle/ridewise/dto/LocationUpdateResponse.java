@@ -19,6 +19,7 @@ public class LocationUpdateResponse { // Define class
     private Double        lng;        // Saved longitude
     private String        capturedAt; // Client-side capture timestamp (ISO 8601)
     private LocalDateTime receivedAt; // Server-side receive timestamp
+    private Long          userId;     // User ID
 
     // ── Static factory — builds response from saved entity ──
     public static LocationUpdateResponse from(LocationUpdate lu) { // Factory method
@@ -29,6 +30,7 @@ public class LocationUpdateResponse { // Define class
         r.setLng(lu.getLng()); // Set lng
         r.setCapturedAt(lu.getCapturedAt()); // Set capturedAt
         r.setReceivedAt(lu.getReceivedAt()); // Set receivedAt
+        r.setUserId(lu.getUserId()); // Set userId
         return r; // Return response
     } // End method
 
@@ -81,4 +83,12 @@ public class LocationUpdateResponse { // Define class
     public void setReceivedAt(LocalDateTime receivedAt) { // Set receivedAt
         this.receivedAt = receivedAt; // Assign receivedAt
     } // End setter
+
+    public Long getUserId() {
+        return userId;
+    }
+
+    public void setUserId(Long userId) {
+        this.userId = userId;
+    }
 } // End of class

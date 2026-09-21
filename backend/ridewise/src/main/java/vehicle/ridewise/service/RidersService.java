@@ -55,16 +55,27 @@ public class RidersService {
         conn.setUserId(userId);
         conn.setConnectedUserId(riderId);
         connectionRepository.save(conn);
+        
+        if (!connectionRepository.existsByUserIdAndConnectedUserId(riderId, userId)) {
+            Connection reverseConn = new Connection();
+            reverseConn.setUserId(riderId);
+            reverseConn.setConnectedUserId(userId);
+            connectionRepository.save(reverseConn);
+        }
         return true;
     }
 
-    // Remove a rider from connections
+    // Remove a rider from connections (bidirectional)
     @Transactional
     public boolean removeRider(Long userId, Long riderId) {
         if (!connectionRepository.existsByUserIdAndConnectedUserId(userId, riderId)) {
             return false; // Not connected
         }
         connectionRepository.deleteByUserIdAndConnectedUserId(userId, riderId);
+        // Also remove reverse connection for bidirectional consistency
+        if (connectionRepository.existsByUserIdAndConnectedUserId(riderId, userId)) {
+            connectionRepository.deleteByUserIdAndConnectedUserId(riderId, userId);
+        }
         return true;
     }
 

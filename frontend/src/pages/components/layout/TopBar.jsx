@@ -16,6 +16,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../../context/AuthContext";
 import ThemeDropdown from "../shared/ThemeDropdown";
+import { getNotifications, getUnreadCount, markAsRead, markAllAsRead } from "../../../services/notificationApi";
 
 // Search category suggestions shown in the dropdown
 const SEARCH_CATEGORIES = [
@@ -31,6 +32,7 @@ export default function TopBar({
   tc,
   voiceMode,    // true while voice recognition is active
   startVoice,   // function to start voice recognition
+  userId,
   notificationCount = 5,
 }) {
   const navigate = useNavigate();
@@ -40,8 +42,37 @@ export default function TopBar({
   const [searchQuery,       setSearchQuery]       = useState("");
   const [searchOpen,        setSearchOpen]        = useState(false);
   const [mobileSearchOpen,  setMobileSearchOpen]  = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifDropdown, setShowNotifDropdown] = useState(false);
 
   const searchRef = useRef(null);
+
+  useEffect(() => {
+    if (!userId) return;
+    const fetchCount = () => getUnreadCount(userId).then(setUnreadCount).catch(() => {});
+    fetchCount();
+    const interval = setInterval(fetchCount, 30000);
+    return () => clearInterval(interval);
+  }, [userId]);
+
+  const openNotifications = () => {
+    setShowNotifDropdown(v => !v);
+    if (!showNotifDropdown && userId) {
+      getNotifications(userId).then(list => {
+        setNotifications(list || []);
+      }).catch(() => {});
+    }
+  };
+
+  useEffect(() => {
+    if (!showNotifDropdown) return;
+    const close = (e) => {
+      if (!e.target.closest('[data-notif-dropdown]')) setShowNotifDropdown(false);
+    };
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [showNotifDropdown]);
 
   // ── Close search dropdown when clicking outside ───────────────
   useEffect(() => {
@@ -149,16 +180,145 @@ export default function TopBar({
           )}
 
           {/* Notification bell */}
-          <button
-            className={`relative w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110 text-white ${tc.record}`}
-          >
-            <i className="fa fa-bell text-sm" />
-            {notificationCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-[10px] font-bold flex items-center justify-center text-white">
-                {notificationCount}
-              </span>
+          <div style={{ position: "relative" }} data-notif-dropdown="true">
+            <button
+              onClick={openNotifications}
+              title="Notifications"
+              style={{
+                width: "38px", height: "38px", borderRadius: "12px",
+                background: showNotifDropdown ? "rgba(249,115,22,0.15)" : "rgba(255,255,255,0.06)",
+                border: showNotifDropdown ? "1px solid rgba(249,115,22,0.3)" : "1px solid rgba(255,255,255,0.08)",
+                color: showNotifDropdown ? "#f97316" : "rgba(255,255,255,0.7)",
+                cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                position: "relative", fontSize: "15px",
+                transition: "all 0.2s",
+              }}
+            >
+              <i className="fa fa-bell" />
+              {unreadCount > 0 && (
+                <span style={{
+                  position: "absolute", top: "-3px", right: "-3px",
+                  width: "18px", height: "18px", borderRadius: "50%",
+                  background: "linear-gradient(135deg, #ef4444, #dc2626)",
+                  color: "white", fontSize: "10px", fontWeight: 900,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  border: "2px solid rgba(15,15,26,0.95)",
+                  boxShadow: "0 2px 8px rgba(239,68,68,0.4)",
+                }}>
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
+            </button>
+
+            {/* Notification dropdown */}
+            {showNotifDropdown && (
+              <div style={{
+                position: "absolute", top: "46px", right: 0,
+                width: "320px", maxHeight: "400px",
+                background: "rgba(15,15,26,0.97)",
+                backdropFilter: "blur(24px)",
+                border: "1px solid rgba(255,255,255,0.1)",
+                borderRadius: "16px",
+                boxShadow: "0 8px 40px rgba(0,0,0,0.6)",
+                zIndex: 9999,
+                overflow: "hidden",
+                display: "flex", flexDirection: "column",
+              }}>
+                {/* Header */}
+                <div style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  padding: "14px 16px",
+                  borderBottom: "1px solid rgba(255,255,255,0.06)",
+                }}>
+                  <span style={{ fontWeight: 900, fontSize: "14px" }}>Notifications</span>
+                  {notifications.length > 0 && (
+                    <button
+                      onClick={() => {
+                        markAllAsRead(userId);
+                        setUnreadCount(0);
+                        setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+                      }}
+                      style={{
+                        background: "none", border: "none",
+                        color: "#8b5cf6", fontSize: "11px", fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Mark all read
+                    </button>
+                  )}
+                </div>
+
+                {/* Notification list */}
+                <div style={{ overflowY: "auto", flex: 1, maxHeight: "340px" }}>
+                  {notifications.length === 0 ? (
+                    <div style={{ padding: "32px 16px", textAlign: "center", color: "rgba(255,255,255,0.3)", fontSize: "13px" }}>
+                      <i className="fa fa-bell-slash" style={{ fontSize: "24px", marginBottom: "8px", display: "block" }} />
+                      No notifications yet
+                    </div>
+                  ) : (
+                    notifications.map(n => (
+                      <div
+                        key={n.id}
+                        onClick={() => {
+                          if (!n.isRead) {
+                            markAsRead(n.id);
+                            setUnreadCount(prev => Math.max(0, prev - 1));
+                            setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, isRead: true } : x));
+                          }
+                          if (n.rideId) {
+                            setShowNotifDropdown(false);
+                            // Dispatch event for Home.jsx to handle opening the ride
+                            window.dispatchEvent(new CustomEvent("rw-open-ride", { detail: { rideId: n.rideId } }));
+                          }
+                        }}
+                        style={{
+                          padding: "12px 16px",
+                          borderBottom: "1px solid rgba(255,255,255,0.04)",
+                          cursor: n.rideId ? "pointer" : "default",
+                          background: n.isRead ? "transparent" : "rgba(139,92,246,0.06)",
+                          transition: "background 0.2s",
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.04)"}
+                        onMouseLeave={e => e.currentTarget.style.background = n.isRead ? "transparent" : "rgba(139,92,246,0.06)"}
+                      >
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
+                          <div style={{
+                            width: "32px", height: "32px", borderRadius: "10px", flexShrink: 0,
+                            background: n.type === "group_ride_invite"
+                              ? "linear-gradient(135deg, rgba(139,92,246,0.2), rgba(99,102,241,0.15))"
+                              : "rgba(255,255,255,0.06)",
+                            border: "1px solid rgba(255,255,255,0.1)",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: "13px",
+                          }}>
+                            {n.type === "group_ride_invite" ? "👥" : "🔔"}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ fontWeight: 700, fontSize: "13px", margin: "0 0 3px",
+                              color: n.isRead ? "rgba(255,255,255,0.6)" : "white" }}>
+                              {n.title}
+                            </p>
+                            <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.35)", margin: 0,
+                              lineHeight: "1.4" }}>
+                              {n.message}
+                            </p>
+                          </div>
+                          {!n.isRead && (
+                            <span style={{
+                              width: "8px", height: "8px", borderRadius: "50%",
+                              background: "#8b5cf6", flexShrink: 0, marginTop: "4px",
+                            }} />
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
             )}
-          </button>
+          </div>
 
           {/* Theme switcher dropdown */}
           <ThemeDropdown theme={theme} setTheme={setTheme} tc={tc} />

@@ -11,4 +11,6 @@ public interface RideRepository extends JpaRepository<Ride, Long> { // Define in
     List<Ride> findByUserIdOrderByCreatedAtDesc(Long userId); // Find by user ID sorted by creation time
 
     List<Ride> findByUserIdAndStatus(Long userId, String status); // Find by user ID and status
+    
+    List<Ride> findByIdInOrderByCreatedAtDesc(List<Long> ids);
 } // End of interface

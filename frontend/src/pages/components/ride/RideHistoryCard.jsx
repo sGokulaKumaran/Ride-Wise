@@ -8,6 +8,7 @@
 import { useState } from "react";
 import RideMap from "./RideMap";
 import { formatDistance, formatDuration } from "../../../services/routingApi";
+import { useAuth } from "../../../context/AuthContext";
 
 const STATUS_COLORS = {
   planned:   "bg-blue-500/20 text-blue-400 border-blue-500/20",
@@ -23,12 +24,18 @@ const TYPE_ICON = {
 
 export default function RideHistoryCard({ ride }) {
   const [open, setOpen] = useState(false);
+  const { user } = useAuth();
 
   const dateStr = ride.createdAt
     ? new Date(ride.createdAt).toLocaleDateString("en-IN", {
         day: "numeric", month: "short", year: "numeric",
       })
     : null;
+
+  const isGroup = ride.type === "group" || ride.rideType === "group";
+  const participants = ride.participants || [];
+  const displayParticipants = participants.slice(0, 4);
+  const extraCount = participants.length > 4 ? participants.length - 4 : 0;
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] overflow-hidden transition-all hover:border-white/20">
@@ -40,14 +47,14 @@ export default function RideHistoryCard({ ride }) {
         {/* Left: from→to + meta */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <i className={`fa ${TYPE_ICON[ride.type] || "fa-motorcycle"} text-orange-400 text-xs`} />
+            <i className={`fa ${TYPE_ICON[ride.type || ride.rideType] || "fa-motorcycle"} text-orange-400 text-xs`} />
             <p className="font-bold text-sm truncate">
               {(ride.from?.name || "Unknown").split(",")[0]}
               <span className="mx-1.5 opacity-40">→</span>
               {(ride.destination?.name || "Unknown").split(",")[0]}
             </p>
           </div>
-          <div className="flex items-center gap-3 text-xs opacity-50">
+          <div className="flex items-center gap-3 text-xs opacity-50 mb-2">
             {ride.route && (
               <>
                 <span>{formatDistance(ride.route.distance)}</span>
@@ -58,6 +65,41 @@ export default function RideHistoryCard({ ride }) {
             )}
             {dateStr && <span>{dateStr}</span>}
           </div>
+          
+          {isGroup && (
+            <div className="flex items-center gap-2 mt-2">
+              {participants.length > 0 && (
+                <div className="flex items-center">
+                  {displayParticipants.map((p, i) => (
+                    <div
+                      key={p.userId}
+                      className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white border border-black/50"
+                      style={{
+                        backgroundColor: p.color || "#8b5cf6",
+                        marginLeft: i > 0 ? "-6px" : "0",
+                        zIndex: 10 - i
+                      }}
+                    >
+                      {(p.username || "U").charAt(0).toUpperCase()}
+                    </div>
+                  ))}
+                  {extraCount > 0 && (
+                    <div
+                      className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold text-white border border-black/50 bg-white/20 backdrop-blur-md"
+                      style={{ marginLeft: "-6px", zIndex: 0 }}
+                    >
+                      +{extraCount}
+                    </div>
+                  )}
+                </div>
+              )}
+              {ride.creatorUsername && user?.username !== ride.creatorUsername && (
+                <span className="text-[10px] text-white/40 bg-white/5 px-2 py-0.5 rounded-full">
+                  Created by {ride.creatorUsername}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Right: status badge + chevron */}

@@ -62,6 +62,8 @@ public class AuthService {
         if (request.getUsername() != null) user.setUsername(request.getUsername());
         if (request.getMobile() != null)   user.setMobile(request.getMobile());
         if (request.getAddress() != null)  user.setAddress(request.getAddress());
+        if (request.getLat() != null)      user.setLat(request.getLat());
+        if (request.getLng() != null)      user.setLng(request.getLng());
 
         User saved = userRepository.save(user);
         return toResponse(saved);
