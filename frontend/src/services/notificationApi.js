@@ -32,7 +32,8 @@ export async function getUnreadCount(userId) {
     const params = new URLSearchParams({ userId });
     const res = await fetch(`${BASE}/unread-count?${params}`);
     if (!res.ok) throw new Error(`Get unread count failed: ${res.status}`);
-    return await res.json();
+    const data = await res.json();
+    return data.count || 0;
   } catch (err) {
     console.warn("[notificationApi] getUnreadCount failed:", err.message);
     return 0;

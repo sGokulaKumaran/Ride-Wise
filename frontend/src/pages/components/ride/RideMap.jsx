@@ -273,6 +273,11 @@ function MapInternals({ ride, myLocation, isLive, tileLayerRef, activeTileIdx, p
   const riderMarkersRef = useRef({});
 
   // ── Group Rider Markers ──
+  // IMPORTANT: These are draggable demo markers. We ONLY set position on creation.
+  // Once created, the user controls position via drag. We never call setLatLng()
+  // on existing markers — that causes the "rubber-band" snap-back glitch because
+  // React re-renders (from GPS ticks etc.) would push the OLD state position back
+  // to the marker while the user is still dragging.
   useEffect(() => {
     if (!map) return;
     
@@ -282,29 +287,30 @@ function MapInternals({ ride, myLocation, isLive, tileLayerRef, activeTileIdx, p
       if (p.userId === currentUserId) return;
       if (!p.lat || !p.lng) return;
       
-      currentMarkerIds.add(p.userId);
-      const latLng = [p.lat, p.lng];
+      const key = String(p.userId); // Use string keys consistently
+      currentMarkerIds.add(key);
       
-      if (riderMarkersRef.current[p.userId]) {
-        riderMarkersRef.current[p.userId].setLatLng(latLng);
-      } else {
+      // Only create NEW markers — never update position of existing ones
+      if (!riderMarkersRef.current[key]) {
         const color = p.color || RIDER_COLORS[index % RIDER_COLORS.length];
         const letter = p.avatarLetter || (p.username ? p.username.charAt(0).toUpperCase() : "?");
-        const icon = makeRiderIcon(color, letter, p.username);
+        const icon = makeRiderIcon(color, letter, p.username || "Rider");
         
-        const marker = L.marker(latLng, {
+        const marker = L.marker([p.lat, p.lng], {
           icon,
           zIndexOffset: 500,
-          draggable: true
+          draggable: true,
+          autoPan: false,       // Don't pan map while dragging
         }).addTo(map);
         
         marker.bindPopup(`
           <div style="font-family:system-ui;text-align:center">
-            <strong>${p.username}</strong><br/>
+            <strong>${p.username || "Rider"}</strong><br/>
             <span style="font-size:11px;color:#666">${p.role === "admin" ? "👑 Admin" : "Rider"}</span>
           </div>
         `);
         
+        // On dragend, broadcast the new position so ActiveRideOverlay can track it
         marker.on('dragend', function(event) {
           const position = event.target.getLatLng();
           window.dispatchEvent(new CustomEvent("simulate-group-gps", {
@@ -312,15 +318,15 @@ function MapInternals({ ride, myLocation, isLive, tileLayerRef, activeTileIdx, p
           }));
         });
         
-        riderMarkersRef.current[p.userId] = marker;
+        riderMarkersRef.current[key] = marker;
       }
     });
     
     // Remove markers for participants no longer in the list
-    Object.keys(riderMarkersRef.current).forEach(id => {
-      if (!currentMarkerIds.has(id)) {
-        riderMarkersRef.current[id].remove();
-        delete riderMarkersRef.current[id];
+    Object.keys(riderMarkersRef.current).forEach(key => {
+      if (!currentMarkerIds.has(key)) {
+        riderMarkersRef.current[key].remove();
+        delete riderMarkersRef.current[key];
       }
     });
     

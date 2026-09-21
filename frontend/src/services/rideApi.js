@@ -268,4 +268,5 @@ export async function updateParticipantStatus(rideId, userId, status) {
   });
   if (!res.ok) throw new Error(`Update participant status failed: ${res.status}`);
   return await res.json();
-}
+}
+
