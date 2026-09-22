@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import vehicle.ridewise.entity.Connection;
@@ -67,12 +68,14 @@ class RideFlowTests {
         connect(adminId, friendId);
     }
 
+    @Autowired PasswordEncoder passwordEncoder;
+
     // ── helpers ──────────────────────────────────────────────
     private Long saveUser(String username, String email) {
         User u = new User();
         u.setUsername(username);
         u.setEmail(email);
-        u.setPassword("pw");
+        u.setPassword(passwordEncoder.encode("pw"));
         return userRepository.save(u).getId();
     }
 
@@ -89,9 +92,8 @@ class RideFlowTests {
         return objectMapper.writeValueAsString(body);
     }
 
-    private Long createRide(Long userId, String rideType, List<Long> participantIds) throws Exception {
+    private Long createRide(String adminCookie, String rideType, List<Long> participantIds) throws Exception {
         Map<String, Object> body = new java.util.HashMap<>();
-        body.put("userId", userId);
         body.put("rideType", rideType);
         body.put("fromName", "Chennai");
         body.put("fromLat", 13.08);
@@ -101,40 +103,56 @@ class RideFlowTests {
         body.put("destinationLng", 79.13);
         if (participantIds != null) body.put("participantIds", participantIds);
         MvcResult res = mockMvc.perform(post("/api/rides")
-                        .contentType(MediaType.APPLICATION_JSON).content(json(body)))
+                        .contentType(MediaType.APPLICATION_JSON).content(json(body))
+                        .header("Cookie", adminCookie))
                 .andExpect(status().isOk())
                 .andReturn();
         JsonNode node = objectMapper.readTree(res.getResponse().getContentAsString());
         return node.get("id").asLong();
     }
 
-    // ── 1. ADMIN-ONLY GROUP RIDE END ─────────────────────────
+    private String loginAndGetSession(Long userId) throws Exception {
+        User u = userRepository.findById(userId).orElseThrow();
+        Map<String, Object> loginBody = Map.of("email", u.getEmail(), "password", "pw");
+        MvcResult res = mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON).content(json(loginBody)))
+                .andExpect(status().isOk())
+                .andReturn();
+        String cookie = res.getResponse().getHeader("Set-Cookie");
+        if (cookie == null) throw new IllegalStateException("No session cookie from login");
+        return cookie;
+    }
+
     @Test
     void groupRideEnd_adminOnly_memberForbidden_legacyNoUserIdStillWorks() throws Exception {
-        Long rideId = createRide(adminId, "group", List.of(memberId));
+        String adminCookie = loginAndGetSession(adminId);
+        String memberCookie = loginAndGetSession(memberId);
+        Long rideId = createRide(adminCookie, "group", List.of(memberId));
 
         // Member cannot end the group ride
         mockMvc.perform(patch("/api/rides/" + rideId + "/status")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("status", "completed", "userId", memberId.toString()))))
+                        .header("Cookie", memberCookie)
+                        .content(json(Map.of("status", "completed"))))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.message").value("Only the ride admin can end this group ride"))
                 .andExpect(jsonPath("$.error").exists()); // legacy error key retained
 
         // Ride must still be active after the forbidden attempt
-        mockMvc.perform(get("/api/rides/" + rideId))
+        mockMvc.perform(get("/api/rides/" + rideId).header("Cookie", adminCookie))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("active"));
 
         // Admin can end the group ride
         mockMvc.perform(patch("/api/rides/" + rideId + "/status")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("status", "completed", "userId", adminId.toString()))))
+                        .header("Cookie", adminCookie)
+                        .content(json(Map.of("status", "completed"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("completed"));
 
-        // Legacy compatibility: no userId → old unchecked behavior
-        Long ride2 = createRide(adminId, "group", List.of(memberId));
+        // Legacy compatibility: no userId → old unchecked behavior (no session cookie)
+        Long ride2 = createRide(adminCookie, "group", List.of(memberId));
         mockMvc.perform(patch("/api/rides/" + ride2 + "/status")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("status", "completed"))))
@@ -145,11 +163,14 @@ class RideFlowTests {
     // ── 2. MEMBER SELF-LEAVE ─────────────────────────────────
     @Test
     void memberLeave_selfOnly_leftOnly_adminBlockedFromLeaving() throws Exception {
-        Long rideId = createRide(adminId, "group", List.of(memberId));
+        String adminCookie = loginAndGetSession(adminId);
+        String memberCookie = loginAndGetSession(memberId);
+        Long rideId = createRide(adminCookie, "group", List.of(memberId));
 
         // Member cannot END the ride via the participant route
         mockMvc.perform(patch("/api/rides/" + rideId + "/participants/" + memberId + "/status")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Cookie", memberCookie)
                         .content(json(Map.of("status", "completed", "actorUserId", memberId.toString()))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").exists());
@@ -157,12 +178,14 @@ class RideFlowTests {
         // Member cannot leave on behalf of someone else (actor != target)
         mockMvc.perform(patch("/api/rides/" + rideId + "/participants/" + memberId + "/status")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Cookie", memberCookie)
                         .content(json(Map.of("status", "left", "actorUserId", adminId.toString()))))
                 .andExpect(status().isForbidden());
 
         // Admin cannot leave via this route (must end the ride instead)
         mockMvc.perform(patch("/api/rides/" + rideId + "/participants/" + adminId + "/status")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Cookie", adminCookie)
                         .content(json(Map.of("status", "left", "actorUserId", adminId.toString()))))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.message").value("The ride admin cannot leave; end the ride instead"));
@@ -170,12 +193,13 @@ class RideFlowTests {
         // Member leaves themself → OK
         mockMvc.perform(patch("/api/rides/" + rideId + "/participants/" + memberId + "/status")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Cookie", memberCookie)
                         .content(json(Map.of("status", "left", "actorUserId", memberId.toString()))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
 
         // GET participants returns ACTIVE members only → member is gone, admin remains
-        MvcResult res = mockMvc.perform(get("/api/rides/" + rideId + "/participants"))
+        MvcResult res = mockMvc.perform(get("/api/rides/" + rideId + "/participants").header("Cookie", adminCookie))
                 .andExpect(status().isOk())
                 .andReturn();
         JsonNode participants = objectMapper.readTree(res.getResponse().getContentAsString());
@@ -185,6 +209,7 @@ class RideFlowTests {
         // Leaving twice is rejected (no longer active)
         mockMvc.perform(patch("/api/rides/" + rideId + "/participants/" + memberId + "/status")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Cookie", memberCookie)
                         .content(json(Map.of("status", "left", "actorUserId", memberId.toString()))))
                 .andExpect(status().isBadRequest());
 
@@ -196,11 +221,14 @@ class RideFlowTests {
     // ── 3. LIVE ADMIN ADD-RIDER ──────────────────────────────
     @Test
     void addParticipant_adminOnly_friendOnly_dedupeAndRejoin() throws Exception {
-        Long rideId = createRide(adminId, "group", List.of(memberId));
+        String adminCookie = loginAndGetSession(adminId);
+        Long rideId = createRide(adminCookie, "group", List.of(memberId));
 
         // Non-admin member cannot add riders
+        String memberCookie = loginAndGetSession(memberId);
         mockMvc.perform(post("/api/rides/" + rideId + "/participants")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Cookie", memberCookie)
                         .content(json(Map.of("adminId", memberId.toString(), "userId", friendId.toString()))))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.message").value("Only the ride admin can add riders to this group ride"));
@@ -208,6 +236,7 @@ class RideFlowTests {
         // Cannot add a user that does not exist
         mockMvc.perform(post("/api/rides/" + rideId + "/participants")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Cookie", adminCookie)
                         .content(json(Map.of("adminId", adminId.toString(), "userId", "999999"))))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.message").value("User not found"));
@@ -215,6 +244,7 @@ class RideFlowTests {
         // Cannot add a non-friend (stranger)
         mockMvc.perform(post("/api/rides/" + rideId + "/participants")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Cookie", adminCookie)
                         .content(json(Map.of("adminId", adminId.toString(), "userId", strangerId.toString()))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("You can only add connected friends to a group ride"));
@@ -222,6 +252,7 @@ class RideFlowTests {
         // Duplicate: member is already active
         mockMvc.perform(post("/api/rides/" + rideId + "/participants")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Cookie", adminCookie)
                         .content(json(Map.of("adminId", adminId.toString(), "userId", memberId.toString()))))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value("User is already an active participant in this ride"));
@@ -229,6 +260,7 @@ class RideFlowTests {
         // Happy path: admin adds connected friend → active member + notification
         mockMvc.perform(post("/api/rides/" + rideId + "/participants")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Cookie", adminCookie)
                         .content(json(Map.of("adminId", adminId.toString(), "userId", friendId.toString()))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.userId").value(friendId))
@@ -241,10 +273,12 @@ class RideFlowTests {
         // Rejoin: member leaves, admin re-adds → active again (no duplicate row)
         mockMvc.perform(patch("/api/rides/" + rideId + "/participants/" + memberId + "/status")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Cookie", memberCookie)
                         .content(json(Map.of("status", "left", "actorUserId", memberId.toString()))))
                 .andExpect(status().isOk());
         mockMvc.perform(post("/api/rides/" + rideId + "/participants")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Cookie", adminCookie)
                         .content(json(Map.of("adminId", adminId.toString(), "userId", memberId.toString()))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("active"));
@@ -252,7 +286,7 @@ class RideFlowTests {
                 .filter(p -> p.getUserId().equals(memberId)).count());
 
         // RideResponse carries ACTIVE participants only (admin + friend + rejoined member)
-        mockMvc.perform(get("/api/rides/" + rideId))
+        mockMvc.perform(get("/api/rides/" + rideId).header("Cookie", adminCookie))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.participants.length()").value(3))
                 .andExpect(jsonPath("$.creatorUsername").value("admin1"));
@@ -260,10 +294,12 @@ class RideFlowTests {
         // Ended ride rejects additions
         mockMvc.perform(patch("/api/rides/" + rideId + "/status")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("status", "completed", "userId", adminId.toString()))))
+                        .header("Cookie", adminCookie)
+                        .content(json(Map.of("status", "completed"))))
                 .andExpect(status().isOk());
         mockMvc.perform(post("/api/rides/" + rideId + "/participants")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Cookie", adminCookie)
                         .content(json(Map.of("adminId", adminId.toString(), "userId", friendId.toString()))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("Ride is not active"));
@@ -272,15 +308,20 @@ class RideFlowTests {
     // ── 4. GPS WRITER VALIDATION ─────────────────────────────
     @Test
     void gpsWriter_ownerForSolo_activeParticipantForGroup_anonymousAllowed() throws Exception {
+        String adminCookie = loginAndGetSession(adminId);
+        String memberCookie = loginAndGetSession(memberId);
+
         // Solo ride: only the owner may write GPS fixes
-        Long soloRideId = createRide(adminId, "solo", null);
+        Long soloRideId = createRide(adminCookie, "solo", null);
         mockMvc.perform(post("/api/rides/" + soloRideId + "/location")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Cookie", memberCookie)
                         .content(json(Map.of("lat", 13.0, "lng", 80.0, "userId", memberId))))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.message").value("Only the ride owner can share location for this ride"));
         mockMvc.perform(post("/api/rides/" + soloRideId + "/location")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Cookie", adminCookie)
                         .content(json(Map.of("lat", 13.0, "lng", 80.0, "userId", adminId))))
                 .andExpect(status().isOk());
         // Demo/local compatibility: no userId → accepted
@@ -290,9 +331,10 @@ class RideFlowTests {
                 .andExpect(status().isOk());
 
         // Group ride: active participant may write, outsider may not
-        Long groupRideId = createRide(adminId, "group", List.of(memberId));
+        Long groupRideId = createRide(adminCookie, "group", List.of(memberId));
         mockMvc.perform(post("/api/rides/" + groupRideId + "/location")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Cookie", memberCookie)
                         .content(json(Map.of("lat", 13.0, "lng", 80.0, "userId", memberId))))
                 .andExpect(status().isOk());
         mockMvc.perform(post("/api/rides/" + groupRideId + "/location")
@@ -305,9 +347,13 @@ class RideFlowTests {
     // ── 5. CONNECTION SELF/EXISTENCE CHECKS ──────────────────
     @Test
     void addRider_selfAndExistenceChecks() throws Exception {
+        String adminCookie = loginAndGetSession(adminId);
+        String strangerCookie = loginAndGetSession(strangerId);
+
         // Self-connection rejected
         mockMvc.perform(post("/api/riders/add")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Cookie", adminCookie)
                         .content(json(Map.of("userId", adminId, "riderId", adminId))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("You cannot connect with yourself"));
@@ -315,6 +361,7 @@ class RideFlowTests {
         // Nonexistent user rejected
         mockMvc.perform(post("/api/riders/add")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Cookie", adminCookie)
                         .content(json(Map.of("userId", adminId, "riderId", 999999L))))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.message").value("User not found"));
@@ -322,13 +369,22 @@ class RideFlowTests {
         // Valid add → success, dedupe on second add
         mockMvc.perform(post("/api/riders/add")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Cookie", adminCookie)
                         .content(json(Map.of("userId", adminId, "riderId", strangerId))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
         mockMvc.perform(post("/api/riders/add")
                         .contentType(MediaType.APPLICATION_JSON)
+                        .header("Cookie", adminCookie)
                         .content(json(Map.of("userId", adminId, "riderId", strangerId))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(false));
+        
+        // Stranger cannot add admin
+        mockMvc.perform(post("/api/riders/add")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("Cookie", strangerCookie)
+                        .content(json(Map.of("userId", strangerId, "riderId", adminId))))
+                .andExpect(status().isForbidden());
     }
 }
