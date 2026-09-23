@@ -15,7 +15,11 @@ import java.time.LocalDateTime; // Import LocalDateTime
 // TABLE: location_updates
 // ============================================================
 @Entity // Mark as a JPA entity so Hibernate creates the table
-@Table(name = "location_updates") // Explicit table name
+@Table(name = "location_updates", indexes = {
+    @Index(name = "idx_location_ride_id", columnList = "ride_id"),
+    @Index(name = "idx_location_user_id", columnList = "user_id"),
+    @Index(name = "idx_location_received_at", columnList = "received_at")
+}) // Explicit table name + indexes for query performance
 public class LocationUpdate { // Define class
 
     @Id // Primary key

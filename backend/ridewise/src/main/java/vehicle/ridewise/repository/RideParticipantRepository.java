@@ -31,4 +31,10 @@ public interface RideParticipantRepository extends JpaRepository<RideParticipant
     @Modifying
     @Transactional
     void deleteByRideId(Long rideId);
+
+    // ── Cleanup queries ──
+
+    @Modifying
+    @Transactional
+    void deleteByUserId(Long userId);
 }

@@ -49,20 +49,19 @@
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
 
-        <!-- H2: In-memory database for local development -->
+        <!-- H2: In-memory database for testing only -->
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
-            <scope>runtime</scope>
+            <scope>test</scope>
         </dependency>
 
-        <!-- PostgreSQL: uncomment when switching to production
+        <!-- PostgreSQL: Persistent database for development and production -->
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
         </dependency>
-        -->
 
         <!-- DevTools: Hot reload -->
         <dependency>

@@ -4,7 +4,12 @@ import jakarta.persistence.*; // Import JPA annotations
 import java.time.LocalDateTime; // Import LocalDateTime
 
 @Entity // Mark as JPA entity
-@Table(name = "rides") // Specify table name
+@Table(name = "rides", indexes = {
+    @Index(name = "idx_ride_user_id", columnList = "user_id"),
+    @Index(name = "idx_ride_status", columnList = "status"),
+    @Index(name = "idx_ride_type", columnList = "ride_type"),
+    @Index(name = "idx_ride_created_at", columnList = "created_at")
+}) // Specify table name + indexes
 public class Ride { // Define class
 
     @Id // Mark as primary key

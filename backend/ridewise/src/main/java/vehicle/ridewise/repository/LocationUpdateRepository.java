@@ -1,17 +1,16 @@
 package vehicle.ridewise.repository; // Package declaration
 
 import org.springframework.data.jpa.repository.JpaRepository; // Import JpaRepository
-import vehicle.ridewise.entity.LocationUpdate; // Import entity
-import java.util.List; // Import List
-
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.transaction.annotation.Transactional;
+import vehicle.ridewise.entity.LocationUpdate; // Import entity
+import java.time.LocalDateTime;
+import java.util.List; // Import List
 
 // ============================================================
 // LocationUpdateRepository — Spring Data JPA repository
 //
 // Spring auto-generates all SQL based on method names (no @Query needed).
-// Uses H2 in dev; switch to PostgreSQL by updating application.properties.
 // ============================================================
 public interface LocationUpdateRepository extends JpaRepository<LocationUpdate, Long> { // Extend JpaRepository
 
@@ -27,4 +26,21 @@ public interface LocationUpdateRepository extends JpaRepository<LocationUpdate, 
     @Transactional
     @Modifying
     void deleteByRideId(Long rideId);
+
+    // ── Cleanup queries ──
+
+    // Batch delete location updates for multiple rides
+    @Transactional
+    @Modifying
+    void deleteByRideIdIn(List<Long> rideIds);
+
+    // Delete all location updates for a specific user
+    @Transactional
+    @Modifying
+    void deleteByUserId(Long userId);
+
+    // Delete location updates older than a cutoff time
+    @Transactional
+    @Modifying
+    void deleteByReceivedAtBefore(LocalDateTime cutoff);
 } // End of interface

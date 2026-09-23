@@ -29,16 +29,19 @@ public class RideService { // Define class
     private final LocationUpdateRepository locationUpdateRepository;
     private final RideParticipantRepository rideParticipantRepository;
     private final NotificationService notificationService;
+    private final DataCleanupService dataCleanupService;
     private final UserRepository userRepository;
     private final ConnectionRepository connectionRepository;
 
     public RideService(RideRepository rideRepository, LocationUpdateRepository locationUpdateRepository,
                        RideParticipantRepository rideParticipantRepository, NotificationService notificationService,
+                       DataCleanupService dataCleanupService,
                        UserRepository userRepository, ConnectionRepository connectionRepository) {
         this.rideRepository = rideRepository;
         this.locationUpdateRepository = locationUpdateRepository;
         this.rideParticipantRepository = rideParticipantRepository;
         this.notificationService = notificationService;
+        this.dataCleanupService = dataCleanupService;
         this.userRepository = userRepository;
         this.connectionRepository = connectionRepository;
     } // End constructor
@@ -225,6 +228,11 @@ public class RideService { // Define class
 
         RideResponse response = RideResponse.from(saved); // Return DTO
         if ("group".equals(saved.getRideType())) populateGroupRideData(response, true);
+
+        // Clean up GPS breadcrumbs — they've served their purpose.
+        // The actual distance is already saved on the ride row.
+        dataCleanupService.cleanupRideLocationData(rideId);
+
         return response; // Return DTO
     } // End method
 
