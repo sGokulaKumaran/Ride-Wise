@@ -25,7 +25,7 @@ import {
 } from "../services/ridersApi";
 
 // ── Empty state (module scope — stable identity across renders) ──
-function EmptyState({ icon, title, message, tc }) {
+function EmptyState({ icon, title, message, tc={} }) {
   return (
     <div className={`text-center py-10 rounded-xl border ${tc.divider}`}>
       <i className={`fa ${icon} text-4xl mb-2 opacity-30`}></i>
@@ -299,6 +299,7 @@ export default function Riders() {
                   icon="fa-search"
                   title="Start typing to search"
                   message="Search for real riders who have signed up to RideWise"
+                  tc={tc}
                 />
               ) : searching ? (
                 <p className={`text-center text-sm ${tc.sub} py-8`}>
@@ -309,6 +310,7 @@ export default function Riders() {
                   icon="fa-user-slash"
                   title="No riders found"
                   message={`No signed-up riders match "${searchQuery}"`}
+                  tc={tc}
                 />
               ) : (
                 <div className="space-y-2">

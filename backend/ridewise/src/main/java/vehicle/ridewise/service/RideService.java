@@ -171,11 +171,15 @@ public class RideService { // Define class
     } // End method
 
     public RideResponse updateStatus(Long rideId, String status) { // Legacy entry point (no actor check)
-        return updateStatus(rideId, status, null); // Delegate with null actor
+        return updateStatus(rideId, status, null, null); // Delegate with null actor + no distance
+    } // End method
+
+    public RideResponse updateStatus(Long rideId, String status, Long actorUserId) { // Backwards-compatible entry point
+        return updateStatus(rideId, status, actorUserId, null); // Delegate without travelled distance
     } // End method
 
     @Transactional // Multi-write: ride (+ participant statuses on group end)
-    public RideResponse updateStatus(Long rideId, String status, Long actorUserId) { // Update status method
+    public RideResponse updateStatus(Long rideId, String status, Long actorUserId, Double actualDistanceMeters) { // Update status method
         if (actorUserId == null) throw ApiException.badRequest("Authenticated user is required");
         if (!"completed".equals(status) && !"cancelled".equals(status)) {
             throw ApiException.badRequest("Ride status can only be changed to completed or cancelled");
@@ -197,6 +201,18 @@ public class RideService { // Define class
 
         ride.setStatus(status); // Set status
         ride.setEndedAt(LocalDateTime.now()); // Set endedAt
+
+        // Real travelled distance reported by the client when the ride ends
+        // (route-accurate, GPS-noise filtered). Stored only for completed rides
+        // and only when it is a sane, non-negative number.
+        if ("completed".equals(status)
+                && actualDistanceMeters != null
+                && !actualDistanceMeters.isNaN()
+                && !actualDistanceMeters.isInfinite()
+                && actualDistanceMeters >= 0) {
+            ride.setActualDistanceMeters(actualDistanceMeters); // Persist real distance
+        }
+
         Ride saved = rideRepository.save(ride); // Save changes
 
         if ("group".equals(saved.getRideType())) {

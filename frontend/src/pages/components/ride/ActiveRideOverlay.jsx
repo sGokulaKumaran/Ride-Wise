@@ -16,7 +16,9 @@
 //   ✅ Minimize button — shrinks to a floating widget
 //   ✅ Close button — hides the map, ride stays alive
 //   ✅ End Ride button — permanently ends the ride (two-click confirm)
-//   ✅ Bottom bar: LIVE remaining distance + ETA + ride type
+//   ✅ Bottom bar: LIVE distance RIDDEN + remaining distance + ETA + total route
+//   ✅ Live distance travelled — route-accurate (snap-to-route) with GPS noise
+//      filtering; paused while minimized/backgrounded; saved on ride end
 //   ✅ GPS error banner when location permission is denied
 //   ✅ Camera-follow mode via RideMap's built-in follow logic
 //   ✅ VIEW-ONLY MODE — for completed/cancelled rides (no End Ride button)
@@ -40,6 +42,7 @@ import {
 import { updateUserLocation, getGroupRideParticipants, updateParticipantStatus } from "../../../services/rideApi";
 import GroupRidersPanel from "./GroupRidersPanel";
 import { useAuth } from "../../../context/AuthContext";
+import { useRideDistance } from "../../hooks/useRideDistance";
 
 const RIDER_COLORS = [
   "#8b5cf6", "#14b8a6", "#f59e0b", "#ec4899", "#06b6d4",
@@ -106,7 +109,23 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
         p => String(p.userId) === String(user?.id) && p.role === "admin"
       );
   const showEndRide   = isActiveRide && (!isGroupRide || isAdmin);
-  const showLeaveRide = isActiveRide && isGroupRide && !isAdmin;
+  const showLeaveRide = isActiveRide && !isAdmin && isGroupRide;
+
+  // ====================================================================
+  // LIVE DISTANCE TRAVELLED
+  // Accurately accumulates how far the rider has ACTUALLY ridden:
+  //   • route-accurate mode when the ride has a stored OSRM polyline
+  //     (snap-to-route), straight-line haversine otherwise
+  //   • GPS noise/jump filtering lives in services/rideTracking.js
+  //   • paused while the overlay is minimized or the tab is backgrounded,
+  //     re-anchoring on resume so skipped stretches are never counted
+  //   • resets automatically when a different ride starts
+  // ====================================================================
+  const { distanceTraveled, usingRoute } = useRideDistance(myLocation, {
+    routeCoordinates: ride?.routeCoordinates,
+    rideId: ride?.id,
+    paused: minimized || !isActiveRide,
+  });
 
   // ====================================================================
   // PARTICIPANTS — initial fetch + live refresh
@@ -218,7 +237,8 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
     // Stop GPS tracking before calling onEnd
     stopGpsRef.current?.();
     stopGpsRef.current = null;
-    await onEnd();
+    // Hand the real travelled distance to Home → PATCH /api/rides/{id}/status
+    await onEnd({ distanceTraveled });
     setEnding(false);
   };
 
@@ -270,9 +290,11 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
     const drag = miniDragRef.current;
     if (drag.pointerId !== event.pointerId) return;
 
-    const bubbleSize = 58;
-    const left = Math.min(Math.max(10, event.clientX - drag.offsetX), window.innerWidth - bubbleSize - 10);
-    const top  = Math.min(Math.max(10, event.clientY - drag.offsetY), window.innerHeight - bubbleSize - 10);
+    // Bubble is 104 × 46 px (see the style below) — keep it inside the viewport
+    const bubbleWidth  = 104;
+    const bubbleHeight = 46;
+    const left = Math.min(Math.max(10, event.clientX - drag.offsetX), window.innerWidth  - bubbleWidth  - 10);
+    const top  = Math.min(Math.max(10, event.clientY - drag.offsetY), window.innerHeight - bubbleHeight - 10);
     drag.moved = true;
     setMiniPosition({ left, top });
   };
@@ -379,16 +401,29 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
             }}
           />
 
-          {/* Label */}
+          {/* Label + live ridden distance */}
           <span style={{
-            color:         "rgba(255,255,255,0.95)",
-            fontWeight:    700,
-            fontSize:      "13.5px",
-            letterSpacing: "0.5px",
+            display:       "flex",
+            flexDirection: "column",
+            alignItems:    "flex-start",
+            lineHeight:    1.15,
             pointerEvents: "none",
             textShadow:    "0 1px 4px rgba(0,0,0,0.35)",
           }}>
-            Map
+            {distanceTraveled > 0 ? (
+              <>
+                <span style={{ color: "#bbf7d0", fontWeight: 900, fontSize: "13px", letterSpacing: "0.2px" }}>
+                  {formatDistance(distanceTraveled)}
+                </span>
+                <span style={{ color: "rgba(255,255,255,0.75)", fontWeight: 600, fontSize: "8.5px", letterSpacing: "0.6px" }}>
+                  RIDDEN
+                </span>
+              </>
+            ) : (
+              <span style={{ color: "rgba(255,255,255,0.95)", fontWeight: 700, fontSize: "13.5px", letterSpacing: "0.5px" }}>
+                Map
+              </span>
+            )}
           </span>
         </div>
       </>
@@ -740,12 +775,24 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
           display:        "flex",
           alignItems:     "center",
           justifyContent: "center",
-          gap:            "24px",
-          marginBottom:   "14px",
+          gap:            "14px",
+          marginBottom:   "10px",
         }}>
+          {/* Ridden so far — live, route-accurate when a route is stored */}
+          <div style={{ flex: 1, textAlign: "center" }}>
+            <p style={{ color: "#34d399", fontWeight: 900, fontSize: "19px", margin: 0 }}>
+              {formatDistance(distanceTraveled)}
+            </p>
+            <p style={{ color: "rgba(255,255,255,0.45)", fontSize: "10px", margin: 0, textTransform: "uppercase", letterSpacing: "1px" }}>
+              Ridden
+            </p>
+          </div>
+
+          <div style={{ width: "1px", height: "32px", background: "rgba(255,255,255,0.12)" }} />
+
           {/* Remaining Distance */}
-          <div style={{ textAlign: "center" }}>
-            <p style={{ color: "#4285F4", fontWeight: 900, fontSize: "22px", margin: 0 }}>
+          <div style={{ flex: 1, textAlign: "center" }}>
+            <p style={{ color: "#4285F4", fontWeight: 900, fontSize: "19px", margin: 0 }}>
               {remainingDist != null
                 ? formatDistance(remainingDist)
                 : formatDistance(ride.distanceMeters)}
@@ -758,8 +805,8 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
           <div style={{ width: "1px", height: "32px", background: "rgba(255,255,255,0.12)" }} />
 
           {/* ETA */}
-          <div style={{ textAlign: "center" }}>
-            <p style={{ color: "white", fontWeight: 900, fontSize: "22px", margin: 0 }}>
+          <div style={{ flex: 1, textAlign: "center" }}>
+            <p style={{ color: "white", fontWeight: 900, fontSize: "19px", margin: 0 }}>
               {remainingTime != null
                 ? formatDuration(remainingTime)
                 : formatDuration(ride.durationSeconds)}
@@ -772,7 +819,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
           <div style={{ width: "1px", height: "32px", background: "rgba(255,255,255,0.12)" }} />
 
           {/* Ride type */}
-          <div style={{ textAlign: "center" }}>
+          <div style={{ flex: 1, textAlign: "center" }}>
             <p style={{ color: "white", fontWeight: 900, fontSize: "22px", margin: 0 }}>
               {ride.rideType === "solo" ? "🏍️" : `👥 ${participants.length}`}
             </p>
@@ -781,6 +828,18 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
             </p>
           </div>
         </div>
+
+        {/* ── Total route meta line ── */}
+        <p style={{
+          textAlign:     "center",
+          margin:        "0 0 8px",
+          fontSize:      "10.5px",
+          color:         "rgba(255,255,255,0.5)",
+          letterSpacing: "0.3px",
+        }}>
+          Total route {formatDistance(ride.distanceMeters)} · {formatDuration(ride.durationSeconds)}
+          {usingRoute && <span style={{ color: "#34d399" }}> · route-accurate</span>}
+        </p>
 
         {/* ── Action button — only for ACTIVE rides ── */}
         {/* Admin/solo: End Ride · Non-admin group member: Leave Ride */}

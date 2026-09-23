@@ -186,9 +186,18 @@ export default function RideHistoryPanel({ rides, onOpenRide, onDeleteRide, onCl
                       display: "flex", alignItems: "center", gap: "8px",
                       fontSize: "11px", color: "rgba(255,255,255,0.35)", flexWrap: "wrap",
                     }}>
+                      {ride.actualDistanceMeters > 0 && (
+                        <>
+                          <span title="Distance actually ridden">
+                            <i className="fa fa-location-arrow" style={{ marginRight: "4px", color: "#34d399" }} />
+                            {formatDistance(ride.actualDistanceMeters)} ridden
+                          </span>
+                          <span>·</span>
+                        </>
+                      )}
                       {ride.distanceMeters && (
                         <>
-                          <span><i className="fa fa-route" style={{ marginRight: "4px", color: "#f97316" }} />{formatDistance(ride.distanceMeters)}</span>
+                          <span title="Planned route length"><i className="fa fa-route" style={{ marginRight: "4px", color: "#f97316" }} />{formatDistance(ride.distanceMeters)}</span>
                           <span>·</span>
                         </>
                       )}

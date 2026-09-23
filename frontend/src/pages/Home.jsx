@@ -162,7 +162,12 @@ export default function Home() {
 
   // ── STATS ────────────────────────────────────────────────────
   // Computed from actual ride history instead of hardcoded values
-  const totalKm        = rides.reduce((sum, r) => sum + (r.distanceMeters || 0) / 1000, 0);
+  // Distance actually ridden (falls back to the planned route length for
+  // rides ended before distance tracking existed)
+  const totalKm        = rides.reduce(
+    (sum, r) => sum + (r.actualDistanceMeters ?? r.distanceMeters ?? 0) / 1000,
+    0
+  );
   const completedCount = rides.filter(r => r.status === "completed").length;
 
   // Rides created in the current calendar month
@@ -195,13 +200,14 @@ export default function Home() {
   // Called by ActiveRideOverlay when user confirms "End Ride"
   // BUG FIX: we must setMapRide(null) BEFORE refreshing so the overlay
   // doesn't still show "active" state with a stale ride object.
-  const handleEndRide = async () => {
+  const handleEndRide = async (stats) => {
     if (!mapRide?.id) return;
     const rideId = mapRide.id;
     // Close map immediately — prevents re-opening a stale active ride object
     setMapRide(null);
     try {
-      await endRide(rideId, user?.id);  // PATCH status → "completed" in backend (admin identity included)
+      // stats.distanceTraveled = metres ACTUALLY ridden (tracked live in the overlay)
+      await endRide(rideId, user?.id, stats?.distanceTraveled);  // PATCH status → "completed" in backend
       toast.success("Ride ended — great ride! 🏁");
     } catch(e) {
       console.error("End ride failed:", e);
@@ -584,7 +590,13 @@ function RideCard({ ride, onOpen, tc, isLive }) {
       <div className="flex-1 min-w-0">
         <p className="font-bold text-sm truncate">{fromShort} → {toShort}</p>
         <div className={`flex items-center gap-2 text-[11px] mt-0.5 ${tc.sub} flex-wrap`}>
-          {ride.distanceMeters > 0 && <span>{formatDistance(ride.distanceMeters)}</span>}
+          {ride.actualDistanceMeters > 0 ? (
+            <span title="Distance actually ridden">
+              {formatDistance(ride.actualDistanceMeters)}
+            </span>
+          ) : ride.distanceMeters > 0 ? (
+            <span>{formatDistance(ride.distanceMeters)}</span>
+          ) : null}
           {ride.durationSeconds > 0 && <><span className="opacity-30">·</span><span>{formatDuration(ride.durationSeconds)}</span></>}
           {dateStr && <><span className="opacity-30">·</span><span>{dateStr}</span></>}
         </div>

@@ -17,6 +17,7 @@ public class RideResponse { // Define class
     private String routeSteps;       // Route turn-by-turn steps field
     private Double distanceMeters; // Distance field
     private Double durationSeconds; // Duration field
+    private Double actualDistanceMeters; // Distance actually ridden (metres), set on ride end
     private String rideType; // Ride type field
     private String status; // Status field
     private LocalDateTime createdAt; // Creation time field
@@ -39,6 +40,7 @@ public class RideResponse { // Define class
         res.setRouteSteps(ride.getRouteSteps()); // Set Route Steps
         res.setDistanceMeters(ride.getDistanceMeters()); // Set Distance
         res.setDurationSeconds(ride.getDurationSeconds()); // Set Duration
+        res.setActualDistanceMeters(ride.getActualDistanceMeters()); // Set Actual ridden distance
         res.setRideType(ride.getRideType()); // Set Type
         res.setStatus(ride.getStatus()); // Set Status
         res.setCreatedAt(ride.getCreatedAt()); // Set Created At
@@ -141,6 +143,14 @@ public class RideResponse { // Define class
 
     public void setDurationSeconds(Double durationSeconds) { // Set durationSeconds
         this.durationSeconds = durationSeconds; // Assign durationSeconds
+    } // End setter
+
+    public Double getActualDistanceMeters() { // Get actualDistanceMeters
+        return actualDistanceMeters; // Return actualDistanceMeters
+    } // End getter
+
+    public void setActualDistanceMeters(Double actualDistanceMeters) { // Set actualDistanceMeters
+        this.actualDistanceMeters = actualDistanceMeters; // Assign actualDistanceMeters
     } // End setter
 
     public String getRideType() { // Get rideType

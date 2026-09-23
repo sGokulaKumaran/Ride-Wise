@@ -137,10 +137,17 @@ export async function getActiveRides(userId) {
 // ============================================================
 // END A RIDE (change status to "completed")
 // PATCH /api/rides/{rideId}/status
-// Body: { status: "completed", userId } — userId is the ride admin
-// (backend enforces admin-only ending for group rides)
+// Body: { status: "completed", userId, actualDistanceMeters }
+//   userId               — ride admin (backend enforces admin-only
+//                          ending for group rides)
+//   actualDistanceMeters — how far the rider REALLY rode (tracked live
+//                          in ActiveRideOverlay); optional
 // ============================================================
-export async function endRide(rideId, userId) {
+export async function endRide(rideId, userId, actualDistanceMeters) {
+  // Only send the travelled distance when it's a usable number
+  const hasDistance =
+    Number.isFinite(actualDistanceMeters) && actualDistanceMeters > 0;
+
   return withFallback(
     async () => {
       const res = await fetch(`${BASE}/${rideId}/status`, {
@@ -149,6 +156,7 @@ export async function endRide(rideId, userId) {
         body: JSON.stringify({
           status: "completed",                 // tell backend to mark complete
           ...(userId != null ? { userId } : {}), // admin identity for group rides
+          ...(hasDistance ? { actualDistanceMeters } : {}),
         }),
       });
       if (!res.ok) throw new Error(`End ride failed: ${res.status}`);
@@ -162,7 +170,12 @@ export async function endRide(rideId, userId) {
       // Fallback: update local cache
       const cached = lsLoad().map(r =>
         String(r.id) === String(rideId)
-          ? { ...r, status: "completed", endedAt: new Date().toISOString() }
+          ? {
+              ...r,
+              status: "completed",
+              endedAt: new Date().toISOString(),
+              ...(hasDistance ? { actualDistanceMeters } : {}),
+            }
           : r
       );
       lsSave(cached);

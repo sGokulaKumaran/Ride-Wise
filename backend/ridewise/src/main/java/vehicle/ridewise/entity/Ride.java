@@ -44,6 +44,9 @@ public class Ride { // Define class
     @Column(name = "duration_seconds") // Column for duration
     private Double durationSeconds; // Duration field
 
+    @Column(name = "actual_distance_meters") // Column for the distance actually ridden
+    private Double actualDistanceMeters; // Real travelled distance in metres (set when the ride ends)
+
     @Column(name = "ride_type") // Column for ride type
     private String rideType; // Ride type field
 
@@ -156,6 +159,14 @@ public class Ride { // Define class
 
     public void setDurationSeconds(Double durationSeconds) { // Set durationSeconds
         this.durationSeconds = durationSeconds; // Assign durationSeconds
+    } // End setter
+
+    public Double getActualDistanceMeters() { // Get actualDistanceMeters
+        return actualDistanceMeters; // Return actualDistanceMeters
+    } // End getter
+
+    public void setActualDistanceMeters(Double actualDistanceMeters) { // Set actualDistanceMeters
+        this.actualDistanceMeters = actualDistanceMeters; // Assign actualDistanceMeters
     } // End setter
 
     public String getRideType() { // Get rideType

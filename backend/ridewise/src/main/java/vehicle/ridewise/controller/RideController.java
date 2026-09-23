@@ -10,6 +10,7 @@ import vehicle.ridewise.dto.RideRequest; // Import RideRequest dto
 import vehicle.ridewise.dto.RideResponse; // Import RideResponse dto
 import vehicle.ridewise.dto.LocationUpdateRequest; // Import LocationUpdateRequest
 import vehicle.ridewise.dto.LocationUpdateResponse; // Import LocationUpdateResponse
+import vehicle.ridewise.dto.RideStatusRequest; // Import RideStatusRequest dto
 import java.util.List; // Import List
 import java.util.Map; // Import Map
 
@@ -23,6 +24,7 @@ import java.util.Map; // Import Map
 //   GET    /api/rides/user/{id}   → get all rides for a user
 //   GET    /api/rides/user/{id}/active → get active rides for a user
 //   PATCH  /api/rides/{id}/status → update ride status (active/completed)
+//                                   body may include actualDistanceMeters
 //   DELETE /api/rides/{id}        → permanently delete a ride
 //   GET    /api/rides/{id}        → get a single ride by ID
 //
@@ -83,10 +85,13 @@ public class RideController { // Define class
     @PatchMapping("/{rideId}/status") // Patch status endpoint
     public ResponseEntity<RideResponse> updateStatus(
             @PathVariable Long rideId,
-            @RequestBody Map<String, String> body,
+            @RequestBody RideStatusRequest body,
             HttpServletRequest request) { // Update status handler
-        String status = body.get("status"); // Extract status from body
-        RideResponse res = rideService.updateStatus(rideId, status, SessionAuthInterceptor.requireUserId(request)); // Call service
+        RideResponse res = rideService.updateStatus(
+                rideId,
+                body.getStatus(),                            // "completed" / "cancelled"
+                SessionAuthInterceptor.requireUserId(request), // session identity (authoritative)
+                body.getActualDistanceMeters());             // real travelled distance (may be null)
         return ResponseEntity.ok(res); // Return updated ride
     } // End handler
 
