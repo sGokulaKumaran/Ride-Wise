@@ -25,6 +25,7 @@ import { useAuth } from "../context/AuthContext";
 import Sidebar from "./components/layout/Sidebar";
 import TopBar from "./components/layout/TopBar";
 import MobileNav from "./components/layout/MobileNav";
+import { applyA11ySettings } from "../utils/a11y";
 
 // ── Per-user settings localStorage key ──────────────────────
 function settingsKey(userId) {
@@ -108,11 +109,14 @@ export default function Settings() {
     setSettings(loadSettings(userId));
   }, [userId]);
 
-  // Persist settings to localStorage whenever any value changes
+  // Persist settings to localStorage whenever any value changes,
+  // and apply accessibility choices (text size / motion / contrast)
+  // to the whole app immediately
   useEffect(() => {
     try {
       localStorage.setItem(settingsKey(userId), JSON.stringify(settings));
     } catch (_) {}
+    applyA11ySettings(settings);
   }, [settings, userId]);
 
   // ── Convenience updater ──────────────────────────────────────
@@ -130,7 +134,7 @@ export default function Settings() {
   return (
     <div className={`relative min-h-screen w-full overflow-x-hidden ${tc.bg} ${tc.text}`}>
       <Sidebar tc={tc} />
-      <TopBar theme={theme} setTheme={setTheme} tc={tc} />
+      <TopBar theme={theme} setTheme={setTheme} tc={tc} userId={user?.id} />
       <MobileNav tc={tc} />
 
       <main className="lg:ml-64 pt-20 px-4 pb-28 lg:pb-8">
@@ -275,7 +279,7 @@ export default function Settings() {
 
           {/* ── App version footer ────────────────────────────── */}
           <div className={`text-center text-xs ${tc.sub} py-4`}>
-            RideWise v0.1.0 · Frontend-only prototype
+            RideWise v1.0 · Connected to the Spring Boot backend
           </div>
         </div>
       </main>

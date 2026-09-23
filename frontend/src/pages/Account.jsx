@@ -27,6 +27,9 @@ import MobileNav from "./components/layout/MobileNav";
 import Sidebar from "./components/layout/Sidebar";
 import TopBar from "./components/layout/TopBar";
 import { useTheme } from "./hooks/useTheme";
+import { toast } from "react-toastify";
+import { getUserRides } from "../services/rideApi";
+import { getConnectionsFull } from "../services/ridersApi";
 
 // ============================================================
 // 📝 Field — Reusable editable text field component
@@ -115,19 +118,49 @@ export default function Account() {
     setAddress(user?.address || "");
   }, [user]);
 
+  // ── Live stats: real rides + connections from the backend ──────
+  const [rideCount,       setRideCount]       = useState(0);
+  const [distanceKm,      setDistanceKm]      = useState("0.0");
+  const [connectionCount, setConnectionCount] = useState(0);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    getUserRides(user.id)
+      .then((rides) => {
+        const list = Array.isArray(rides) ? rides : [];
+        setRideCount(list.length);
+        const totalM = list.reduce((s, r) => s + (r.distanceMeters || 0), 0);
+        setDistanceKm((totalM / 1000).toFixed(1));
+      })
+      .catch(() => {});
+    getConnectionsFull(user.id)
+      .then((list) => setConnectionCount(Array.isArray(list) ? list.length : 0))
+      .catch(() => {});
+  }, [user?.id]);
+
   // ── Save changes ─────────────────────────────────────────────
   const handleSave = async () => {
     if (!username.trim()) {
       setError("Username cannot be empty.");
       return;
     }
+    if (!/^[a-zA-Z0-9_]{3,20}$/.test(username.trim())) {
+      setError("Username must be 3–20 characters — letters, numbers and underscores only.");
+      return;
+    }
+    if (mobile.trim() && !/^[+\d][\d\s\-()]{6,18}$/.test(mobile.trim())) {
+      setError("Please enter a valid mobile number.");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
-      await updateProfile({ username: username.trim(), mobile, address });
+      await updateProfile({ username: username.trim(), mobile: mobile.trim(), address: address.trim() });
       setEditing(false);
+      toast.success("Profile saved");
     } catch (err) {
       setError(err.message || "Failed to save. Please try again.");
+      toast.error(err.message || "Failed to save. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -143,16 +176,17 @@ export default function Account() {
   };
 
   // ── Mock stats (replace with API data later) ─────────────────
+  // Live stats from the backend (rides + connections)
   const stats = [
-    { label: "Rides",     value: "12",  icon: "fa-motorcycle" },
-    { label: "Followers", value: "248", icon: "fa-users"      },
-    { label: "Following", value: "183", icon: "fa-user-plus"  },
+    { label: "Rides",       value: String(rideCount),       icon: "fa-motorcycle" },
+    { label: "Km ridden",   value: distanceKm,              icon: "fa-route"      },
+    { label: "Connections", value: String(connectionCount), icon: "fa-users"      },
   ];
 
   return (
     <div className={`relative min-h-screen w-full overflow-x-hidden ${tc.bg} ${tc.text}`}>
       <Sidebar tc={tc} />
-      <TopBar theme={theme} setTheme={setTheme} tc={tc} />
+      <TopBar theme={theme} setTheme={setTheme} tc={tc} userId={user?.id} />
       <MobileNav tc={tc} />
 
       <main className="lg:ml-64 pt-20 px-4 pb-28 lg:pb-8">

@@ -175,16 +175,15 @@ export function AuthProvider({ children }) {
       // Still clear local state if the network request fails
     }
 
-    if (user?.id) {
-      localStorage.removeItem(`ridewise-theme-${user.id}`);
-      localStorage.removeItem(`ridewise-settings-${user.id}`);
-      localStorage.removeItem(`ridewise-rides-local-${user.id}`);
-    }
-    localStorage.removeItem("ridewise-rides-local"); // legacy shared cache
+    // NOTE: per-user theme ("ridewise-theme-<id>") and settings
+    // ("ridewise-settings-<id>") are INTENTIONALLY kept — they are
+    // device-level preferences, not session data. Wiping them on logout
+    // made the app forget the user's theme/settings every time.
+    // ("ridewise-rides-local-<id>" was never written by rideApi — removed.)
+    localStorage.removeItem("ridewise-rides-local"); // shared dev ride cache
     localStorage.removeItem("ridewise-user");
     localStorage.removeItem("ridewise-authenticated");
     localStorage.removeItem("ridewise-onboarded");
-    localStorage.removeItem("ridewise-theme");
 
     setUser(null);
     setIsAuthenticated(false);

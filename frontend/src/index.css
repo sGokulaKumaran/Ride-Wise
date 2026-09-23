@@ -26,3 +26,45 @@ button, a, input, textarea {         /* Interactive elements transition too */
   transition-property: background-color, border-color, color, transform, box-shadow, opacity;
   transition-duration: 200ms;
 }
+
+/* ── Design polish ─────────────────────────────────────────── */
+::selection { background: rgba(249, 115, 22, 0.35); }
+
+:focus-visible {                       /* Keyboard navigation indicator */
+  outline: 2px solid rgba(249, 115, 22, 0.7);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(140, 140, 140, 0.35);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(140, 140, 140, 0.55);
+  background-clip: content-box;
+}
+
+/* ── Accessibility (wired to Settings → Accessibility) ─────── */
+html.rw-reduce-motion,
+html.rw-reduce-motion *,
+html.rw-reduce-motion *::before,
+html.rw-reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* High contrast: strengthen muted text, faint borders, translucent cards */
+html.rw-high-contrast .text-gray-400 { color: #d4d4d8 !important; }
+html.rw-high-contrast .text-gray-500 { color: #52525b !important; }
+html.rw-high-contrast .bg-white\/5 { background-color: rgba(255, 255, 255, 0.12) !important; }
+html.rw-high-contrast .bg-white\/10 { background-color: rgba(255, 255, 255, 0.18) !important; }
+html.rw-high-contrast .border-white\/10 { border-color: rgba(255, 255, 255, 0.35) !important; }
+html.rw-high-contrast .border-white\/15 { border-color: rgba(255, 255, 255, 0.4) !important; }
+html.rw-high-contrast .border-white\/20 { border-color: rgba(255, 255, 255, 0.45) !important; }

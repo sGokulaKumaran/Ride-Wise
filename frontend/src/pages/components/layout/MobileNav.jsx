@@ -18,7 +18,7 @@ export default function MobileNav({ tc, onStartRide }) {
 
   return (
     <nav
-      className={`lg:hidden fixed bottom-0 left-0 right-0 z-30 backdrop-blur-xl border-t ${tc.divider} bg-black/80`}
+      className={`lg:hidden fixed bottom-0 left-0 right-0 z-30 backdrop-blur-xl border-t ${tc.divider} ${tc.bar}`}
     >
       <div className="flex justify-around items-center h-16 px-4">
 

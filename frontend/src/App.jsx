@@ -1,11 +1,25 @@
+import { useEffect } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 // BrowserRouter: enables URL-based navigation
 // Routes: container for all route definitions
 // Route: one URL pattern → one component
 // Navigate: redirect component
 
-import { AuthProvider } from "./context/AuthContext";
+import { AuthProvider, useAuth } from "./context/AuthContext";
 // Wraps the entire app — makes auth state available everywhere
+
+import { applyA11ySettings, loadA11ySettings } from "./utils/a11y";
+
+// ── Re-applies saved accessibility settings (text size, reduce motion,
+//    high contrast) app-wide whenever the logged-in user changes ──
+function A11yApplier() {
+  const { user } = useAuth();
+  useEffect(() => {
+    const saved = loadA11ySettings(user?.id);
+    if (saved) applyA11ySettings(saved);
+  }, [user?.id]);
+  return null;
+}
 
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -24,6 +38,7 @@ import ProtectedRoute from "./pages/components/shared/ProtectedRoute";
 export default function App() {
   return (
     <AuthProvider>           {/* Step 1: Provide auth context to entire app */}
+      <A11yApplier />        {/* Step 1b: Apply saved accessibility settings */}
       <BrowserRouter>        {/* Step 2: Enable client-side routing */}
         <Routes>             {/* Step 3: Define all routes */}
           

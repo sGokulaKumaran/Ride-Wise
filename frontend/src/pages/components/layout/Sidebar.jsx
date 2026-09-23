@@ -27,7 +27,7 @@ export default function Sidebar({ tc }) {
 
   return (
     <aside
-      className={`hidden lg:flex fixed left-0 top-0 h-screen w-64 flex-col p-4 border-r ${tc.divider} bg-black/40 backdrop-blur-xl z-40`}
+      className={`hidden lg:flex fixed left-0 top-0 h-screen w-64 flex-col p-4 border-r ${tc.divider} ${tc.bar} backdrop-blur-xl z-40`}
     >
       {/* ── Logo ──────────────────────────────────────────────── */}
       <div

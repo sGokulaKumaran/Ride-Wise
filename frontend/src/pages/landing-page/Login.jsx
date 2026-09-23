@@ -36,7 +36,21 @@ export default function LoginPage() {
   const trailRef     = useRef([]);     // cursor trail positions (not in state — no re-render needed)
 
   // ── UI state ─────────────────────────────────────────────────
-  const [theme,      setTheme]      = useState("dark");
+  // Theme: restore the last choice. Uses the same "ridewise-theme" key
+  // the in-app useTheme hook falls back to, so the theme picked here
+  // carries into the app after login.
+  const [theme, setThemeState] = useState(() => {
+    try {
+      const saved = localStorage.getItem("ridewise-theme");
+      if (saved && ["dark", "light", "warm", "midnight"].includes(saved)) return saved;
+    } catch { /* storage unavailable */ }
+    return "dark";
+  });
+  // setTheme also persists — dropdown picks and voice commands both save
+  const setTheme = useCallback((t) => {
+    setThemeState(t);
+    try { localStorage.setItem("ridewise-theme", t); } catch { /* ignore */ }
+  }, []);
   const [isLogin,    setIsLogin]    = useState(true);   // true = Login tab, false = Sign Up tab
   const [mousePos,   setMousePos]   = useState({ x: 0, y: 0 });
   const [ripples,    setRipples]    = useState([]);
@@ -103,12 +117,17 @@ export default function LoginPage() {
 
   // ── Auto-theme by time of day on first load ──────────────────
   useEffect(() => {
+    // Only auto-detect when the user has never picked a theme —
+    // a saved choice always wins.
+    try {
+      if (localStorage.getItem("ridewise-theme")) return;
+    } catch { /* storage unavailable — fall through to auto-detect */ }
     const hour = new Date().getHours();
     if (hour >= 6  && hour < 12) setTheme("warm");
     else if (hour >= 12 && hour < 18) setTheme("light");
     else if (hour >= 18 && hour < 22) setTheme("dark");
     else setTheme("midnight");
-  }, []);
+  }, [setTheme]);
 
   // ── If already authenticated, skip to the correct page ───────
   // Prevents logged-in users from landing back on the login page

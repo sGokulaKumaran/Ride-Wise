@@ -14,6 +14,8 @@ import { useAuth } from "../context/AuthContext";
 import Sidebar from "./components/layout/Sidebar";
 import TopBar from "./components/layout/TopBar";
 import MobileNav from "./components/layout/MobileNav";
+import { useSearchParams } from "react-router-dom";
+import { toast } from "react-toastify";
 import {
   searchRiders,
   addRider,
@@ -22,20 +24,95 @@ import {
   getNearRiders,
 } from "../services/ridersApi";
 
+// ── Empty state (module scope — stable identity across renders) ──
+function EmptyState({ icon, title, message, tc }) {
+  return (
+    <div className={`text-center py-10 rounded-xl border ${tc.divider}`}>
+      <i className={`fa ${icon} text-4xl mb-2 opacity-30`}></i>
+      <p className="text-sm font-bold mb-1">{title}</p>
+      <p className={`text-xs ${tc.sub} max-w-xs mx-auto`}>{message}</p>
+    </div>
+  );
+}
+
+// ── Rider card (module scope — stable identity across renders) ──
+function RiderCard({ rider, showAdd, showRemove, distance, connected, onAdd, onRemove, tc }) {
+  const displayName = rider.username || (rider.email || "rider").split("@")[0];
+  const initial = (rider.username || rider.email || "R").charAt(0).toUpperCase();
+
+  return (
+    <div
+      className={`flex items-center gap-3 p-4 rounded-2xl border transition-all hover:scale-[1.01] hover:shadow-lg ${tc.card} ${tc.cardHover}`}
+    >
+      <div className="relative shrink-0">
+        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center font-black text-white text-lg">
+          {initial}
+        </div>
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <p className="font-bold text-sm truncate">@{displayName}</p>
+        <p className={`text-xs ${tc.sub} truncate`}>{rider.email}</p>
+        {rider.address && (
+          <p className={`text-xs ${tc.sub} truncate`}>📍 {rider.address}</p>
+        )}
+        {distance !== undefined && distance !== null && (
+          <p className={`text-xs ${tc.sub} truncate`}>
+            📏 {distance.toFixed(1)} km away
+          </p>
+        )}
+      </div>
+
+      {showAdd && !connected && (
+        <button
+          onClick={() => onAdd(rider)}
+          className={`px-3 py-1.5 rounded-full text-xs font-bold ${tc.button} hover:scale-105 active:scale-95 transition-transform shrink-0`}
+        >
+          <i className="fa fa-plus mr-1"></i>Add
+        </button>
+      )}
+      {showAdd && connected && (
+        <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-green-500/20 text-green-400 border border-green-500/30 shrink-0">
+          ✓ Added
+        </span>
+      )}
+      {showRemove && (
+        <button
+          onClick={() => onRemove(rider)}
+          className="px-3 py-1.5 rounded-full text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 hover:scale-105 active:scale-95 transition-all shrink-0"
+        >
+          <i className="fa fa-times mr-1"></i>Remove
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function Riders() {
   const { user } = useAuth();
   const { theme, setTheme, tc } = useTheme(user?.id);
 
+  // Deep link: /riders?q=<query> (from TopBar search) → opens the Add
+  // Rider view with the query prefilled
+  const [searchParams] = useSearchParams();
+  const initialQuery = searchParams.get("q") || "";
+
+  // React to ?q= changes while already on this page (initial state above
+  // only covers the first mount)
+  useEffect(() => {
+    const q = searchParams.get("q");
+    if (q) { setView("add"); setSearchQuery(q); }
+  }, [searchParams]);
+
   // view: "all" | "add" | "remove" | "near"
-  const [view, setView] = useState("all");
+  const [view, setView] = useState(initialQuery ? "add" : "all");
 
   const [connections,   setConnections]   = useState([]);
   const [nearRiders,    setNearRiders]    = useState([]);
-  const [searchQuery,   setSearchQuery]   = useState("");
+  const [searchQuery,   setSearchQuery]   = useState(initialQuery);
   const [searchResults, setSearchResults] = useState([]);
   const [searching,     setSearching]     = useState(false);
   const [loading,       setLoading] = useState(false);
-  const [toast,         setToast]         = useState("");
 
   const currentUserId = user?.id;
 
@@ -96,24 +173,19 @@ export default function Riders() {
     return () => clearTimeout(t);
   }, [searchQuery, view, currentUserId]);
 
-  // ── Actions ──
-  const showToast = (msg) => {
-    setToast(msg);
-    setTimeout(() => setToast(""), 2500);
-  };
-
+  // ── Actions (toasts via react-toastify, consistent with Home/Account) ──
   const handleAdd = async (rider) => {
     if (!currentUserId) return;
     try {
       const res = await addRider(currentUserId, rider.id);
       if (res.success) {
-        showToast(`✅ Added @${rider.username || rider.email.split("@")[0]}`);
+        toast.success(`Added @${rider.username || (rider.email || "rider").split("@")[0]} to your riders`);
         await reloadConnections();
       } else {
-        showToast(`⚠️ Already in your connections`);
+        toast.info("Already in your connections");
       }
     } catch (e) {
-      showToast(`❌ ${e.message || "Failed to add rider"}`);
+      toast.error(e.message || "Failed to add rider");
     }
   };
 
@@ -122,82 +194,25 @@ export default function Riders() {
     try {
       const res = await removeRider(currentUserId, rider.id);
       if (res.success) {
-        showToast(`🗑️ Removed @${rider.username || rider.email.split("@")[0]}`);
+        toast.success(`Removed @${rider.username || (rider.email || "rider").split("@")[0]}`);
         await reloadConnections();
       } else {
-        showToast(`⚠️ Not in your connections`);
+        toast.info("Not in your connections");
       }
     } catch (e) {
-      showToast(`❌ ${e.message || "Failed to remove rider"}`);
+      toast.error(e.message || "Failed to remove rider");
     }
   };
 
-  // ── Rider card ──
-  const RiderCard = ({ rider, showAdd, showRemove, distance }) => {
-    const displayName = rider.username || rider.email.split("@")[0];
-    const initial = (rider.username || rider.email).charAt(0).toUpperCase();
-
-    return (
-      <div
-        className={`flex items-center gap-3 p-4 rounded-2xl border transition-all hover:scale-[1.01] hover:shadow-lg ${tc.card} ${tc.cardHover}`}
-      >
-        <div className="relative shrink-0">
-          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center font-black text-white text-lg">
-            {initial}
-          </div>
-        </div>
-
-        <div className="flex-1 min-w-0">
-          <p className="font-bold text-sm truncate">@{displayName}</p>
-          <p className={`text-xs ${tc.sub} truncate`}>{rider.email}</p>
-          {rider.address && (
-            <p className={`text-xs ${tc.sub} truncate`}>📍 {rider.address}</p>
-          )}
-          {distance !== undefined && distance !== null && (
-            <p className={`text-xs ${tc.sub} truncate`}>
- 📏 {distance.toFixed(1)} km away
-            </p>
-          )}
-        </div>
-
-        {showAdd && !connectedIds.has(rider.id) && (
-          <button
-            onClick={() => handleAdd(rider)}
-            className={`px-3 py-1.5 rounded-full text-xs font-bold ${tc.button} hover:scale-105 active:scale-95 transition-transform shrink-0`}
-          >
-            <i className="fa fa-plus mr-1"></i>Add
-          </button>
-        )}
-        {showAdd && connectedIds.has(rider.id) && (
-          <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-green-500/20 text-green-400 border border-green-500/30 shrink-0">
-            ✓ Added
-          </span>
-        )}
-        {showRemove && (
-          <button
-            onClick={() => handleRemove(rider)}
-            className="px-3 py-1.5 rounded-full text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 hover:scale-105 active:scale-95 transition-all shrink-0"
-          >
-            <i className="fa fa-times mr-1"></i>Remove
-          </button>
-        )}
-      </div>
-    );
-  };
-
-  // ── Empty state ──
-  const EmptyState = ({ icon, title, message }) => (
-    <div className={`text-center py-10 rounded-xl border ${tc.divider}`}>
-      <i className={`fa ${icon} text-4xl mb-2 opacity-30`}></i>
-      <p className="text-sm font-bold mb-1">{title}</p>
-      <p className={`text-xs ${tc.sub} max-w-xs mx-auto`}>{message}</p>
-    </div>
-  );
+  // ── Rider card + Empty state live at MODULE SCOPE (see below) ──
+  // They were previously defined here, inside the component — React saw
+  // a brand-new component type on every render and remounted them,
+  // resetting state and breaking reconciliation.
 
   return (
     <div className={`relative min-h-screen w-full overflow-x-hidden ${tc.bg} ${tc.text}`}>
       <Sidebar tc={tc} />
-      <TopBar theme={theme} setTheme={setTheme} tc={tc} />
+      <TopBar theme={theme} setTheme={setTheme} tc={tc} userId={currentUserId} />
       <MobileNav tc={tc} onStartRide={() => {}} />
 
 <main className="lg:ml-64 pt-20 px-4 pb-24 lg:pb-8">
@@ -260,12 +275,6 @@ export default function Riders() {
             </button>
           </div>
 
-          {/* Toast */}
-          {toast && (
-            <div className={`mb-4 p-3 rounded-xl text-sm font-semibold border backdrop-blur-xl animate-pulse ${tc.card}`}>
-              {toast}
-            </div>
-          )}
 
           {/* ADD VIEW */}
           {view === "add" && (
@@ -304,7 +313,7 @@ export default function Riders() {
               ) : (
                 <div className="space-y-2">
                   {searchResults.map((r) => (
-                    <RiderCard key={r.id} rider={r} showAdd />
+                    <RiderCard key={r.id} rider={r} showAdd tc={tc} connected={connectedIds.has(r.id)} onAdd={handleAdd} onRemove={handleRemove} />
                   ))}
                 </div>
               )}
@@ -324,11 +333,12 @@ export default function Riders() {
                   icon="fa-users"
                   title="No connections yet"
                   message="Add some riders first using the Add Rider or Near Riders button"
+                  tc={tc}
                 />
               ) : (
                 <div className="space-y-2">
                   {connections.map((r) => (
-                    <RiderCard key={r.id} rider={r} showRemove />
+                    <RiderCard key={r.id} rider={r} showRemove tc={tc} connected={connectedIds.has(r.id)} onAdd={handleAdd} onRemove={handleRemove} />
                   ))}
                 </div>
               )}
@@ -349,11 +359,12 @@ export default function Riders() {
                   icon="fa-map-marker-alt"
                   title="No nearby riders"
                   message="When other riders sign up with locations near yours, they'll appear here"
+                  tc={tc}
                 />
               ) : (
                 <div className="space-y-2">
                   {nearRiders.map((r) => (
-                    <RiderCard key={r.id} rider={r} showAdd distance={r.distance} />
+                    <RiderCard key={r.id} rider={r} showAdd distance={r.distance} tc={tc} connected={connectedIds.has(r.id)} onAdd={handleAdd} onRemove={handleRemove} />
                   ))}
                 </div>
               )}
@@ -386,11 +397,12 @@ export default function Riders() {
                 icon="fa-users"
                 title="No connections yet"
                 message="Use Add Rider or Near Riders above to start connecting with real riders"
+                tc={tc}
               />
             ) : (
 <div className="space-y-2">
                 {connections.map((r) => (
- <RiderCard key={r.id} rider={r} showAdd />
+                  <RiderCard key={r.id} rider={r} showRemove tc={tc} connected={connectedIds.has(r.id)} onAdd={handleAdd} onRemove={handleRemove} />
                 ))}
               </div>
             )}

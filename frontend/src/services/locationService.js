@@ -170,6 +170,9 @@ export function watchLocation(onUpdate, onError) {
   return () => {
     navigator.geolocation.clearWatch(watchId);
     activeListeners.delete(onUpdate);
-    isSimulating = false;
+    // Only exit simulation mode when NO listeners remain. Previously any
+    // single component unmounting killed GPS simulation for every other
+    // active listener.
+    if (activeListeners.size === 0) isSimulating = false;
   };
 }

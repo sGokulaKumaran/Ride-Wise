@@ -12,19 +12,11 @@
 //   - All other functionality (search, voice, notifications, theme) preserved
 // ============================================================
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../../context/AuthContext";
 import ThemeDropdown from "../shared/ThemeDropdown";
 import { getNotifications, getUnreadCount, markAsRead, markAllAsRead } from "../../../services/notificationApi";
-
-// Search category suggestions shown in the dropdown
-const SEARCH_CATEGORIES = [
-  { type: "Bikes",   icon: "fa-motorcycle"    },
-  { type: "Riders",  icon: "fa-user"          },
-  { type: "Routes",  icon: "fa-route"         },
-  { type: "Events",  icon: "fa-calendar"      },
-];
 
 export default function TopBar({
   theme,
@@ -33,20 +25,27 @@ export default function TopBar({
   voiceMode,    // true while voice recognition is active
   startVoice,   // function to start voice recognition
   userId,
-  notificationCount = 5,
 }) {
   const navigate = useNavigate();
   const { avatarLetter } = useAuth(); // get real avatar letter from auth context
 
+  // ── Theme-aware palette for the notification dropdown ──────────
+  // (the dropdown uses inline styles, so derive colors from theme)
+  const dark = theme === "dark" || theme === "midnight";
+  const ddBg         = dark ? "rgba(15,15,26,0.98)"             : "rgba(255,255,255,0.97)";
+  const ddBorder     = dark ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(0,0,0,0.12)";
+  const ddText       = dark ? "white"                           : "#18181b";
+  const ddSub        = dark ? "rgba(255,255,255,0.4)"           : "rgba(0,0,0,0.45)";
+  const ddHover      = dark ? "rgba(255,255,255,0.04)"          : "rgba(0,0,0,0.05)";
+  const ddIconBg     = dark ? "rgba(255,255,255,0.06)"          : "rgba(0,0,0,0.05)";
+  const ddIconBorder = dark ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(0,0,0,0.1)";
+
   // ── State ────────────────────────────────────────────────────
   const [searchQuery,       setSearchQuery]       = useState("");
-  const [searchOpen,        setSearchOpen]        = useState(false);
   const [mobileSearchOpen,  setMobileSearchOpen]  = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
-
-  const searchRef = useRef(null);
 
   useEffect(() => {
     if (!userId) return;
@@ -74,20 +73,9 @@ export default function TopBar({
     return () => document.removeEventListener('click', close);
   }, [showNotifDropdown]);
 
-  // ── Close search dropdown when clicking outside ───────────────
-  useEffect(() => {
-    const handler = (e) => {
-      if (searchRef.current && !searchRef.current.contains(e.target)) {
-        setSearchOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
   return (
     <header
-      className={`fixed top-0 left-0 lg:left-64 right-0 z-30 backdrop-blur-xl border-b ${tc.divider} bg-black/40 h-16`}
+      className={`fixed top-0 left-0 lg:left-64 right-0 z-30 backdrop-blur-xl border-b ${tc.divider} ${tc.bar} h-16`}
     >
       <div className="flex items-center justify-between h-full px-4 md:px-6 gap-4">
 
@@ -105,7 +93,7 @@ export default function TopBar({
         </div>
 
         {/* ── Desktop: Search bar ───────────────────────────── */}
-        <div ref={searchRef} className="flex-1 max-w-2xl relative hidden md:block">
+        <div className="flex-1 max-w-2xl relative hidden md:block">
           <div
             className={`flex items-center gap-2 px-4 py-2 rounded-full border transition-all focus-within:ring-2 focus-within:ring-orange-500/30 ${tc.card}`}
           >
@@ -113,43 +101,24 @@ export default function TopBar({
             <input
               type="text"
               value={searchQuery}
-              onChange={(e) => { setSearchQuery(e.target.value); setSearchOpen(true); }}
-              onFocus={() => setSearchOpen(true)}
-              placeholder="Search bikes, riders, routes…"
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && searchQuery.trim()) {
+                  navigate(`/riders?q=${encodeURIComponent(searchQuery.trim())}`);
+                }
+              }}
+              placeholder="Search riders… (press Enter)"
               className={`flex-1 bg-transparent outline-none text-sm ${tc.text}`}
             />
             {searchQuery && (
               <button
-                onClick={() => { setSearchQuery(""); setSearchOpen(false); }}
+                onClick={() => setSearchQuery("")}
                 className={`text-xs ${tc.sub} hover:opacity-70`}
               >
                 <i className="fa fa-times" />
               </button>
             )}
           </div>
-
-          {/* Search dropdown — shows category suggestions */}
-          {searchOpen && searchQuery && (
-            <div
-              className={`absolute top-full mt-2 w-full rounded-xl border backdrop-blur-2xl shadow-2xl z-50 overflow-hidden ${tc.card}`}
-            >
-              {SEARCH_CATEGORIES.map((item, i) => (
-                <button
-                  key={i}
-                  onClick={() => { navigate("/search"); setSearchOpen(false); }}
-                  className="w-full flex items-center gap-3 px-4 py-3 text-left transition-all hover:bg-white/10"
-                >
-                  <i className={`fa ${item.icon} w-4 text-center ${tc.sub}`} />
-                  <span className="text-sm">
-                    <span className={tc.sub}>Search</span>{" "}
-                    &ldquo;{searchQuery}&rdquo;{" "}
-                    <span className={tc.sub}>in</span>{" "}
-                    <strong>{item.type}</strong>
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
         </div>
 
         {/* ── Right: action icons ───────────────────────────── */}
@@ -158,7 +127,7 @@ export default function TopBar({
           {/* Mobile search button */}
           <button
             onClick={() => setMobileSearchOpen(!mobileSearchOpen)}
-            className={`md:hidden w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110 ${tc.record} text-white`}
+            className={`md:hidden w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110 ${tc.record}`}
           >
             <i className="fa fa-search text-sm" />
           </button>
@@ -168,7 +137,7 @@ export default function TopBar({
             <button
               onClick={startVoice}
               title='Voice commands: "dark", "light", "start", "find"'
-              className={`relative w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110 text-white ${
+              className={`relative w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110 ${
                 voiceMode ? "bg-red-500 animate-pulse" : tc.record
               }`}
             >
@@ -186,9 +155,9 @@ export default function TopBar({
               title="Notifications"
               style={{
                 width: "38px", height: "38px", borderRadius: "12px",
-                background: showNotifDropdown ? "rgba(249,115,22,0.15)" : "rgba(255,255,255,0.06)",
-                border: showNotifDropdown ? "1px solid rgba(249,115,22,0.3)" : "1px solid rgba(255,255,255,0.08)",
-                color: showNotifDropdown ? "#f97316" : "rgba(255,255,255,0.7)",
+                background: showNotifDropdown ? "rgba(249,115,22,0.15)" : ddIconBg,
+                border: showNotifDropdown ? "1px solid rgba(249,115,22,0.3)" : ddIconBorder,
+                color: showNotifDropdown ? "#f97316" : ddText,
                 cursor: "pointer",
                 display: "flex", alignItems: "center", justifyContent: "center",
                 position: "relative", fontSize: "15px",
@@ -203,7 +172,7 @@ export default function TopBar({
                   background: "linear-gradient(135deg, #ef4444, #dc2626)",
                   color: "white", fontSize: "10px", fontWeight: 900,
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  border: "2px solid rgba(15,15,26,0.95)",
+                  border: dark ? "2px solid rgba(15,15,26,0.95)" : "2px solid rgba(255,255,255,0.95)",
                   boxShadow: "0 2px 8px rgba(239,68,68,0.4)",
                 }}>
                   {unreadCount > 9 ? "9+" : unreadCount}
@@ -216,9 +185,9 @@ export default function TopBar({
               <div style={{
                 position: "absolute", top: "46px", right: 0,
                 width: "320px", maxHeight: "400px",
-                background: "rgba(15,15,26,0.97)",
+                background: ddBg,
                 backdropFilter: "blur(24px)",
-                border: "1px solid rgba(255,255,255,0.1)",
+                border: ddBorder,
                 borderRadius: "16px",
                 boxShadow: "0 8px 40px rgba(0,0,0,0.6)",
                 zIndex: 9999,
@@ -229,9 +198,9 @@ export default function TopBar({
                 <div style={{
                   display: "flex", alignItems: "center", justifyContent: "space-between",
                   padding: "14px 16px",
-                  borderBottom: "1px solid rgba(255,255,255,0.06)",
+                  borderBottom: ddBorder,
                 }}>
-                  <span style={{ fontWeight: 900, fontSize: "14px" }}>Notifications</span>
+                  <span style={{ fontWeight: 900, fontSize: "14px", color: ddText }}>Notifications</span>
                   {notifications.length > 0 && (
                     <button
                       onClick={() => {
@@ -253,7 +222,7 @@ export default function TopBar({
                 {/* Notification list */}
                 <div style={{ overflowY: "auto", flex: 1, maxHeight: "340px" }}>
                   {notifications.length === 0 ? (
-                    <div style={{ padding: "32px 16px", textAlign: "center", color: "rgba(255,255,255,0.3)", fontSize: "13px" }}>
+                    <div style={{ padding: "32px 16px", textAlign: "center", color: ddSub, fontSize: "13px" }}>
                       <i className="fa fa-bell-slash" style={{ fontSize: "24px", marginBottom: "8px", display: "block" }} />
                       No notifications yet
                     </div>
@@ -277,12 +246,12 @@ export default function TopBar({
                         }}
                         style={{
                           padding: "12px 16px",
-                          borderBottom: "1px solid rgba(255,255,255,0.04)",
+                          borderBottom: ddBorder,
                           cursor: n.rideId ? "pointer" : "default",
                           background: n.isRead ? "transparent" : "rgba(139,92,246,0.06)",
                           transition: "background 0.2s",
                         }}
-                        onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.04)"}
+                        onMouseEnter={e => e.currentTarget.style.background = ddHover}
                         onMouseLeave={e => e.currentTarget.style.background = n.isRead ? "transparent" : "rgba(139,92,246,0.06)"}
                       >
                         <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
@@ -290,8 +259,8 @@ export default function TopBar({
                             width: "32px", height: "32px", borderRadius: "10px", flexShrink: 0,
                             background: n.type === "group_ride_invite"
                               ? "linear-gradient(135deg, rgba(139,92,246,0.2), rgba(99,102,241,0.15))"
-                              : "rgba(255,255,255,0.06)",
-                            border: "1px solid rgba(255,255,255,0.1)",
+                              : ddIconBg,
+                            border: ddIconBorder,
                             display: "flex", alignItems: "center", justifyContent: "center",
                             fontSize: "13px",
                           }}>
@@ -299,10 +268,10 @@ export default function TopBar({
                           </div>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <p style={{ fontWeight: 700, fontSize: "13px", margin: "0 0 3px",
-                              color: n.isRead ? "rgba(255,255,255,0.6)" : "white" }}>
+                              color: n.isRead ? ddSub : ddText }}>
                               {n.title}
                             </p>
-                            <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.35)", margin: 0,
+                            <p style={{ fontSize: "11px", color: ddSub, margin: 0,
                               lineHeight: "1.4" }}>
                               {n.message}
                             </p>
@@ -341,17 +310,20 @@ export default function TopBar({
       {/* ── Mobile search slide-down ──────────────────────────── */}
       {mobileSearchOpen && (
         <div
-          className={`md:hidden absolute top-full left-0 right-0 p-4 border-b ${tc.divider} bg-black/95 backdrop-blur-xl`}
+          className={`md:hidden absolute top-full left-0 right-0 p-4 border-b ${tc.divider} ${tc.bar} backdrop-blur-xl`}
         >
           <div className={`flex items-center gap-2 px-4 py-2 rounded-full border ${tc.card}`}>
             <i className={`fa fa-search text-sm ${tc.sub}`} />
             <input
               type="text"
-              placeholder="Search bikes, riders, routes…"
+              placeholder="Search riders… (press Enter)"
               className={`flex-1 bg-transparent outline-none text-sm ${tc.text}`}
               autoFocus
               onKeyDown={(e) => {
-                if (e.key === "Enter") { navigate("/search"); setMobileSearchOpen(false); }
+                if (e.key === "Enter" && e.target.value.trim()) {
+                  navigate(`/riders?q=${encodeURIComponent(e.target.value.trim())}`);
+                  setMobileSearchOpen(false);
+                }
               }}
             />
           </div>

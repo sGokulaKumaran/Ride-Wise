@@ -29,7 +29,7 @@
 //   Mobile:  [TopBar] [Content] [Bottom Nav with FAB]
 // ============================================================
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth }          from "../context/AuthContext";
 import MobileNav            from "./components/layout/MobileNav";
@@ -44,6 +44,7 @@ import RideHistoryPanel     from "./components/ride/RideHistoryPanel";
 
 import { getUserRides, endRide, deleteRide, getRide } from "../services/rideApi";
 import { formatDistance, formatDuration }    from "../services/routingApi";
+import { toast } from "react-toastify";
 
 export default function Home() {
   const { user }                = useAuth();
@@ -136,9 +137,10 @@ export default function Home() {
                      : "fa-moon";
 
   // ── LOAD ALL RIDES ON MOUNT ──────────────────────────────────
-  const refreshRides = useCallback(async () => {
+  // silent=true → background refresh (no loading-skeleton flash)
+  const refreshRides = useCallback(async (silent = false) => {
     if (!user?.id) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const all = await getUserRides(user.id);
       setRides(all); // newest first (backend orders by createdAt desc)
@@ -157,17 +159,24 @@ export default function Home() {
 
   // ── DERIVED: separate active vs. past rides for the home page ──
   const liveRides = rides.filter(r => r.status === "active");
-  const pastRides = rides.filter(r => r.status !== "active");
 
   // ── STATS ────────────────────────────────────────────────────
   // Computed from actual ride history instead of hardcoded values
   const totalKm        = rides.reduce((sum, r) => sum + (r.distanceMeters || 0) / 1000, 0);
   const completedCount = rides.filter(r => r.status === "completed").length;
 
+  // Rides created in the current calendar month
+  const now = new Date();
+  const monthRides = rides.filter((r) => {
+    const d = new Date(r.createdAt);
+    return !isNaN(d) && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  }).length;
+
   const stats = [
     { value: String(rides.length),                   label: "Total Rides",    icon: "fa-motorcycle", color: "#f97316" },
     { value: totalKm > 0 ? `${totalKm.toFixed(0)} km` : "0 km", label: "Distance Ridden", icon: "fa-route",      color: "#60a5fa" },
     { value: String(completedCount),                  label: "Completed",      icon: "fa-flag-checkered", color: "#34d399" },
+    { value: String(monthRides),                      label: "This Month",     icon: "fa-calendar-check", color: "#a78bfa" },
   ];
 
   // ── EVENT HANDLERS ───────────────────────────────────────────
@@ -193,10 +202,12 @@ export default function Home() {
     setMapRide(null);
     try {
       await endRide(rideId, user?.id);  // PATCH status → "completed" in backend (admin identity included)
+      toast.success("Ride ended — great ride! 🏁");
     } catch(e) {
       console.error("End ride failed:", e);
+      toast.error("Couldn't end the ride. Please try again.");
     } finally {
-      refreshRides();             // refresh history list to show completed status
+      refreshRides(true);         // silent refresh — no skeleton flash
     }
   };
 
@@ -217,8 +228,15 @@ export default function Home() {
 
   // Called from RideHistoryPanel to permanently delete a ride
   const handleDeleteRide = async (rideId) => {
-    await deleteRide(rideId);
-    refreshRides();
+    try {
+      await deleteRide(rideId);
+      toast.success("Ride deleted");
+    } catch (e) {
+      console.error("Delete ride failed:", e);
+      toast.error("Couldn't delete the ride. Please try again.");
+    } finally {
+      refreshRides(true);
+    }
   };
 
   // ── STATIC TIPS ──────────────────────────────────────────────
@@ -360,7 +378,7 @@ export default function Home() {
               STATS CARDS
           ═══════════════════════════════════════════════ */}
           <div
-            className="grid grid-cols-3 gap-3 mb-8"
+            className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8"
             style={{ animation: "slideUp 0.8s ease-out both" }}
           >
             {stats.map((s, i) => (

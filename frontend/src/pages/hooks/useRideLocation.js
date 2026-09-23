@@ -24,11 +24,17 @@ export function useRideLocation(active = true) {
 
     setIsWatching(true);
     
-    // Start watching; the cleanup function stops it
-    const stop = watchLocation((loc) => {
-      setLocation(loc);
-      setError(null);
-    });
+    // Start watching; the cleanup function stops it.
+    // onError is now wired — previously GPS failures (denied permission,
+    // timeout, unavailable) never surfaced because the callback was
+    // never passed, so `error` stayed null forever.
+    const stop = watchLocation(
+      (loc) => {
+        setLocation(loc);
+        setError(null);
+      },
+      (err) => setError(err?.message || "Unable to get your location")
+    );
 
     // Cleanup when component unmounts or active changes to false
     return () => {

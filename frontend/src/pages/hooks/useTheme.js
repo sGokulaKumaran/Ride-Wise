@@ -16,6 +16,7 @@ export const themes = {
     divider: "border-white/10",
     badge: "bg-gradient-to-r from-orange-500 to-pink-500 text-white",
     cardHover: "hover:bg-white/10",
+    bar: "bg-black/60",                          // TopBar / Sidebar / MobileNav surface
   },
   light: {
     bg: "bg-gray-50",
@@ -31,6 +32,7 @@ export const themes = {
     divider: "border-gray-200",
     badge: "bg-gradient-to-r from-orange-500 to-pink-500 text-white",
     cardHover: "hover:bg-gray-100",
+    bar: "bg-white/80",
   },
   warm: {
     bg: "bg-gradient-to-br from-orange-50 via-rose-50 to-amber-50",
@@ -46,6 +48,7 @@ export const themes = {
     divider: "border-orange-200",
     badge: "bg-gradient-to-r from-orange-500 to-rose-500 text-white",
     cardHover: "hover:bg-orange-50",
+    bar: "bg-white/60",
   },
   midnight: {
     bg: "bg-gradient-to-br from-indigo-950 via-purple-950 to-black",
@@ -61,6 +64,7 @@ export const themes = {
     divider: "border-purple-500/20",
     badge: "bg-gradient-to-r from-purple-500 to-pink-500 text-white",
     cardHover: "hover:bg-purple-500/10",
+    bar: "bg-black/50",
   },
 };
 
