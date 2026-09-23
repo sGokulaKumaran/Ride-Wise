@@ -6,6 +6,7 @@ import vehicle.ridewise.entity.User;
 import vehicle.ridewise.repository.ConnectionRepository;
 import vehicle.ridewise.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
@@ -20,9 +21,9 @@ public class RidersService {
     @Autowired
     private ConnectionRepository connectionRepository;
 
-    // Search riders by username/email
+    // Search riders by username/email (top 20 — see UserRepository note)
     public List<UserResponse> searchRiders(String query, Long currentUserId) {
-        List<User> users = userRepository.searchUsers(query, currentUserId);
+        List<User> users = userRepository.searchUsers(query, currentUserId, PageRequest.of(0, 20));
         return users.stream().map(this::toResponse).collect(Collectors.toList());
     }
 
@@ -93,7 +94,8 @@ public class RidersService {
         return new UserResponse(
                 user.getId(), user.getEmail(), user.getUsername(),
                 user.getMobile(), user.getAddress(),
-                user.getLat(), user.getLng(), user.getCreatedAt()
+                user.getLat(), user.getLng(),
+                user.getRole(), user.getEnabled(), user.getCreatedAt()
         );
     }
 }

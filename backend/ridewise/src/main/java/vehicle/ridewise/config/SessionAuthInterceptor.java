@@ -16,6 +16,7 @@ import java.io.IOException;
 public class SessionAuthInterceptor implements HandlerInterceptor {
 
     public static final String SESSION_USER_ID = "RIDEWISE_USER_ID";
+    public static final String SESSION_USER_ROLE = "RIDEWISE_USER_ROLE";
     public static final String REQUEST_USER_ID = "authenticatedUserId";
 
     @Override
@@ -58,5 +59,21 @@ public class SessionAuthInterceptor implements HandlerInterceptor {
             return ((Number) sessionValue).longValue();
         }
         throw new ApiException(HttpStatus.UNAUTHORIZED, "Authentication required");
+    }
+
+    /**
+     * Asserts that the current session user has the ADMIN role.
+     * Call this as the first line in any admin-only controller method.
+     * Throws 403 Forbidden if the user is not an admin.
+     */
+    public static void requireAdminRole(HttpServletRequest request) {
+        // First ensure the user is authenticated
+        requireUserId(request);
+
+        HttpSession session = request.getSession(false);
+        Object roleValue = session != null ? session.getAttribute(SESSION_USER_ROLE) : null;
+        if (!"ADMIN".equals(roleValue)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "Admin access required");
+        }
     }
 }

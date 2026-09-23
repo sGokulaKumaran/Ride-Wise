@@ -8,7 +8,7 @@
 //   - Re-fetches when user.id changes
 // ============================================================
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useTheme } from "./hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
 import Sidebar from "./components/layout/Sidebar";
@@ -93,31 +93,39 @@ export default function Riders() {
   const { theme, setTheme, tc } = useTheme(user?.id);
 
   // Deep link: /riders?q=<query> (from TopBar search) → opens the Add
-  // Rider view with the query prefilled
+  // Rider view with the query prefilled.
+  // States are initialised empty; the effect below owns the sync so the
+  // panel always matches the URL — on first mount AND on back/forward
+  // navigation (a plain initial-useState value goes stale after mount).
   const [searchParams] = useSearchParams();
-  const initialQuery = searchParams.get("q") || "";
-
-  // React to ?q= changes while already on this page (initial state above
-  // only covers the first mount)
-  useEffect(() => {
-    const q = searchParams.get("q");
-    if (q) { setView("add"); setSearchQuery(q); }
-  }, [searchParams]);
 
   // view: "all" | "add" | "remove" | "near"
-  const [view, setView] = useState(initialQuery ? "add" : "all");
+  const [view, setView] = useState("all");
 
   const [connections,   setConnections]   = useState([]);
   const [nearRiders,    setNearRiders]    = useState([]);
-  const [searchQuery,   setSearchQuery]   = useState(initialQuery);
+  const [searchQuery,   setSearchQuery]   = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searching,     setSearching]     = useState(false);
   const [loading,       setLoading] = useState(false);
 
+  // React to ?q= on mount and on every change while on this page
+  useEffect(() => {
+    const q = (searchParams.get("q") || "").trim();
+    setView(q ? "add" : (v) => v); // open Add view for a query; leave untouched when cleared
+    setSearchQuery(q);
+  }, [searchParams]);
+
   const currentUserId = user?.id;
 
-  // Derive a Set of connected IDs from the connections list for O(1) lookup
-  const connectedIds = new Set(connections.map((c) => c.id));
+  // Derive a Set of connected IDs from the connections list for O(1) lookup.
+  // Memoised so the Set keeps a stable identity across renders — inline
+  // `new Set(...)` would be a fresh object every render and force every
+  // RiderCard using `connectedIds.has(...)` to re-render needlessly.
+  const connectedIds = useMemo(
+    () => new Set(connections.map((c) => c.id)),
+    [connections]
+  );
 
   // ── Reload connections ──
   const reloadConnections = async () => {
@@ -151,26 +159,27 @@ export default function Riders() {
     }
   };
 
-  // ── Debounced search (only in "add" view) ──
+  // Guards against out-of-order responses: an older (slower) request must never overwrite newer results.
   useEffect(() => {
     if (view !== "add" || !currentUserId) return;
     if (searchQuery.trim().length === 0) {
       setSearchResults([]);
       return;
     }
+    let cancelled = false;
     const t = setTimeout(async () => {
       setSearching(true);
       try {
         const results = await searchRiders(searchQuery, currentUserId);
-        setSearchResults(results);
+        if (!cancelled) setSearchResults(results);
       } catch (e) {
         console.error("Search failed:", e);
- setSearchResults([]);
+        if (!cancelled) setSearchResults([]);
       } finally {
-        setSearching(false);
+        if (!cancelled) setSearching(false);
       }
     }, 250);
-    return () => clearTimeout(t);
+    return () => { cancelled = true; clearTimeout(t); };
   }, [searchQuery, view, currentUserId]);
 
   // ── Actions (toasts via react-toastify, consistent with Home/Account) ──

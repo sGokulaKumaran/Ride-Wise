@@ -21,7 +21,7 @@
 //   tc            — theme classes from useTheme()
 // ============================================================
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { geocode, getRoute, formatDistance, formatDuration } from "../../../services/routingApi";
 import { getCurrentLocation }                                  from "../../../services/locationService";
 import { createRide }                                          from "../../../services/rideApi";
@@ -55,13 +55,10 @@ export default function RideSetupFlow({ rideType, userId, participantIds = [], o
   // ---- FROM location state ----
   const [fromText,        setFromText]        = useState("");   // what the user typed
   const [fromCoords,      setFromCoords]      = useState(null); // { lat, lng, name }
-  const [fromSuggestions, setFromSuggestions] = useState([]);  // filtered POPULAR_PLACES
-  const [usingGps,        setUsingGps]        = useState(false); // true = GPS used for from
 
   // ---- DESTINATION state ----
   const [destText,        setDestText]        = useState("");
   const [destCoords,      setDestCoords]      = useState(null);
-  const [destSuggestions, setDestSuggestions] = useState([]);
 
   // ---- Route preview state ----
   const [routeData,  setRouteData]  = useState(null);   // { coordinates, distanceMeters, durationSeconds }
@@ -83,11 +80,9 @@ export default function RideSetupFlow({ rideType, userId, participantIds = [], o
       const loc = await getCurrentLocation(); // prompts browser for GPS permission
       setFromCoords({ lat: loc.lat, lng: loc.lng, name: "📍 My Current Location" });
       setFromText("📍 My Current Location");
-      setUsingGps(true);
-      setFromSuggestions([]);
       // Automatically advance to destination step
       setStep(STEP.DESTINATION);
-    } catch (e) {
+    } catch {
       setError("Could not get your location. Please allow location access or type an address.");
     } finally {
       setLoading(false);
@@ -95,25 +90,13 @@ export default function RideSetupFlow({ rideType, userId, participantIds = [], o
   };
 
   // ====================================================================
-  // FROM — text input handler (filters suggestions)
+  // (Suggestion filtering now lives inside LocationSearchInput)
   // ====================================================================
-  const handleFromType = (text) => {
-    setFromText(text);
-    setUsingGps(false);
-    setFromCoords(null); // clear previous geocoded result when user retypes
-    // Filter popular places that contain the typed text (case-insensitive)
-    setFromSuggestions(
-      text.trim()
-        ? POPULAR_PLACES.filter(p => p.toLowerCase().includes(text.toLowerCase()))
-        : []
-    );
-  };
 
   // User picks a FROM suggestion chip
   const pickFrom = (place) => {
     setFromText(place);
     setFromCoords(null); // will be geocoded when user advances
-    setFromSuggestions([]);
   };
 
   // ====================================================================
@@ -139,22 +122,12 @@ export default function RideSetupFlow({ rideType, userId, participantIds = [], o
   };
 
   // ====================================================================
-  // DESTINATION — text input handler
+  // (Destination autocomplete now lives inside LocationSearchInput)
   // ====================================================================
-  const handleDestType = (text) => {
-    setDestText(text);
-    setDestCoords(null);
-    setDestSuggestions(
-      text.trim()
-        ? POPULAR_PLACES.filter(p => p.toLowerCase().includes(text.toLowerCase()))
-        : []
-    );
-  };
 
   const pickDest = (place) => {
     setDestText(place);
     setDestCoords(null);
-    setDestSuggestions([]);
   };
 
   // ====================================================================
@@ -331,7 +304,6 @@ export default function RideSetupFlow({ rideType, userId, participantIds = [], o
             iconColor="#22c55e"
             placeholder="Search any city, area, landmark..."
             value={fromText}
-            onChange={(text) => { setFromText(text); setUsingGps(false); setFromCoords(null); }}
             onSelect={(result) => {
               setFromText(result.label);
               setFromCoords({ lat: result.lat, lng: result.lng, name: result.label });

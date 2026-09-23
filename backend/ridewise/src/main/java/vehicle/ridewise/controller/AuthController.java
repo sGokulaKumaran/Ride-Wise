@@ -25,14 +25,14 @@ public class AuthController {
     @PostMapping("/signup")
     public ResponseEntity<UserResponse> signup(@RequestBody AuthRequest request, HttpServletRequest httpRequest) {
         UserResponse response = authService.signup(request);
-        startFreshSession(httpRequest, response.getId());
+        startFreshSession(httpRequest, response.getId(), response.getRole());
         return ResponseEntity.ok(response);
     }
 
     @PostMapping("/login")
     public ResponseEntity<UserResponse> login(@RequestBody AuthRequest request, HttpServletRequest httpRequest) {
         UserResponse response = authService.login(request);
-        startFreshSession(httpRequest, response.getId());
+        startFreshSession(httpRequest, response.getId(), response.getRole());
         return ResponseEntity.ok(response);
     }
 
@@ -61,10 +61,11 @@ public class AuthController {
         return ResponseEntity.ok(authService.updateProfile(currentUserId, request));
     }
 
-    private void startFreshSession(HttpServletRequest request, Long userId) {
+    private void startFreshSession(HttpServletRequest request, Long userId, String role) {
         HttpSession oldSession = request.getSession(false);
         if (oldSession != null) oldSession.invalidate();
         HttpSession session = request.getSession(true);
         session.setAttribute(SessionAuthInterceptor.SESSION_USER_ID, userId);
+        session.setAttribute(SessionAuthInterceptor.SESSION_USER_ROLE, role != null ? role : "USER");
     }
 }

@@ -29,7 +29,7 @@
 //   Mobile:  [TopBar] [Content] [Bottom Nav with FAB]
 // ============================================================
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef, memo, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth }          from "../context/AuthContext";
 import MobileNav            from "./components/layout/MobileNav";
@@ -108,23 +108,18 @@ export default function Home() {
     setLoading(true);
   }, [user?.id]);
 
-  // ── MOUSE GLOW ───────────────────────────────────────────────
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
-  useEffect(() => {
-    const handler = e => setMousePos({ x: e.clientX, y: e.clientY });
-    window.addEventListener("mousemove", handler);
-    return () => window.removeEventListener("mousemove", handler);
-  }, []);
-
   // ── VOICE COMMANDS ───────────────────────────────────────────
-  const commandsMap = {
+  // Memoised so the map object keeps a stable identity across renders —
+  // otherwise useVoice's startVoice callback is recreated on every render
+  // (its [commands] dep changes identity each time).
+  const commandsMap = useMemo(() => ({
     start:    () => setShowStart(true),
     history:  () => setShowHistory(true),
     dark:     () => setTheme("dark"),
     light:    () => setTheme("light"),
     warm:     () => setTheme("warm"),
     midnight: () => setTheme("midnight"),
-  };
+  }), [setTheme]);
   const { voiceMode, startVoice } = useVoice(commandsMap);
 
   // ── TIME GREETING ────────────────────────────────────────────
@@ -261,13 +256,9 @@ export default function Home() {
     <div
       className={`relative min-h-screen w-full overflow-x-hidden ${tc.bg} ${tc.text}`}
     >
-      {/* ── Orange radial mouse glow ─────────────────────────── */}
-      <div
-        className="pointer-events-none fixed inset-0 z-0 transition-all duration-500"
-        style={{
-          background: `radial-gradient(circle 600px at ${mousePos.x}px ${mousePos.y}px, rgba(249,115,22,0.08), transparent 60%)`,
-        }}
-      />
+
+      {/* Orange radial mouse glow (self-contained layer: zero Home re-renders) */}
+      <HomeGlow />
 
       {/* ── Layout shell ─────────────────────────────────────── */}
       <Sidebar tc={tc} />
@@ -500,7 +491,6 @@ export default function Home() {
       <StartRideModal
         open={showStart}
         onClose={() => setShowStart(false)}
-        tc={tc}
         onRideCreated={handleRideCreated}
         onOpenHistory={() => { setShowStart(false); setShowHistory(true); }}
       />
@@ -522,7 +512,6 @@ export default function Home() {
           onOpenRide={handleOpenRide}
           onDeleteRide={handleDeleteRide}
           onClose={() => setShowHistory(false)}
-          tc={tc}
         />
       )}
 
@@ -664,3 +653,40 @@ function RideCard({ ride, onOpen, tc, isLive }) {
     </div>
   );
 }
+
+
+// ============================================================
+// HomeGlow - orange radial mouse glow WITHOUT re-rendering Home.
+// Owns its own mousemove listener, paints via ref + rAF (same pattern
+// as the Login page glow layer).
+// ============================================================
+const HomeGlow = memo(function HomeGlow() {
+  const glowRef = useRef(null);
+  useEffect(() => {
+    const el = glowRef.current;
+    if (!el) return;
+    let rafId = 0;
+    let pending = null;
+    const paint = () => {
+      rafId = 0;
+      if (!pending) return;
+      el.style.background = 'radial-gradient(circle 600px at ' + pending.x + 'px ' + pending.y + 'px, rgba(249,115,22,0.08), transparent 60%)';
+      pending = null;
+    };
+    const onMove = (e) => {
+      pending = { x: e.clientX, y: e.clientY };
+      if (!rafId) rafId = requestAnimationFrame(paint);
+    };
+    window.addEventListener('mousemove', onMove, { passive: true });
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, []);
+  return (
+    <div
+      ref={glowRef}
+      className='pointer-events-none fixed inset-0 z-0 transition-all duration-500'
+    />
+  );
+});

@@ -471,7 +471,6 @@ export default function RideMap({ ride, myLocation, isLive = false, participants
   const [activeTile,  setActiveTile] = useState(0);
 
   const from = ride?.fromLat        ? { lat: ride.fromLat,        lng: ride.fromLng }        : null;
-  const to   = ride?.destinationLat ? { lat: ride.destinationLat, lng: ride.destinationLng } : null;
   const center = from ? [from.lat, from.lng] : [13.0827, 80.2707];
 
   const switchTile = (i) => {

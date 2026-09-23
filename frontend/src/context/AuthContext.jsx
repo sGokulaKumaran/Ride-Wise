@@ -39,9 +39,9 @@ async function handleResponse(res) {
     const body = await res.json();
     if (body?.message) msg = body.message;
     else if (typeof body === "string") msg = body;
-  } catch (_) {
-    // body wasn't JSON — keep the generic message
-  }
+    } catch (_) {
+      // body wasn't JSON — keep the generic message
+    }
   throw new Error(msg);
 }
 
@@ -196,9 +196,12 @@ export function AuthProvider({ children }) {
     // first its check the username if not then its check email
     //even that also not then its use R default value
 
+  // ── COMPUTED: admin role check ──
+  const isAdmin = user?.role === "ADMIN";
+
   return (
     <AuthContext.Provider value={{
-      user, isAuthenticated, isFullyOnboarded, loading, avatarLetter,
+      user, isAuthenticated, isFullyOnboarded, loading, avatarLetter, isAdmin,
       login, signup, updateProfile, logout,
     }}>
       {children}

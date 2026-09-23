@@ -32,8 +32,16 @@ import Home from "./pages/Home";         // Protected
 import Settings from "./pages/Settings"; // Protected
 import Riders from "./pages/Riders";     // Protected (NEW)
 
+import AdminDashboard from "./pages/admin/AdminDashboard";  // Admin
+import AdminUsers from "./pages/admin/AdminUsers";          // Admin
+import AdminRides from "./pages/admin/AdminRides";          // Admin
+
 import ProtectedRoute from "./pages/components/shared/ProtectedRoute";
 // The "security guard" — checks auth before allowing access
+import AdminProtectedRoute from "./pages/components/shared/AdminProtectedRoute";
+// Admin-only route guard — checks auth + admin role
+import ErrorBoundary from "./pages/components/shared/ErrorBoundary";
+// Catches render crashes — one bad branch can no longer blank the whole app
 
 export default function App() {
   return (
@@ -47,10 +55,17 @@ export default function App() {
           <Route path="/onboarding" element={<Onboarding />} />
           
           {/* ─── PROTECTED ROUTES (login + onboarding required) ─── */}
-          <Route path="/home"     element={<ProtectedRoute><Home /></ProtectedRoute>} />
-          <Route path="/riders"   element={<ProtectedRoute><Riders /></ProtectedRoute>} />
-          <Route path="/account"  element={<ProtectedRoute><Account /></ProtectedRoute>} />
-          <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+          {/* Each page gets its own ErrorBoundary so a render crash in one
+              page shows a recovery panel instead of blanking the whole app */}
+          <Route path="/home"     element={<ProtectedRoute><ErrorBoundary><Home /></ErrorBoundary></ProtectedRoute>} />
+          <Route path="/riders"   element={<ProtectedRoute><ErrorBoundary><Riders /></ErrorBoundary></ProtectedRoute>} />
+          <Route path="/account"  element={<ProtectedRoute><ErrorBoundary><Account /></ErrorBoundary></ProtectedRoute>} />
+          <Route path="/settings" element={<ProtectedRoute><ErrorBoundary><Settings /></ErrorBoundary></ProtectedRoute>} />
+          
+          {/* ─── ADMIN ROUTES (login + onboarding + admin role required) ─── */}
+          <Route path="/admin"       element={<AdminProtectedRoute><ErrorBoundary><AdminDashboard /></ErrorBoundary></AdminProtectedRoute>} />
+          <Route path="/admin/users" element={<AdminProtectedRoute><ErrorBoundary><AdminUsers /></ErrorBoundary></AdminProtectedRoute>} />
+          <Route path="/admin/rides" element={<AdminProtectedRoute><ErrorBoundary><AdminRides /></ErrorBoundary></AdminProtectedRoute>} />
           
           {/* ─── REDIRECTS (old URLs → new) ─── */}
           <Route path="/saved"   element={<Navigate to="/home" replace />} />

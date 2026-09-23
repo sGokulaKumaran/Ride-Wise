@@ -11,10 +11,12 @@
 // ============================================================
 
 import { useNavigate, useLocation } from "react-router-dom";
+import { useAuth } from "../../../context/AuthContext";
 
 export default function MobileNav({ tc, onStartRide }) {
   const navigate  = useNavigate();
   const location  = useLocation();
+  const { isAdmin } = useAuth();
 
   return (
     <nav
@@ -32,6 +34,19 @@ export default function MobileNav({ tc, onStartRide }) {
           <i className="fa fa-home text-xl" />
           <span className="text-[10px] font-semibold">Home</span>
         </button>
+
+        {/* ── Admin (only for admin users) ──────────────────── */}
+        {isAdmin && (
+          <button
+            onClick={() => navigate("/admin")}
+            className={`flex flex-col items-center justify-center gap-1 flex-1 h-full transition-all hover:scale-110 ${
+              location.pathname.startsWith("/admin") ? "text-orange-400" : tc.text
+            }`}
+          >
+            <i className="fa fa-shield-alt text-xl" />
+            <span className="text-[10px] font-semibold">Admin</span>
+          </button>
+        )}
 
         {/* ── Center: Start Ride FAB ───────────────────────────── */}
         {/* Elevated, gradient, the hero action on mobile */}

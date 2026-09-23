@@ -2,11 +2,12 @@
 // 🎤 useVoice HOOK — Voice command recognition
 // ============================================================
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 
 export function useVoice(commands = {}) {
   const [voiceMode, setVoiceMode] = useState(false);
-  const [recognition, setRecognition] = useState(null);
+  const recognitionRef = useRef(null); // current recognition instance
+  const timerRef = useRef(0);          // auto-stop timer id
 
   const startVoice = useCallback(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -35,25 +36,26 @@ export function useVoice(commands = {}) {
     rec.onend = () => setVoiceMode(false);
     rec.onerror = () => setVoiceMode(false);
 
+    // Stop any previous session before starting a new one
+    try { recognitionRef.current?.stop(); } catch { /* already stopped */ }
+    clearTimeout(timerRef.current);
+    recognitionRef.current = rec;
     rec.start();
-    setRecognition(rec);
     setVoiceMode(true);
 
-    // Auto-stop after 6 seconds
-    setTimeout(() => {
-      try { rec.stop(); } catch (e) { /* already stopped */ }
+    // Auto-stop after 6 seconds (timer tracked so unmount can cancel it)
+    timerRef.current = setTimeout(() => {
+      try { rec.stop(); } catch { /* already stopped */ }
       setVoiceMode(false);
     }, 6000);
   }, [commands]);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (recognition) {
-        try { recognition.stop(); } catch (_) {}
-      }
-    };
-  }, [recognition]);
+  // Cleanup on unmount: stop the mic + cancel the timer so neither can
+  // fire setState (or keep recording) after the page is gone.
+  useEffect(() => () => {
+    try { recognitionRef.current?.stop(); } catch { /* already stopped */ }
+    clearTimeout(timerRef.current);
+  }, []);
 
   return {
     voiceMode,

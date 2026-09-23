@@ -54,7 +54,14 @@ public class AuthService {
             // Same message for unknown email and wrong password — prevents account enumeration
             throw new ApiException(org.springframework.http.HttpStatus.UNAUTHORIZED, "Invalid email or password");
         }
-        return toResponse(userOpt.get());
+
+        User user = userOpt.get();
+        // Check if account is suspended
+        if (user.getEnabled() != null && !user.getEnabled()) {
+            throw ApiException.forbidden("Account is suspended. Please contact an administrator.");
+        }
+
+        return toResponse(user);
     }
 
     public UserResponse getCurrentUser(Long userId) {
@@ -101,7 +108,8 @@ public class AuthService {
     private UserResponse toResponse(User user) {
         return new UserResponse(
                 user.getId(), user.getEmail(), user.getUsername(), user.getMobile(),
-                user.getAddress(), user.getLat(), user.getLng(), user.getCreatedAt()
+                user.getAddress(), user.getLat(), user.getLng(),
+                user.getRole(), user.getEnabled(), user.getCreatedAt()
         );
     }
 }

@@ -28,7 +28,7 @@ const STATUS_STYLE = {
   cancelled: { bg: "#ef444422", border: "#ef444444", text: "#ef4444" },
 };
 
-export default function RideHistoryPanel({ rides, onOpenRide, onDeleteRide, onClose, tc }) {
+export default function RideHistoryPanel({ rides, onOpenRide, onDeleteRide, onClose }) {
   // Track which card's map is expanded
   const [expandedId, setExpandedId]   = useState(null);
   // Track which card has a delete confirmation pending

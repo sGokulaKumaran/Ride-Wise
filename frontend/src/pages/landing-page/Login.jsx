@@ -21,7 +21,7 @@
 //   with API calls when your backend is ready. This file doesn't change.
 // ============================================================
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useState, useEffect, useRef, useCallback, memo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 
@@ -30,10 +30,8 @@ export default function LoginPage() {
   const { login, signup, isAuthenticated, isFullyOnboarded } = useAuth();
 
   // ── Refs for DOM interaction ─────────────────────────────────
-  const containerRef = useRef(null);   // for mouse glow offset
-  const cardRef      = useRef(null);   // for 3D tilt calculation
+  const cardRef      = useRef(null);   // passed to TiltCard for the 3D-tilt node
   const dropdownRef  = useRef(null);   // for closing theme dropdown on outside click
-  const trailRef     = useRef([]);     // cursor trail positions (not in state — no re-render needed)
 
   // ── UI state ─────────────────────────────────────────────────
   // Theme: restore the last choice. Uses the same "ridewise-theme" key
@@ -51,10 +49,19 @@ export default function LoginPage() {
     setThemeState(t);
     try { localStorage.setItem("ridewise-theme", t); } catch { /* ignore */ }
   }, []);
+  const [ripples,    setRipples]    = useState([]);   // submit-button ripple spans
   const [isLogin,    setIsLogin]    = useState(true);   // true = Login tab, false = Sign Up tab
-  const [mousePos,   setMousePos]   = useState({ x: 0, y: 0 });
-  const [ripples,    setRipples]    = useState([]);
-  const [tilt,       setTilt]       = useState({ x: 0, y: 0 });
+  // Particle specs are generated ONCE (stable across renders). Math.random()
+  // during render would reshuffle every dot on each keystroke/mousemove.
+  const [particles] = useState(() =>
+    [...Array(20)].map(() => ({
+      size:  Math.random() * 4 + 1,
+      top:   `${Math.random() * 100}%`,
+      left:  `${Math.random() * 100}%`,
+      dur:   Math.random() * 3 + 2,
+      delay: Math.random() * 3,
+    }))
+  );
   const [themeOpen,  setThemeOpen]  = useState(false);
   const [voiceMode,  setVoiceMode]  = useState(false);
   const [focused,    setFocused]    = useState(null);   // which input is focused
@@ -148,37 +155,8 @@ export default function LoginPage() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // ── Mouse tracking: glow position + 3D card tilt + cursor trail
-  useEffect(() => {
-    const handleMove = (e) => {
-      // Glow follows cursor inside the container
-      if (containerRef.current) {
-        const rect = containerRef.current.getBoundingClientRect();
-        setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-      }
-      // 3D tilt on the form card
-      if (cardRef.current) {
-        const r  = cardRef.current.getBoundingClientRect();
-        const cx = r.left + r.width  / 2;
-        const cy = r.top  + r.height / 2;
-        setTilt({
-          x: -((e.clientY - cy) / r.height) * 10, // rotate on X axis
-          y:  ((e.clientX - cx) / r.width)  * 10, // rotate on Y axis
-        });
-      }
-      // Cursor trail (stored in ref to avoid re-renders)
-      trailRef.current.push({ x: e.clientX, y: e.clientY, id: Date.now() });
-      if (trailRef.current.length > 12) trailRef.current.shift();
-    };
-    window.addEventListener("mousemove", handleMove);
-    return () => window.removeEventListener("mousemove", handleMove);
-  }, []);
-
-  // Clear cursor trail every 100ms (avoids stale dots)
-  useEffect(() => {
-    const t = setInterval(() => { trailRef.current = []; }, 100);
-    return () => clearInterval(t);
-  }, []);
+  // (Mouse glow + cursor trail now live in CursorGlowLayer at the bottom
+  // of this file - it owns its own listener and never re-renders this page.)
 
   // ── Password strength (0-100) for signup ─────────────────────
   useEffect(() => {
@@ -191,17 +169,27 @@ export default function LoginPage() {
   }, [password]);
 
   // ── Ripple click effect on the submit button ─────────────────
+  const rippleTimers = useRef([]);
+  useEffect(() => () => { rippleTimers.current.forEach(clearTimeout); rippleTimers.current = []; }, []);
   const createRipple = useCallback((e) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const size = Math.max(rect.width, rect.height) * 2;
-    const id   = Date.now();
+    const id   = Date.now() + Math.random(); // unique even on double-click
     const x    = e.clientX - rect.left - size / 2;
     const y    = e.clientY - rect.top  - size / 2;
-    setRipples((prev) => [...prev, { id, x, y, size }]);
-    setTimeout(() => setRipples((prev) => prev.filter((r) => r.id !== id)), 800);
+    setRipples((prev) => [...prev.slice(-5), { id, x, y, size }]); // cap: max 6 live spans
+    const t = setTimeout(() => setRipples((prev) => prev.filter((r) => r.id !== id)), 800);
+    rippleTimers.current.push(t);
   }, []);
 
-  // ── Voice control ─────────────────────────────────────────────
+  // ── Voice control (existing behaviour: 6s auto-stop) ──
+  // Cleanup added: recognition + timer are stopped on unmount so the mic
+  // can't keep running (and setState can't fire) after leaving the page.
+  const voiceRef = useRef({ rec: null, timer: 0 });
+  useEffect(() => () => {
+    try { voiceRef.current.rec?.stop(); } catch { /* already stopped */ }
+    clearTimeout(voiceRef.current.timer);
+  }, []);
   const startVoice = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { alert("Voice not supported. Try Chrome or Edge."); return; }
@@ -221,10 +209,13 @@ export default function LoginPage() {
     recognition.onend  = () => setVoiceMode(false);
     recognition.onerror = () => setVoiceMode(false);
     recognition.start();
+    voiceRef.current.rec = recognition; // tracked so unmount can stop the mic
     setVoiceMode(true);
 
-    // Auto-stop after 6 seconds
-    setTimeout(() => {
+
+    // Auto-stop after 6 seconds (timer tracked so unmount can cancel it)
+    clearTimeout(voiceRef.current.timer);
+    voiceRef.current.timer = setTimeout(() => {
       try { recognition.stop(); } catch (_) {}
       setVoiceMode(false);
     }, 6000);
@@ -266,46 +257,25 @@ export default function LoginPage() {
 
   return (
     <div
-      ref={containerRef}
       className={`relative min-h-screen w-full overflow-hidden transition-all duration-1000 ${tc.bg}`}
     >
 
-      {/* ── Cursor trail ──────────────────────────────────────── */}
-      <div className="fixed inset-0 pointer-events-none z-40">
-        {trailRef.current.map((p, i) => (
-          <div
-            key={p.id}
-            className="absolute rounded-full"
-            style={{
-              left: p.x - 4, top: p.y - 4, width: 8, height: 8,
-              background: `rgba(255,255,255,${(i / 12) * 0.5})`,
-              filter: "blur(2px)", opacity: i / 12,
-            }}
-          />
-        ))}
-      </div>
+      {/* ── Mouse glow + cursor trail (self-contained layer, zero page re-renders) ── */}
+      <CursorGlowLayer glow={tc.glow} />
 
-      {/* ── Mouse glow radial gradient ────────────────────────── */}
-      <div
-        className="pointer-events-none fixed inset-0 z-0"
-        style={{
-          background: `radial-gradient(circle 600px at ${mousePos.x}px ${mousePos.y}px, ${tc.glow}, transparent 40%)`,
-        }}
-      />
-
-      {/* ── Ambient floating particles ────────────────────────── */}
+      {/* ── Ambient floating particles (specs fixed once, stable across renders) ── */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
-        {[...Array(20)].map((_, i) => (
+        {particles.map((p, i) => (
           <div
             key={i}
             className={`absolute rounded-full ${tc.particle} opacity-20`}
             style={{
-              width:  Math.random() * 4 + 1,
-              height: Math.random() * 4 + 1,
-              top:  `${Math.random() * 100}%`,
-              left: `${Math.random() * 100}%`,
-              animation: `pulse ${Math.random() * 3 + 2}s infinite`,
-              animationDelay: `${Math.random() * 3}s`,
+              width:  p.size,
+              height: p.size,
+              top:   p.top,
+              left:  p.left,
+              animation: `pulse ${p.dur}s infinite`,
+              animationDelay: `${p.delay}s`,
             }}
           />
         ))}
@@ -436,15 +406,8 @@ export default function LoginPage() {
             </p>
           </div>
 
-          {/* ── Right column: auth form card ──────────────────── */}
-          <div
-            ref={cardRef}
-            className="relative transition-transform duration-200 ease-out"
-            style={{
-              transform: `perspective(1500px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg)`,
-              transformStyle: "preserve-3d",
-            }}
-          >
+          {/* Right column: auth form card (3D tilt runs on the card node itself via TiltCard below) */}
+          <TiltCard cardRef={cardRef}>
             {/* Card outer glow */}
             <div
               className="absolute -inset-3 rounded-3xl blur-3xl opacity-30"
@@ -653,7 +616,6 @@ export default function LoginPage() {
                   </div>
                 </div>
               )}
-            </div>
 
             <p className={`text-center text-xs mt-4 ${tc.sub}`}>
               By continuing, you agree to our{" "}
@@ -661,6 +623,7 @@ export default function LoginPage() {
               <span className="underline cursor-pointer hover:opacity-70">Privacy Policy</span>
             </p>
           </div>
+      </TiltCard>
         </div>
       </div>
 
@@ -669,3 +632,144 @@ export default function LoginPage() {
     </div>
   );
 }
+
+// ============================================================
+// TiltCard - 3D card tilt WITHOUT re-rendering the Login page.
+// Listens to mousemove itself and writes the transform straight to
+// the card node (rAF-throttled). Zero React renders while moving.
+// ============================================================
+const TiltCard = memo(function TiltCard({ cardRef, children }) {
+  const innerRef = useRef(null);
+  useEffect(() => {
+    let rafId = 0;
+    let pending = null;
+    const paint = () => {
+      rafId = 0;
+      const node = cardRef?.current || innerRef.current;
+      if (!node || !pending) return;
+      const r = node.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      const x = -((pending.y - cy) / r.height) * 10;
+      const y = ((pending.x - cx) / r.width) * 10;
+      node.style.transform = `perspective(1500px) rotateX(${x}deg) rotateY(${y}deg)`;
+      pending = null;
+    };
+    const onMove = (e) => {
+      pending = { x: e.clientX, y: e.clientY };
+      if (!rafId) rafId = requestAnimationFrame(paint);
+    };
+    window.addEventListener("mousemove", onMove, { passive: true });
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, [cardRef]);
+  return (
+    <div ref={cardRef || innerRef} className="relative transition-transform duration-200 ease-out" style={{ transformStyle: "preserve-3d" }}>
+      {children}
+    </div>
+  );
+});
+
+// ============================================================
+// CursorGlowLayer — mouse glow + cursor trail WITHOUT re-rendering
+// the Login page.
+//
+// Why this exists: the old code stored mousePos + 3D-tilt in React state,
+// so every pixel of mouse movement re-rendered the whole login page
+// (form, particles, everything). This layer instead:
+//   • listens to mousemove itself,
+//   • paints the glow + trail by writing directly to DOM-node styles
+//     via refs (no setState per event),
+//   • throttles paint work with requestAnimationFrame.
+// It only ever re-renders when the `glow` colour prop changes (theme
+// switch) — cursor movement costs zero React renders.
+// ============================================================
+const CursorGlowLayer = memo(function CursorGlowLayer({ glow }) {
+  const glowRef  = useRef(null); // the radial-gradient overlay div
+  const trailRef = useRef(null); // fixed container holding the trail dots
+  const dotsRef  = useRef([]);   // pooled trail dot nodes (reused, not recreated)
+
+  useEffect(() => {
+    const glowEl  = glowRef.current;
+    const trailEl = trailRef.current;
+    if (!glowEl || !trailEl) return;
+
+    // Pre-create 12 reusable dots (avoids DOM churn on every mousemove)
+    for (let i = 0; i < 12; i++) {
+      const d = document.createElement("div");
+      d.className = "absolute rounded-full";
+      d.style.width = "8px";
+      d.style.height = "8px";
+      d.style.filter = "blur(2px)";
+      d.style.pointerEvents = "none";
+      trailEl.appendChild(d);
+      dotsRef.current.push(d);
+    }
+
+    const trail = []; // recent positions, newest last
+    let rafId = 0;
+    let pending = null;
+
+    // Paint: glow follows cursor; dots show the last 12 positions, fading out
+    const paint = () => {
+      rafId = 0;
+      if (!pending) return;
+      const { x, y } = pending;
+      pending = null;
+      glowEl.style.background =
+        `radial-gradient(circle 600px at ${x}px ${y}px, ${glowRef.current?.dataset.glow || ""}, transparent 40%)`;
+      trail.push({ x, y });
+      if (trail.length > 12) trail.shift();
+      const dots = dotsRef.current;
+      for (let i = 0; i < dots.length; i++) {
+        const p = trail[trail.length - dots.length + i];
+        const dot = dots[i];
+        if (!p) { dot.style.opacity = "0"; continue; }
+        const age = (dots.length - 1 - i) / dots.length; // 0 = newest
+        dot.style.left = `${p.x - 4}px`;
+        dot.style.top  = `${p.y - 4}px`;
+        dot.style.background = `rgba(255,255,255,${(1 - age) * 0.5})`;
+        dot.style.opacity = String(1 - age);
+      }
+    };
+
+    const onMove = (e) => {
+      pending = { x: e.clientX, y: e.clientY };
+      if (!rafId) rafId = requestAnimationFrame(paint);
+    };
+    // Dots fade out when the mouse stops (same 100ms behaviour as before)
+    const clearer = setInterval(() => {
+      trail.length = 0;
+      for (const dot of dotsRef.current) dot.style.opacity = "0";
+    }, 100);
+
+    window.addEventListener("mousemove", onMove, { passive: true });
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      clearInterval(clearer);
+      if (rafId) cancelAnimationFrame(rafId);
+      dotsRef.current = [];
+    };
+  }, []);
+
+  // Keep the glow colour in sync when the theme changes (no re-render cost:
+  // stored on the node, read at paint time).
+  useEffect(() => {
+    if (glowRef.current) {
+      glowRef.current.dataset.glow = glow;
+      glowRef.current.style.background =
+        `radial-gradient(circle 600px at 50% 30%, ${glow}, transparent 40%)`;
+    }
+  }, [glow]);
+
+  return (
+    <>
+      {/* cursor trail dots live here (position:fixed via the wrapper) */}
+      <div ref={trailRef} className="fixed inset-0 pointer-events-none z-40" />
+      {/* radial glow overlay */}
+      <div ref={glowRef} data-glow={glow} className="pointer-events-none fixed inset-0 z-0" />
+    </>
+  );
+});

@@ -26,12 +26,20 @@ public class User {
     private Double lat;
     private Double lng;
 
+    @Column(name = "role", nullable = false)
+    private String role;
+
+    @Column(name = "enabled", nullable = false)
+    private Boolean enabled;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
+        if (role == null) role = "USER";
+        if (enabled == null) enabled = true;
     }
 
     // ---- Getters ----
@@ -43,6 +51,8 @@ public class User {
     public String getAddress()           { return address; }
     public Double getLat()               { return lat; }
     public Double getLng()               { return lng; }
+    public String getRole()              { return role; }
+    public Boolean getEnabled()          { return enabled; }
     public LocalDateTime getCreatedAt()  { return createdAt; }
 
     // ---- Setters ----
@@ -54,5 +64,7 @@ public class User {
     public void setAddress(String address)             { this.address = address; }
     public void setLat(Double lat)                     { this.lat = lat; }
     public void setLng(Double lng)                     { this.lng = lng; }
+    public void setRole(String role)                   { this.role = role; }
+    public void setEnabled(Boolean enabled)            { this.enabled = enabled; }
     public void setCreatedAt(LocalDateTime createdAt)  { this.createdAt = createdAt; }
 }

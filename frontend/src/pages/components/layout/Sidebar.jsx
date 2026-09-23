@@ -17,11 +17,13 @@
 // ============================================================
 
 import { useNavigate, useLocation } from "react-router-dom";
+import { useAuth } from "../../../context/AuthContext";
 import AccountMenu from "../account/AccountMenu";
 
 export default function Sidebar({ tc }) {
   const navigate  = useNavigate();
   const location  = useLocation();
+  const { isAdmin } = useAuth();
 
   const isHome = location.pathname === "/home";
 
@@ -74,6 +76,21 @@ export default function Sidebar({ tc }) {
   <i className="fa fa-users text-lg w-5 text-center" />
   <span className="flex-1 text-left">Riders</span>
 </button>
+
+        {/* Admin — only visible for admin users */}
+        {isAdmin && (
+          <button
+            onClick={() => navigate("/admin")}
+            className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl font-semibold transition-all duration-200 hover:scale-[1.02] ${
+              location.pathname.startsWith("/admin")
+                ? `bg-gradient-to-r from-orange-500 to-pink-500 text-white shadow-lg`
+                : `hover:bg-white/10 ${tc.text}`
+            }`}
+          >
+            <i className="fa fa-shield-alt text-lg w-5 text-center" />
+            <span className="flex-1 text-left">Admin</span>
+          </button>
+        )}
 
       </nav>
 

@@ -28,18 +28,6 @@ async function handleResponse(res) {
   throw new Error(msg);
 }
 
-// ── Haversine distance in km (still used client-side for "Near" badge) ──
-export function distanceKm(lat1, lng1, lat2, lng2) {
-  const toRad = (v) => (v * Math.PI) / 180;
-  const R = 6371;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
 // ── searchRiders(query, currentUserId) ──
 // Returns UserResponse[] — users whose username or email contains the query.
 export async function searchRiders(query, currentUserId) {
@@ -100,16 +88,3 @@ export async function getNearRiders(userId) {
 }
 // this two getconnetions and the getnerby function are mostly handle in the backend not in this frontend
 
-// ── isConnected(userId, riderId) ──
-// Synchronous check using the cached connections list.
-// Call getConnectionsFull first and pass the result here for accuracy.
-export function isConnected(connectionsIds, riderId) {
-  return connectionsIds.includes(riderId);
-}
-
-// ── getAllRidersCount() ──
-// Not directly supported by backend — kept as a no-op placeholder.
-// Remove or replace with a real endpoint when the feature is needed.
-export function getAllRidersCount() {
-  return 0;
-}

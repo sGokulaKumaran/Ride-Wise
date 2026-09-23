@@ -176,8 +176,6 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
 
   // ── Current step derived values ──
   const currentStep    = steps[activeStep];
-  const nextStep       = steps[activeStep + 1];
-  const isLastStep     = activeStep >= steps.length - 1;
 
   // ====================================================================
   // START GPS when overlay mounts (only for active rides); STOP on unmount
