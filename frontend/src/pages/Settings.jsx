@@ -20,8 +20,10 @@
 //   You can add a debounced auto-save or an explicit "Save" button.
 // ============================================================
 import { useState, useEffect } from "react";
-import { useTheme } from "./hooks/useTheme";
+import { useTheme, themes } from "./hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
+import Icon from "./components/ui/Icon";
+import { Chip } from "./components/ui/Button";
 import Sidebar from "./components/layout/Sidebar";
 import TopBar from "./components/layout/TopBar";
 import MobileNav from "./components/layout/MobileNav";
@@ -53,9 +55,11 @@ function loadSettings(userId) {
 // ── Small reusable toggle component ─────────────────────────
 // Renders a label + description on the left, a switch on the right.
 // "checked" controls the visual state; "onChange" fires when clicked.
+// ON uses the functional accent (an active state is one of the few
+// places colour is allowed); OFF stays a neutral hairline track.
 function Toggle({ checked, onChange, label, sub, tc }) {
   return (
-    <div className="flex items-center justify-between py-3">
+    <div className="flex items-center justify-between gap-4 py-3">
       {/* Left side: text */}
       <div>
         <p className="font-semibold text-sm">{label}</p>
@@ -65,15 +69,16 @@ function Toggle({ checked, onChange, label, sub, tc }) {
       <button
         role="switch"
         aria-checked={checked}
+        aria-label={label}
         onClick={() => onChange(!checked)}
-        className={`relative w-11 h-6 rounded-full transition-colors duration-300 ${
-          checked ? "bg-orange-500" : "bg-gray-500/30"
+        className={`relative w-11 h-6 rounded-full border transition-colors shrink-0 ${
+          checked ? tc.btnAccent : `${tc.isLight ? "bg-black/15" : "bg-white/15"} border-transparent`
         }`}
       >
         <span
-          className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-300 ${
+          className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white ${
             checked ? "translate-x-5" : "translate-x-0"
-          }`}
+          } transition-transform`}
         />
       </button>
     </div>
@@ -81,14 +86,12 @@ function Toggle({ checked, onChange, label, sub, tc }) {
 }
 
 // ── Small reusable section header ────────────────────────────
-// Icon box + title, used to start each settings section.
+// Monochrome glyph + title, used to start each settings section.
 function SectionHeader({ icon, title, tc }) {
   return (
-    <div className="flex items-center gap-2 mb-1">
-      <div className="w-8 h-8 rounded-lg bg-orange-500/20 flex items-center justify-center">
-        <i className={`fa ${icon} text-orange-400 text-sm`} />
-      </div>
-      <h2 className="font-black text-base">{title}</h2>
+    <div className="flex items-center gap-2.5 mb-1">
+      <Icon name={icon} size={16} className={tc.sub} />
+      <h2 className="font-bold text-base">{title}</h2>
     </div>
   );
 }
@@ -98,7 +101,7 @@ export default function Settings() {
   const userId   = user?.id;
 
   // Pull current theme + setter — scoped to this user
-  const { theme, setTheme, tc, allThemes } = useTheme(userId);
+  const { theme, setTheme, tc } = useTheme(userId);
 
   // ── Load initial settings from per-user localStorage ─────────
   const [settings, setSettings] = useState(() => loadSettings(userId));
@@ -123,13 +126,11 @@ export default function Settings() {
   const update = (key) => (value) =>
     setSettings((prev) => ({ ...prev, [key]: value }));
 
-  // Theme options (pulled from useTheme's allThemes)
-  const themeOptions = [
-    { key: "dark",     icon: "🌙", label: "Dark" },
-    { key: "light",    icon: "☀️", label: "Light" },
-    { key: "warm",     icon: "🌅", label: "Warm" },
-    { key: "midnight", icon: "🌌", label: "Midnight" },
-  ];
+  // Theme options come straight from the theme system, so labels, glyphs and
+  // preview swatches can never drift out of sync with useTheme.js
+  const themeOptions = Object.entries(themes).map(([key, t]) => ({
+    key, label: t.label, icon: t.icon, preview: t.preview,
+  }));
 
   return (
     <div className={`relative min-h-screen w-full overflow-x-hidden ${tc.bg} ${tc.text}`}>
@@ -141,62 +142,70 @@ export default function Settings() {
         <div className="max-w-2xl mx-auto">
           {/* ── Page header ──────────────────────────────────── */}
           <div className="mb-7">
-            <h1 className="text-3xl font-black mb-1">⚙️ Settings</h1>
+            <h1 className="text-2xl font-bold mb-1 flex items-center gap-2.5">
+              <Icon name="settings" size={22} />
+              Settings
+            </h1>
             <p className={`text-sm ${tc.sub}`}>Customize your RideWise experience</p>
           </div>
 
           {/* ══════════════════════════════════════════════════
               APPEARANCE
           ══════════════════════════════════════════════════ */}
-          <div className={`rounded-2xl border p-5 mb-4 ${tc.card}`}>
-            <SectionHeader icon="fa-palette" title="Appearance" tc={tc} />
+          <div className={`rounded-xl border p-5 mb-4 ${tc.card}`}>
+            <SectionHeader icon="theme" title="Appearance" tc={tc} />
             <p className={`text-xs ${tc.sub} mb-4`}>
               Choose a theme or let RideWise auto-select based on time of day.
             </p>
-            {/* Theme grid */}
+            {/* Theme grid — each option previews its own palette */}
             <div className="grid grid-cols-2 gap-2.5">
-              {themeOptions.map((t) => (
-                <button
-                  key={t.key}
-                  onClick={() => setTheme(t.key)}
-                  className={`flex items-center gap-3 p-3.5 rounded-xl border-2 transition-all hover:scale-[1.02] font-semibold text-sm ${
-                    theme === t.key
-                      ? "border-orange-500 bg-orange-500/10"
-                      : `${tc.card} hover:border-orange-500/40`
-                  }`}
-                >
-                  <span className="text-lg">{t.icon}</span>
-                  <span className="flex-1 text-left">{t.label}</span>
-                  {theme === t.key && (
-                    <i className="fa fa-check-circle text-orange-400 text-xs" />
-                  )}
-                </button>
-              ))}
+              {themeOptions.map((t) => {
+                const active = theme === t.key;
+                return (
+                  <button
+                    key={t.key}
+                    onClick={() => setTheme(t.key)}
+                    aria-pressed={active}
+                    className={`flex items-center gap-3 p-2.5 rounded-lg border text-sm font-semibold text-left transition-colors ${
+                      active ? tc.accentSoft : `${tc.card} ${tc.cardHover}`
+                    }`}
+                  >
+                    {/* swatch: page, surface, ink, accent of that theme */}
+                    <span
+                      className={`w-11 h-9 rounded-lg border flex flex-col justify-end gap-[3px] p-1.5 shrink-0 ${t.preview.page} ${tc.divider}`}
+                    >
+                      <span className={`h-1 w-3 rounded-full ${t.preview.surface}`} />
+                      <span className={`h-1 w-6 rounded-full ${t.preview.ink}`} />
+                      <span className={`h-1 w-2 rounded-full ${t.preview.accent}`} />
+                    </span>
+                    <span className="flex-1">{t.label}</span>
+                    {active ? <Icon name="check" size={16} /> : null}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
           {/* ══════════════════════════════════════════════════
               ACCESSIBILITY
           ══════════════════════════════════════════════════ */}
-          <div className={`rounded-2xl border p-5 mb-4 ${tc.card}`}>
-            <SectionHeader icon="fa-universal-access" title="Accessibility" tc={tc} />
+          <div className={`rounded-xl border p-5 mb-4 ${tc.card}`}>
+            <SectionHeader icon="access" title="Accessibility" tc={tc} />
 
             {/* Text Size */}
             <div className="py-3">
               <p className="font-semibold text-sm mb-2">Text Size</p>
               <div className="flex gap-2">
                 {["small", "medium", "large"].map((size) => (
-                  <button
+                  <Chip
                     key={size}
+                    selected={settings.textSize === size}
                     onClick={() => update("textSize")(size)}
-                    className={`flex-1 py-2 rounded-xl border text-xs font-bold capitalize transition-all hover:scale-[1.02] ${
-                      settings.textSize === size
-                        ? "border-orange-500 bg-orange-500/10 text-orange-400"
-                        : `${tc.card} hover:border-orange-500/40`
-                    }`}
+                    tc={tc}
+                    className="flex-1 justify-center capitalize"
                   >
                     {size.charAt(0).toUpperCase() + size.slice(1)}
-                  </button>
+                  </Chip>
                 ))}
               </div>
             </div>
@@ -222,8 +231,8 @@ export default function Settings() {
           {/* ══════════════════════════════════════════════════
               NOTIFICATIONS
           ══════════════════════════════════════════════════ */}
-          <div className={`rounded-2xl border p-5 mb-4 ${tc.card}`}>
-            <SectionHeader icon="fa-bell" title="Notifications" tc={tc} />
+          <div className={`rounded-xl border p-5 mb-4 ${tc.card}`}>
+            <SectionHeader icon="bell" title="Notifications" tc={tc} />
             <p className={`text-xs ${tc.sub} mb-2`}>
               Choose which updates you want to receive.
             </p>
@@ -255,8 +264,8 @@ export default function Settings() {
           {/* ══════════════════════════════════════════════════
               PRIVACY
           ══════════════════════════════════════════════════ */}
-          <div className={`rounded-2xl border p-5 mb-4 ${tc.card}`}>
-            <SectionHeader icon="fa-lock" title="Privacy" tc={tc} />
+          <div className={`rounded-xl border p-5 mb-4 ${tc.card}`}>
+            <SectionHeader icon="lock" title="Privacy" tc={tc} />
             <p className={`text-xs ${tc.sub} mb-2`}>
               Control who can see your profile and activity.
             </p>

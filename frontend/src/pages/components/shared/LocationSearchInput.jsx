@@ -1,9 +1,9 @@
 import { useState, useRef } from 'react';
 import { useLocationSearch } from '../../hooks/useLocationSearch';
+import Icon from '../ui/Icon';
 
 export default function LocationSearchInput({
-  icon = 'fa-map-marker-alt',
-  iconColor = '#22c55e',
+  icon = 'pin',
   placeholder = 'Search location...',
   value,
   onChange,
@@ -13,6 +13,14 @@ export default function LocationSearchInput({
   const { results, loading, search, clear } = useLocationSearch(500);
   const [open, setOpen] = useState(false);
   const inputRef = useRef(null);
+
+  // Theme tokens are passed in by the caller; these fallbacks keep the
+  // component usable (and monochrome) when `tc` is missing.
+  const subClass     = tc.sub      || '';
+  const hoverClass   = tc.cardHover || '';
+  const dividerClass = tc.divider  || '';
+  const fieldClass   = tc.input    || 'bg-transparent';
+  const surfaceClass = tc.card     || 'bg-[#141416] border-[#26262B]';
 
   const handleChange = (e) => {
     const text = e.target.value;
@@ -29,16 +37,12 @@ export default function LocationSearchInput({
   };
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div className="relative">
       {/* Left icon */}
-      <i
-        className={`fa ${icon}`}
-        style={{
-          position: 'absolute', left: '14px', top: '50%',
-          transform: 'translateY(-50%)',
-          color: iconColor, fontSize: '14px',
-          pointerEvents: 'none', zIndex: 1,
-        }}
+      <Icon
+        name={icon}
+        size={14}
+        className={`absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none z-10 ${subClass}`}
       />
 
       {/* Text input */}
@@ -47,91 +51,46 @@ export default function LocationSearchInput({
         type="text"
         value={value}
         onChange={handleChange}
-        onFocus={e => {
-          e.target.style.borderColor = 'rgba(249,115,22,0.5)';
+        onFocus={() => {
           if (value) { search(value); setOpen(true); }
         }}
-        onBlur={e => {
-          e.target.style.borderColor = 'rgba(255,255,255,0.12)';
+        onBlur={() => {
           // Delay closing so click on a result fires first
           setTimeout(() => setOpen(false), 150);
         }}
         placeholder={placeholder}
-        className={tc.input || ''}
-        style={{
-          width: '100%',
-          paddingLeft: '40px',
-          paddingRight: loading ? '40px' : '16px',
-          paddingTop: '14px',
-          paddingBottom: '14px',
-          borderRadius: '14px',
-          border: '1.5px solid rgba(255,255,255,0.12)',
-          background: 'rgba(255,255,255,0.05)',
-          outline: 'none',
-          fontSize: '14px',
-          color: 'inherit',
-          boxSizing: 'border-box',
-          transition: 'border-color 0.2s',
-        }}
+        className={`w-full pl-10 ${loading ? 'pr-10' : 'pr-4'} py-3.5 rounded-lg border text-sm ${fieldClass}`}
       />
 
       {/* Spinner shown while fetching OSM results */}
       {loading && (
-        <i
-          className="fa fa-spinner fa-spin"
-          style={{
-            position: 'absolute', right: '14px', top: '50%',
-            transform: 'translateY(-50%)',
-            color: iconColor, fontSize: '13px',
-            pointerEvents: 'none',
-          }}
+        <Icon
+          name="spinner"
+          size={14}
+          className={`rw-spin absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none ${subClass}`}
         />
       )}
 
       {/* Dropdown with OSM results */}
       {open && results.length > 0 && (
         <div
-          style={{
-            position: 'absolute', top: '100%', left: 0, right: 0,
-            zIndex: 100,
-            background: 'rgba(10,10,15,0.97)',
-            backdropFilter: 'blur(20px)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: '14px',
-            overflow: 'hidden',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-            marginTop: '6px',
-          }}
+          className={`absolute top-full left-0 right-0 z-40 mt-1.5 rounded-xl border overflow-hidden ${surfaceClass}`}
         >
           {results.map((r, i) => (
             <button
               key={i}
               onMouseDown={e => e.preventDefault()} // prevent blur before click
               onClick={() => handlePick(r)}
-              style={{
-                width: '100%',
-                padding: '11px 16px',
-                borderBottom: i < results.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: '10px',
-                background: 'transparent',
-                color: 'inherit',
-                cursor: 'pointer',
-                textAlign: 'left',
-                fontSize: '13px',
-                lineHeight: '1.4',
-                border: 'none',
-                outline: 'none',
-              }}
-              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.07)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+              className={`w-full flex items-start gap-2.5 px-4 py-2.5 text-left text-[13px] leading-snug transition-colors ${hoverClass} ${
+                i < results.length - 1 ? `border-b ${dividerClass}` : ''
+              }`}
             >
-              <i
-                className="fa fa-location-dot"
-                style={{ color: iconColor, fontSize: '12px', flexShrink: 0, marginTop: '2px' }}
+              <Icon
+                name="pin"
+                size={14}
+                className={`mt-0.5 ${subClass}`}
               />
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span className="overflow-hidden text-ellipsis whitespace-nowrap">
                 {r.label}
               </span>
             </button>

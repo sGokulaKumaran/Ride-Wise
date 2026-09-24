@@ -1,5 +1,5 @@
 // ============================================================
-// 🛡️ ProtectedRoute — Guards routes that require authentication
+// ProtectedRoute — Guards routes that require authentication
 //
 // USAGE (in App.jsx):
 //   <Route path="/home" element={
@@ -7,7 +7,7 @@
 //   } />
 //
 // REDIRECT LOGIC:
-//   loading               → show a branded loader (prevents flash of login page)
+//   loading               → show a themed loader (prevents flash of login page)
 //   not isAuthenticated   → redirect to / (Login page)
 //   isAuthenticated but
 //     not isFullyOnboarded → redirect to /onboarding (details page)
@@ -15,20 +15,21 @@
 // ============================================================
 import { Navigate } from "react-router-dom";   // For redirects
 import { useAuth } from "../../../context/AuthContext";  // Get auth state
+import { useTheme } from "../../hooks/useTheme";          // Theme tokens
+import Icon from "../ui/Icon";                           // Icon family
 
 export default function ProtectedRoute({ children }) {
-  const { isAuthenticated, isFullyOnboarded, loading } = useAuth();
+  const { isAuthenticated, isFullyOnboarded, loading, user } = useAuth();
+  const { tc } = useTheme(user?.id);   // same tokens the page will use
 
   // ── CHECK 1: Still checking localStorage? Show spinner ──
   // Without this, logged-in users would see a flash of login page
   if (loading) {
     return (
-      <div className="min-h-screen w-full flex items-center justify-center bg-black">
-        <div className="text-white text-center">
-          <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center animate-pulse shadow-2xl shadow-orange-500/40">
-            <i className="fa fa-motorcycle text-xl text-white" />
-          </div>
-          <p className="text-sm text-gray-400 font-medium tracking-wide">
+      <div className={`min-h-screen w-full flex items-center justify-center ${tc.bg} ${tc.text}`}>
+        <div className={`rounded-xl border px-6 py-5 text-center ${tc.card}`}>
+          <Icon name="spinner" size={18} className={`rw-spin block mx-auto mb-3 ${tc.sub}`} />
+          <p className={`text-sm font-medium tracking-wide ${tc.sub}`}>
             Loading RideWise…
           </p>
         </div>

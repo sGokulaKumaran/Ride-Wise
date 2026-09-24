@@ -1,5 +1,5 @@
 // ============================================================
-// 🛣️ AdminRides — Ride monitoring page
+// AdminRides — Ride monitoring page
 //
 // Features:
 //   - Paginated ride table
@@ -13,6 +13,8 @@ import { getRides, getRideDetail } from "../../services/adminApi";
 import { useTheme } from "../hooks/useTheme";
 import AdminLayout from "./AdminLayout";
 import { useAuth } from "../../context/AuthContext";
+import Icon from "../components/ui/Icon";
+import Button, { Chip } from "../components/ui/Button";
 
 export default function AdminRides() {
   const { user } = useAuth();
@@ -83,11 +85,13 @@ export default function AdminRides() {
       : `${Math.round(meters)} m`;
   };
 
-  const statusColors = {
-    active: "text-green-500 bg-green-500/15",
-    completed: "text-blue-400 bg-blue-500/15",
-    cancelled: "text-red-400 bg-red-500/15",
+  // Status pills are functional only: tinted surface + hairline border.
+  const statusPill = {
+    active: `border ${tc.accentSoft}`,
+    completed: `border ${tc.divider} ${tc.surface2} ${tc.ok}`,
+    cancelled: `border ${tc.dangerSoft}`,
   };
+  const statusPillClass = (status) => statusPill[status] || `${tc.surface2} ${tc.sub}`;
 
   return (
     <AdminLayout>
@@ -102,39 +106,28 @@ export default function AdminRides() {
           </div>
 
           {/* Filters */}
-          <div className="flex gap-2 flex-wrap">
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className={`px-3 py-2 rounded-xl border text-sm ${tc.input} focus:outline-none focus:ring-2 focus:ring-orange-500/50`}
-            >
-              <option value="">All Statuses</option>
-              <option value="active">Active</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-            <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              className={`px-3 py-2 rounded-xl border text-sm ${tc.input} focus:outline-none focus:ring-2 focus:ring-orange-500/50`}
-            >
-              <option value="">All Types</option>
-              <option value="solo">Solo</option>
-              <option value="group">Group</option>
-            </select>
+          <div className="flex flex-wrap items-center gap-2">
+            <Chip selected={statusFilter === ""} onClick={() => setStatusFilter("")} tc={tc}>All Statuses</Chip>
+            <Chip selected={statusFilter === "active"} onClick={() => setStatusFilter("active")} tc={tc}>Active</Chip>
+            <Chip selected={statusFilter === "completed"} onClick={() => setStatusFilter("completed")} tc={tc}>Completed</Chip>
+            <Chip selected={statusFilter === "cancelled"} onClick={() => setStatusFilter("cancelled")} tc={tc}>Cancelled</Chip>
+            <span className={`w-px h-4 self-center ${tc.surface2}`} />
+            <Chip selected={typeFilter === ""} onClick={() => setTypeFilter("")} tc={tc}>All Types</Chip>
+            <Chip selected={typeFilter === "solo"} onClick={() => setTypeFilter("solo")} tc={tc}>Solo</Chip>
+            <Chip selected={typeFilter === "group"} onClick={() => setTypeFilter("group")} tc={tc}>Group</Chip>
           </div>
         </div>
 
         {/* ── Error ── */}
         {error && (
-          <div className="p-4 rounded-xl border border-red-500/30 bg-red-500/10 text-red-400">
-            <i className="fa fa-exclamation-triangle mr-2" />
+          <div className={`flex items-center gap-2 p-4 rounded-xl border text-sm ${tc.dangerSoft}`}>
+            <Icon name="alertTriangle" size={16} />
             {error}
           </div>
         )}
 
         {/* ── Rides Table ── */}
-        <div className={`rounded-2xl border overflow-hidden ${tc.card}`}>
+        <div className={`rounded-xl border overflow-hidden ${tc.card}`}>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -154,7 +147,7 @@ export default function AdminRides() {
                   <tr>
                     <td colSpan={8} className="text-center py-12">
                       <div className="inline-flex items-center gap-2">
-                        <div className="w-5 h-5 rounded-full border-2 border-orange-500 border-t-transparent animate-spin" />
+                        <Icon name="spinner" size={16} className="rw-spin" />
                         <span className={tc.sub}>Loading rides…</span>
                       </div>
                     </td>
@@ -164,7 +157,10 @@ export default function AdminRides() {
                 {!loading && rides.length === 0 && (
                   <tr>
                     <td colSpan={8} className={`text-center py-12 ${tc.sub}`}>
-                      No rides found with the selected filters.
+                      <div className="flex flex-col items-center gap-3">
+                        <Icon name="list" size={28} />
+                        <span>No rides found with the selected filters.</span>
+                      </div>
                     </td>
                   </tr>
                 )}
@@ -175,32 +171,32 @@ export default function AdminRides() {
                       key={ride.id}
                       className={`border-b ${tc.divider} transition-colors ${tc.cardHover}`}
                     >
-                      <td className="px-4 py-3 font-mono text-xs opacity-60">#{ride.id}</td>
+                      <td className={`px-4 py-3 font-mono text-xs ${tc.sub}`}>#{ride.id}</td>
                       <td className="px-4 py-3">
                         <div>
                           <p className="font-medium truncate max-w-[120px]">
-                            {ride.creatorUsername || <span className="italic opacity-50">Unknown</span>}
+                            {ride.creatorUsername || <span className={`italic ${tc.sub}`}>Unknown</span>}
                           </p>
                           <p className={`text-xs ${tc.sub} truncate max-w-[120px]`}>{ride.creatorEmail}</p>
                         </div>
                       </td>
                       <td className={`px-4 py-3 hidden md:table-cell ${tc.sub}`}>
                         <div className="flex items-center gap-1 text-xs truncate max-w-[200px]">
-                          <span className="text-green-500">●</span>
+                          <Icon name="dotFilled" size={12} />
                           <span className="truncate">{ride.fromName || "?"}</span>
-                          <i className="fa fa-arrow-right mx-1 text-[10px] opacity-40" />
-                          <span className="text-red-400">●</span>
+                          <Icon name="arrowRight" size={12} className="mx-1" />
+                          <Icon name="dotFilled" size={12} />
                           <span className="truncate">{ride.destinationName || "?"}</span>
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${tc.record}`}>
-                          <i className={`fa ${ride.rideType === "group" ? "fa-users" : "fa-motorcycle"} text-[10px]`} />
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${tc.surface2} ${tc.sub}`}>
+                          <Icon name={ride.rideType === "group" ? "riders" : "ride"} size={12} />
                           {ride.rideType}
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${statusColors[ride.status] || tc.record}`}>
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-semibold ${statusPillClass(ride.status)}`}>
                           {ride.status}
                         </span>
                       </td>
@@ -212,19 +208,16 @@ export default function AdminRides() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         {ride.rideType === "group" && (
-                          <button
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            icon={expandedRide?.id === ride.id ? "chevronUp" : "chevronDown"}
+                            loading={expandLoading === ride.id}
                             onClick={() => handleExpand(ride.id)}
-                            disabled={expandLoading === ride.id}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${tc.record} ${tc.cardHover}`}
+                            tc={tc}
                           >
-                            {expandLoading === ride.id ? (
-                              <i className="fa fa-spinner fa-spin" />
-                            ) : expandedRide?.id === ride.id ? (
-                              <><i className="fa fa-chevron-up mr-1" />Close</>
-                            ) : (
-                              <><i className="fa fa-chevron-down mr-1" />Riders</>
-                            )}
-                          </button>
+                            {expandedRide?.id === ride.id ? "Close" : "Riders"}
+                          </Button>
                         )}
                       </td>
                     </tr>
@@ -234,22 +227,21 @@ export default function AdminRides() {
                       <tr key={`${ride.id}-detail`}>
                         <td colSpan={8} className={`px-6 py-4 border-b ${tc.divider}`}>
                           <div className="space-y-2">
-                            <p className="text-xs font-bold uppercase tracking-wider opacity-50">
+                            <p className={`text-xs font-semibold uppercase tracking-wider ${tc.sub}`}>
                               Participants ({expandedRide.data.participants.length})
                             </p>
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                               {expandedRide.data.participants.map((p) => (
                                 <div
                                   key={p.id}
-                                  className={`flex items-center gap-3 px-3 py-2 rounded-xl ${tc.record}`}
+                                  className={`flex items-center gap-3 px-3 py-2 rounded-lg ${tc.surface2}`}
                                 >
-                                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                                  <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${tc.button}`}>
                                     {(p.username?.[0] || p.email?.[0] || "?").toUpperCase()}
-                                  </div>
+                                  </span>
                                   <div className="flex-1 min-w-0">
                                     <p className="text-xs font-medium truncate">
                                       {p.username || p.email}
-                                      {p.role === "admin" && " 👑"}
                                     </p>
                                     <p className={`text-[11px] ${tc.sub}`}>
                                       {p.status} · {p.role}
@@ -275,20 +267,27 @@ export default function AdminRides() {
                 Page {page + 1} of {totalPages}
               </p>
               <div className="flex gap-2">
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon="chevronLeft"
                   onClick={() => setPage(p => Math.max(0, p - 1))}
                   disabled={page === 0}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-30 ${tc.record} ${tc.cardHover}`}
+                  tc={tc}
                 >
-                  <i className="fa fa-chevron-left mr-1" />Prev
-                </button>
-                <button
+                  Prev
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon="chevronRight"
+                  iconRight
                   onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
                   disabled={page >= totalPages - 1}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-30 ${tc.record} ${tc.cardHover}`}
+                  tc={tc}
                 >
-                  Next<i className="fa fa-chevron-right ml-1" />
-                </button>
+                  Next
+                </Button>
               </div>
             </div>
           )}

@@ -11,6 +11,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useTheme } from "./hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
+import Icon from "./components/ui/Icon";
 import Sidebar from "./components/layout/Sidebar";
 import TopBar from "./components/layout/TopBar";
 import MobileNav from "./components/layout/MobileNav";
@@ -28,7 +29,7 @@ import {
 function EmptyState({ icon, title, message, tc={} }) {
   return (
     <div className={`text-center py-10 rounded-xl border ${tc.divider}`}>
-      <i className={`fa ${icon} text-4xl mb-2 opacity-30`}></i>
+      <Icon name={icon} size={34} className={`mb-2 opacity-40 ${tc.sub || ""}`} />
       <p className="text-sm font-bold mb-1">{title}</p>
       <p className={`text-xs ${tc.sub} max-w-xs mx-auto`}>{message}</p>
     </div>
@@ -45,7 +46,7 @@ function RiderCard({ rider, showAdd, showRemove, distance, connected, onAdd, onR
       className={`flex items-center gap-3 p-4 rounded-2xl border transition-all hover:scale-[1.01] hover:shadow-lg ${tc.card} ${tc.cardHover}`}
     >
       <div className="relative shrink-0">
-        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center font-black text-white text-lg">
+        <div className={`w-12 h-12 rounded-full flex items-center justify-center font-black text-base ${tc.avatar || "bg-neutral-800 text-neutral-100"}`}>
           {initial}
         </div>
       </div>
@@ -54,11 +55,13 @@ function RiderCard({ rider, showAdd, showRemove, distance, connected, onAdd, onR
         <p className="font-bold text-sm truncate">@{displayName}</p>
         <p className={`text-xs ${tc.sub} truncate`}>{rider.email}</p>
         {rider.address && (
-          <p className={`text-xs ${tc.sub} truncate`}>📍 {rider.address}</p>
+          <p className={`text-xs ${tc.sub} truncate flex items-center gap-1`}>
+            <Icon name="pin" size={12} /> {rider.address}
+          </p>
         )}
         {distance !== undefined && distance !== null && (
-          <p className={`text-xs ${tc.sub} truncate`}>
-            📏 {distance.toFixed(1)} km away
+          <p className={`text-xs ${tc.sub} truncate flex items-center gap-1`}>
+            <Icon name="road" size={12} /> {distance.toFixed(1)} km away
           </p>
         )}
       </div>
@@ -68,12 +71,12 @@ function RiderCard({ rider, showAdd, showRemove, distance, connected, onAdd, onR
           onClick={() => onAdd(rider)}
           className={`px-3 py-1.5 rounded-full text-xs font-bold ${tc.button} hover:scale-105 active:scale-95 transition-transform shrink-0`}
         >
-          <i className="fa fa-plus mr-1"></i>Add
+          <Icon name="plus" size={12} className="mr-1 inline-block" />Add
         </button>
       )}
       {showAdd && connected && (
         <span className="px-3 py-1.5 rounded-full text-xs font-bold bg-green-500/20 text-green-400 border border-green-500/30 shrink-0">
-          ✓ Added
+          <Icon name="check" size={12} className="mr-1 inline-block" />Added
         </span>
       )}
       {showRemove && (
@@ -81,7 +84,7 @@ function RiderCard({ rider, showAdd, showRemove, distance, connected, onAdd, onR
           onClick={() => onRemove(rider)}
           className="px-3 py-1.5 rounded-full text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 hover:scale-105 active:scale-95 transition-all shrink-0"
         >
-          <i className="fa fa-times mr-1"></i>Remove
+          <Icon name="close" size={12} className="mr-1 inline-block" />Remove
         </button>
       )}
     </div>
@@ -229,7 +232,10 @@ export default function Riders() {
 
           {/* Header */}
           <div className="mb-6">
-            <h1 className="text-3xl md:text-4xl font-black">🏍️ Riders</h1>
+            <h1 className="text-3xl md:text-4xl font-black flex items-center gap-3">
+              <Icon name="riders" size={32} className={tc.sub} />
+              Riders
+            </h1>
             <p className={`text-sm ${tc.sub} mt-1`}>
               Connect with real riders, manage your network, and find people nearby
             </p>
@@ -243,8 +249,8 @@ export default function Riders() {
                 view === "add" ? "ring-2 ring-orange-500 " + tc.card : tc.card + " " + tc.cardHover
               }`}
             >
-              <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-3 bg-gradient-to-br from-green-400 to-emerald-500 text-white text-xl shadow-lg shadow-green-500/30">
-                <i className="fa fa-user-plus"></i>
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-3 bg-neutral-900 text-white text-xl">
+                <Icon name="userPlus" size={20} className="text-white" />
               </div>
               <p className="font-black text-base">Add Rider</p>
               <p className={`text-xs ${tc.sub} mt-1`}>Search by username</p>
@@ -256,8 +262,8 @@ export default function Riders() {
                 view === "remove" ? "ring-2 ring-orange-500 " + tc.card : tc.card + " " + tc.cardHover
               }`}
             >
-              <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-3 bg-gradient-to-br from-red-400 to-pink-500 text-white text-xl shadow-lg shadow-red-500/30">
-                <i className="fa fa-user-minus"></i>
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-3 bg-neutral-900 text-white text-xl">
+                <Icon name="userMinus" size={20} className="text-white" />
               </div>
               <p className="font-black text-base">Remove Rider</p>
               <p className={`text-xs ${tc.sub} mt-1`}>Unfollow from your list</p>
@@ -276,8 +282,8 @@ export default function Riders() {
                 view === "near" ? "ring-2 ring-orange-500 " + tc.card : tc.card + " " + tc.cardHover
               }`}
             >
-              <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-3 bg-gradient-to-br from-blue-400 to-purple-500 text-white text-xl shadow-lg shadow-blue-500/30">
-                <i className="fa fa-location-dot"></i>
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-3 bg-neutral-900 text-white text-xl">
+                <Icon name="pin" size={20} className="text-white" />
               </div>
               <p className="font-black text-base">Near Riders</p>
               <p className={`text-xs ${tc.sub} mt-1`}>Find riders within 50 km</p>
@@ -288,9 +294,11 @@ export default function Riders() {
           {/* ADD VIEW */}
           {view === "add" && (
             <section className={`rounded-2xl border p-5 mb-6 ${tc.card}`}>
-              <h2 className="text-lg font-black mb-3">🔎 Search riders by username</h2>
+              <h2 className="text-lg font-black mb-3 flex items-center gap-2">
+                <Icon name="search" size={18} className={tc.sub} /> Search riders by username
+              </h2>
               <div className="relative mb-4">
-                <i className={`fa fa-search absolute left-4 top-1/2 -translate-y-1/2 ${tc.sub}`}></i>
+                <Icon name="search" size={16} className={`absolute left-4 top-1/2 -translate-y-1/2 ${tc.sub}`} />
                 <input type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -299,24 +307,24 @@ export default function Riders() {
                   autoFocus
                 />
                 {searching && (
-                  <i className="fa fa-spinner fa-spin absolute right-4 top-1/2 -translate-y-1/2 text-orange-400"></i>
+                  <Icon name="spinner" size={16} className="absolute right-4 top-1/2 -translate-y-1/2 animate-spin" />
                 )}
               </div>
 
               {searchQuery.length === 0 ? (
                 <EmptyState
-                  icon="fa-search"
+                  icon="search"
                   title="Start typing to search"
                   message="Search for real riders who have signed up to RideWise"
                   tc={tc}
                 />
               ) : searching ? (
                 <p className={`text-center text-sm ${tc.sub} py-8`}>
-                  <i className="fa fa-spinner fa-spin mr-2"></i>Searching…
+                  <Icon name="spinner" size={14} className="mr-2 inline-block animate-spin" />Searching…
                 </p>
               ) : searchResults.length === 0 ? (
                 <EmptyState
-                  icon="fa-user-slash"
+                  icon="userOff"
                   title="No riders found"
                   message={`No signed-up riders match "${searchQuery}"`}
                   tc={tc}
@@ -334,14 +342,16 @@ export default function Riders() {
           {/* REMOVE VIEW */}
           {view === "remove" && (
             <section className={`rounded-2xl border p-5 mb-6 ${tc.card}`}>
-              <h2 className="text-lg font-black mb-3">🗑️ Remove from your connections</h2>
+              <h2 className="text-lg font-black mb-3 flex items-center gap-2">
+                <Icon name="trash" size={18} className={tc.sub} /> Remove from your connections
+              </h2>
               {loading ? (
                 <p className={`text-center text-sm ${tc.sub} py-8`}>
-                  <i className="fa fa-spinner fa-spin mr-2"></i>Loading…
+                  <Icon name="spinner" size={14} className="mr-2 inline-block animate-spin" />Loading…
                 </p>
               ) : connections.length === 0 ? (
                 <EmptyState
-                  icon="fa-users"
+                  icon="riders"
                   title="No connections yet"
                   message="Add some riders first using the Add Rider or Near Riders button"
                   tc={tc}
@@ -359,15 +369,17 @@ export default function Riders() {
           {/* NEAR VIEW */}
           {view === "near" && (
             <section className={`rounded-2xl border p-5 mb-6 ${tc.card}`}>
-              <h2 className="text-lg font-black mb-1">📍 Riders near you</h2>
+              <h2 className="text-lg font-black mb-1 flex items-center gap-2">
+                <Icon name="pin" size={18} className={tc.sub} /> Riders near you
+              </h2>
               <p className={`text-xs ${tc.sub} mb-3`}>Within 50 km of your location</p>
               {loading ? (
                 <p className={`text-center text-sm ${tc.sub} py-8`}>
-                  <i className="fa fa-spinner fa-spin mr-2"></i>Finding riders near you…
+                  <Icon name="spinner" size={14} className="mr-2 inline-block animate-spin" />Finding riders near you…
                 </p>
               ) : nearRiders.length === 0 ? (
                 <EmptyState
-                  icon="fa-map-marker-alt"
+                  icon="pin"
                   title="No nearby riders"
                   message="When other riders sign up with locations near yours, they'll appear here"
                   tc={tc}
@@ -386,7 +398,9 @@ export default function Riders() {
           <section className={`rounded-2xl border p-5 ${tc.card}`}>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-lg font-black">
-                🤝 Your connections
+                <span className="inline-flex items-center gap-2">
+                  <Icon name="riders" size={18} className={tc.sub} /> Your connections
+                </span>
                 <span className={`ml-2 text-sm font-normal ${tc.sub}`}>
                   ({connections.length})
                 </span>
@@ -395,17 +409,17 @@ export default function Riders() {
                 onClick={reloadConnections}
                 className={`text-xs font-bold ${tc.sub} hover:underline`}
               >
-                <i className="fa fa-refresh mr-1"></i>Refresh
+                <Icon name="refresh" size={12} className="mr-1 inline-block" />Refresh
               </button>
             </div>
 
             {loading ? (
               <p className={`text-center text-sm ${tc.sub} py-8`}>
-                <i className="fa fa-spinner fa-spin mr-2"></i>Loading…
+                <Icon name="spinner" size={14} className="mr-2 inline-block animate-spin" />Loading…
               </p>
             ) : connections.length === 0 ? (
               <EmptyState
-                icon="fa-users"
+                icon="riders"
                 title="No connections yet"
                 message="Use Add Rider or Near Riders above to start connecting with real riders"
                 tc={tc}

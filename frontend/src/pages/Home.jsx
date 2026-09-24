@@ -38,6 +38,8 @@ import TopBar               from "./components/layout/TopBar";
 import StartRideModal       from "./components/shared/StartRideModal";
 import { useVoice }         from "./components/shared/useVoice";
 import { useTheme }         from "./hooks/useTheme";
+import Icon                 from "./components/ui/Icon";
+import Button               from "./components/ui/Button";
 
 import ActiveRideOverlay    from "./components/ride/ActiveRideOverlay";
 import RideHistoryPanel     from "./components/ride/RideHistoryPanel";

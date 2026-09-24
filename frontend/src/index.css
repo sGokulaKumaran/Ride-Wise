@@ -28,13 +28,18 @@ button, a, input, textarea {         /* Interactive elements transition too */
 }
 
 /* ── Design polish ─────────────────────────────────────────── */
-::selection { background: rgba(249, 115, 22, 0.35); }
+::selection { background: rgba(255, 122, 26, 0.28); }
 
-:focus-visible {                       /* Keyboard navigation indicator */
-  outline: 2px solid rgba(249, 115, 22, 0.7);
+/* One focus treatment for the whole app — the functional accent. */
+:focus-visible {
+  outline: 2px solid #FF7A1A;
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: 6px;
 }
+
+/* Loader used by every button/spinner in the icon family. */
+@keyframes rw-spin { to { transform: rotate(360deg); } }
+.rw-spin { animation: rw-spin 0.85s linear infinite; }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -60,9 +65,24 @@ html.rw-reduce-motion *::after {
   scroll-behavior: auto !important;
 }
 
-/* High contrast: strengthen muted text, faint borders, translucent cards */
+/* High contrast: strengthen muted text, faint borders, faint surfaces.
+   Targets the exact palette values used by the four theme tokens so it
+   keeps working after the design system refresh. */
 html.rw-high-contrast .text-gray-400 { color: #d4d4d8 !important; }
 html.rw-high-contrast .text-gray-500 { color: #52525b !important; }
+
+html.rw-high-contrast [class*="text-[#A1A1AA]"],
+html.rw-high-contrast [class*="text-[#9AA0C0]"] { color: #E7E7EA !important; }
+
+html.rw-high-contrast [class*="text-[#6B6B72]"],
+html.rw-high-contrast [class*="text-[#7C6A58]"] { color: #37373C !important; }
+
+html.rw-high-contrast [class*="border-[#26262B]"],
+html.rw-high-contrast [class*="border-[#252A45]"] { border-color: rgba(255,255,255,0.38) !important; }
+
+html.rw-high-contrast [class*="border-[#E4E4E7]"],
+html.rw-high-contrast [class*="border-[#EADFD2]"] { border-color: rgba(0,0,0,0.3) !important; }
+
 html.rw-high-contrast .bg-white\/5 { background-color: rgba(255, 255, 255, 0.12) !important; }
 html.rw-high-contrast .bg-white\/10 { background-color: rgba(255, 255, 255, 0.18) !important; }
 html.rw-high-contrast .border-white\/10 { border-color: rgba(255, 255, 255, 0.35) !important; }

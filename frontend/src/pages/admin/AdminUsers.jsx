@@ -1,5 +1,5 @@
 // ============================================================
-// 👥 AdminUsers — User management page
+// AdminUsers — User management page
 //
 // Features:
 //   - Paginated user table
@@ -13,6 +13,8 @@ import { getUsers, updateUserStatus } from "../../services/adminApi";
 import { useTheme } from "../hooks/useTheme";
 import AdminLayout from "./AdminLayout";
 import { useAuth } from "../../context/AuthContext";
+import Icon from "../components/ui/Icon";
+import Button from "../components/ui/Button";
 
 export default function AdminUsers() {
   const { user } = useAuth();
@@ -95,27 +97,27 @@ export default function AdminUsers() {
 
           {/* Search */}
           <div className="relative w-full sm:w-72">
-            <i className={`fa fa-search absolute left-3 top-1/2 -translate-y-1/2 ${tc.sub} text-sm`} />
+            <Icon name="search" size={16} className={`absolute left-3 top-1/2 -translate-y-1/2 ${tc.sub}`} />
             <input
               type="text"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Search by username or email…"
-              className={`w-full pl-9 pr-4 py-2.5 rounded-xl border text-sm ${tc.input} focus:outline-none focus:ring-2 focus:ring-orange-500/50`}
+              className={`w-full pl-9 pr-4 py-2.5 rounded-lg border text-sm ${tc.input}`}
             />
           </div>
         </div>
 
         {/* ── Error ── */}
         {error && (
-          <div className="p-4 rounded-xl border border-red-500/30 bg-red-500/10 text-red-400">
-            <i className="fa fa-exclamation-triangle mr-2" />
+          <div className={`flex items-center gap-2 p-4 rounded-xl border text-sm ${tc.dangerSoft}`}>
+            <Icon name="alertTriangle" size={16} />
             {error}
           </div>
         )}
 
         {/* ── Users Table ── */}
-        <div className={`rounded-2xl border overflow-hidden ${tc.card}`}>
+        <div className={`rounded-xl border overflow-hidden ${tc.card}`}>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -134,7 +136,7 @@ export default function AdminUsers() {
                   <tr>
                     <td colSpan={7} className="text-center py-12">
                       <div className="inline-flex items-center gap-2">
-                        <div className="w-5 h-5 rounded-full border-2 border-orange-500 border-t-transparent animate-spin" />
+                        <Icon name="spinner" size={16} className="rw-spin" />
                         <span className={tc.sub}>Loading users…</span>
                       </div>
                     </td>
@@ -144,7 +146,12 @@ export default function AdminUsers() {
                 {!loading && users.length === 0 && (
                   <tr>
                     <td colSpan={7} className={`text-center py-12 ${tc.sub}`}>
-                      {search ? "No users found matching your search." : "No users registered yet."}
+                      <div className="flex flex-col items-center gap-3">
+                        <Icon name="list" size={28} />
+                        <span>
+                          {search ? "No users found matching your search." : "No users registered yet."}
+                        </span>
+                      </div>
                     </td>
                   </tr>
                 )}
@@ -154,14 +161,14 @@ export default function AdminUsers() {
                     key={u.id}
                     className={`border-b ${tc.divider} transition-colors ${tc.cardHover}`}
                   >
-                    <td className="px-4 py-3 font-mono text-xs opacity-60">#{u.id}</td>
+                    <td className={`px-4 py-3 font-mono text-xs ${tc.sub}`}>#{u.id}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                        <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${tc.button}`}>
                           {(u.username?.[0] || u.email?.[0] || "?").toUpperCase()}
-                        </div>
+                        </span>
                         <span className="font-medium truncate max-w-[120px]">
-                          {u.username || <span className="italic opacity-50">Not set</span>}
+                          {u.username || <span className={`italic ${tc.sub}`}>Not set</span>}
                         </span>
                       </div>
                     </td>
@@ -169,20 +176,16 @@ export default function AdminUsers() {
                       {u.email}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold ${
-                        u.role === "ADMIN"
-                          ? "bg-gradient-to-r from-orange-500 to-pink-500 text-white"
-                          : `${tc.record} ${tc.text}`
-                      }`}>
-                        {u.role === "ADMIN" && <i className="fa fa-shield-alt text-[10px]" />}
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-semibold ${tc.surface2} ${tc.sub} ${tc.divider}`}>
+                        {u.role === "ADMIN" && <Icon name="shield" size={14} />}
                         {u.role}
                       </span>
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${
-                        u.enabled ? "text-green-500" : "text-red-400"
+                        u.enabled ? tc.ok : tc.danger
                       }`}>
-                        <div className={`w-2 h-2 rounded-full ${u.enabled ? "bg-green-500" : "bg-red-400"}`} />
+                        <span className="w-2 h-2 rounded-full bg-current" />
                         {u.enabled ? "Active" : "Suspended"}
                       </span>
                     </td>
@@ -190,24 +193,18 @@ export default function AdminUsers() {
                       {formatDate(u.createdAt)}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <button
+                      <Button
+                        variant={u.enabled ? "danger" : "secondary"}
+                        size="sm"
+                        icon={u.enabled ? "ban" : "check"}
+                        loading={actionLoading === u.id}
                         onClick={() => handleToggleStatus(u.id, u.enabled)}
-                        disabled={actionLoading === u.id || u.role === "ADMIN"}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
-                          u.enabled
-                            ? "bg-red-500/15 text-red-400 hover:bg-red-500/25"
-                            : "bg-green-500/15 text-green-400 hover:bg-green-500/25"
-                        }`}
+                        disabled={u.role === "ADMIN"}
                         title={u.role === "ADMIN" ? "Cannot modify admin accounts" : ""}
+                        tc={tc}
                       >
-                        {actionLoading === u.id ? (
-                          <i className="fa fa-spinner fa-spin" />
-                        ) : u.enabled ? (
-                          <><i className="fa fa-ban mr-1" />Suspend</>
-                        ) : (
-                          <><i className="fa fa-check mr-1" />Enable</>
-                        )}
-                      </button>
+                        {u.enabled ? "Suspend" : "Enable"}
+                      </Button>
                     </td>
                   </tr>
                 ))}
@@ -222,20 +219,27 @@ export default function AdminUsers() {
                 Page {page + 1} of {totalPages}
               </p>
               <div className="flex gap-2">
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon="chevronLeft"
                   onClick={() => setPage(p => Math.max(0, p - 1))}
                   disabled={page === 0}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-30 ${tc.record} ${tc.cardHover}`}
+                  tc={tc}
                 >
-                  <i className="fa fa-chevron-left mr-1" />Prev
-                </button>
-                <button
+                  Prev
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon="chevronRight"
+                  iconRight
                   onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
                   disabled={page >= totalPages - 1}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-30 ${tc.record} ${tc.cardHover}`}
+                  tc={tc}
                 >
-                  Next<i className="fa fa-chevron-right ml-1" />
-                </button>
+                  Next
+                </Button>
               </div>
             </div>
           )}

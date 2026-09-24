@@ -9,6 +9,7 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 // Wraps the entire app — makes auth state available everywhere
 
 import { applyA11ySettings, loadA11ySettings } from "./utils/a11y";
+import { useTheme } from "./pages/hooks/useTheme";
 
 // ── Re-applies saved accessibility settings (text size, reduce motion,
 //    high contrast) app-wide whenever the logged-in user changes ──
@@ -19,6 +20,20 @@ function A11yApplier() {
     if (saved) applyA11ySettings(saved);
   }, [user?.id]);
   return null;
+}
+
+// ── Toast host — uses the same theme system as the rest of the app,
+//    so notifications match the four themes instead of always being dark ──
+function ThemedToasts() {
+  const { user } = useAuth();
+  const { tc } = useTheme(user?.id);
+  return (
+    <ToastContainer
+      position="bottom-right"
+      autoClose={3000}
+      theme={tc.isDark ? "dark" : "light"}
+    />
+  );
 }
 
 import { ToastContainer } from "react-toastify";
@@ -76,7 +91,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
-      <ToastContainer position="bottom-right" autoClose={3000} theme="dark" />
+      <ThemedToasts />
     </AuthProvider>
   );
 }

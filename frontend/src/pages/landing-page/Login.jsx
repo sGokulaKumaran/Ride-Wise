@@ -10,8 +10,6 @@
 //   - Time-based auto-theme on first load (morning=warm, day=light, etc.)
 //   - Manual theme switcher (Dark / Light / Warm / Midnight)
 //   - Voice control (say "dark", "light", "login", "signup")
-//   - Mouse glow + ambient particles + 3D card tilt on desktop
-//   - Ripple click effect on submit button
 //   - Password strength meter (signup only)
 //   - Inline error messages from AuthContext
 //   - "What happens next" steps panel (signup only)
@@ -21,16 +19,18 @@
 //   with API calls when your backend is ready. This file doesn't change.
 // ============================================================
 
-import { useState, useEffect, useRef, useCallback, memo } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import { themes } from "../hooks/useTheme";
+import Icon from "../components/ui/Icon";
+import Button, { IconButton } from "../components/ui/Button";
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const { login, signup, isAuthenticated, isFullyOnboarded } = useAuth();
 
   // ── Refs for DOM interaction ─────────────────────────────────
-  const cardRef      = useRef(null);   // passed to TiltCard for the 3D-tilt node
   const dropdownRef  = useRef(null);   // for closing theme dropdown on outside click
 
   // ── UI state ─────────────────────────────────────────────────
@@ -49,22 +49,9 @@ export default function LoginPage() {
     setThemeState(t);
     try { localStorage.setItem("ridewise-theme", t); } catch { /* ignore */ }
   }, []);
-  const [ripples,    setRipples]    = useState([]);   // submit-button ripple spans
   const [isLogin,    setIsLogin]    = useState(true);   // true = Login tab, false = Sign Up tab
-  // Particle specs are generated ONCE (stable across renders). Math.random()
-  // during render would reshuffle every dot on each keystroke/mousemove.
-  const [particles] = useState(() =>
-    [...Array(20)].map(() => ({
-      size:  Math.random() * 4 + 1,
-      top:   `${Math.random() * 100}%`,
-      left:  `${Math.random() * 100}%`,
-      dur:   Math.random() * 3 + 2,
-      delay: Math.random() * 3,
-    }))
-  );
   const [themeOpen,  setThemeOpen]  = useState(false);
   const [voiceMode,  setVoiceMode]  = useState(false);
-  const [focused,    setFocused]    = useState(null);   // which input is focused
 
   // ── Form state ───────────────────────────────────────────────
   const [email,             setEmail]             = useState("");
@@ -74,53 +61,10 @@ export default function LoginPage() {
   const [loading,           setLoading]           = useState(false);
   const [error,             setError]             = useState("");
 
-  // ── Theme definitions ─────────────────────────────────────────
-  // Each theme has all Tailwind class strings needed for that visual style
-  const themes = {
-    dark: {
-      bg: "bg-black", text: "text-white", sub: "text-gray-400",
-      card: "bg-white/5 border-white/10 text-white",
-      input: "bg-white/5 border-white/15 text-white placeholder-gray-500",
-      button: "bg-white text-black",
-      glow: "rgba(255,255,255,0.15)", particle: "bg-white",
-      accent: "from-white to-gray-400",
-      record: "bg-white/10 border border-white/20",
-      label: "Dark", icon: "🌙",
-    },
-    light: {
-      bg: "bg-gray-50", text: "text-black", sub: "text-gray-500",
-      card: "bg-white border-gray-200 shadow-xl text-black",
-      input: "bg-gray-50 border-gray-300 text-black placeholder-gray-400",
-      button: "bg-black text-white",
-      glow: "rgba(0,0,0,0.08)", particle: "bg-black",
-      accent: "from-black to-gray-500",
-      record: "bg-black/10 border border-gray-300",
-      label: "Light", icon: "☀️",
-    },
-    warm: {
-      bg: "bg-gradient-to-br from-orange-50 via-rose-50 to-amber-50",
-      text: "text-orange-950", sub: "text-orange-700",
-      card: "bg-white/60 backdrop-blur-xl border-orange-200 shadow-xl text-orange-950",
-      input: "bg-white/70 border-orange-200 text-orange-950 placeholder-orange-300",
-      button: "bg-gradient-to-r from-orange-500 to-rose-500 text-white",
-      glow: "rgba(251,146,60,0.2)", particle: "bg-orange-500",
-      accent: "from-orange-500 to-rose-500",
-      record: "bg-orange-100 border border-orange-300",
-      label: "Warm", icon: "🌅",
-    },
-    midnight: {
-      bg: "bg-gradient-to-br from-indigo-950 via-purple-950 to-black",
-      text: "text-white", sub: "text-purple-300",
-      card: "bg-white/5 border-purple-500/20 text-white",
-      input: "bg-white/5 border-purple-400/20 text-white placeholder-purple-400",
-      button: "bg-gradient-to-r from-purple-500 to-pink-500 text-white",
-      glow: "rgba(168,85,247,0.25)", particle: "bg-purple-400",
-      accent: "from-purple-400 to-pink-400",
-      record: "bg-purple-500/20 border border-purple-400/40",
-      label: "Midnight", icon: "🌌",
-    },
-  };
-  const tc = themes[theme]; // shorthand for the currently active theme object
+  // ── Theme classes ─────────────────────────────────────────────
+  // The shared theme system from useTheme.js is the single source of
+  // truth — the login page used to keep its own duplicate theme map.
+  const tc = themes[theme];
 
   // ── Auto-theme by time of day on first load ──────────────────
   useEffect(() => {
@@ -155,9 +99,6 @@ export default function LoginPage() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // (Mouse glow + cursor trail now live in CursorGlowLayer at the bottom
-  // of this file - it owns its own listener and never re-renders this page.)
-
   // ── Password strength (0-100) for signup ─────────────────────
   useEffect(() => {
     let s = 0;
@@ -167,20 +108,6 @@ export default function LoginPage() {
     if (/[^A-Za-z0-9]/.test(password)) s += 25; // special char
     setPasswordStrength(s);
   }, [password]);
-
-  // ── Ripple click effect on the submit button ─────────────────
-  const rippleTimers = useRef([]);
-  useEffect(() => () => { rippleTimers.current.forEach(clearTimeout); rippleTimers.current = []; }, []);
-  const createRipple = useCallback((e) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const size = Math.max(rect.width, rect.height) * 2;
-    const id   = Date.now() + Math.random(); // unique even on double-click
-    const x    = e.clientX - rect.left - size / 2;
-    const y    = e.clientY - rect.top  - size / 2;
-    setRipples((prev) => [...prev.slice(-5), { id, x, y, size }]); // cap: max 6 live spans
-    const t = setTimeout(() => setRipples((prev) => prev.filter((r) => r.id !== id)), 800);
-    rippleTimers.current.push(t);
-  }, []);
 
   // ── Voice control (existing behaviour: 6s auto-stop) ──
   // Cleanup added: recognition + timer are stopped on unmount so the mic
@@ -256,30 +183,7 @@ export default function LoginPage() {
     passwordStrength <= 75 ? "bg-yellow-500" : "bg-green-500";
 
   return (
-    <div
-      className={`relative min-h-screen w-full overflow-hidden transition-all duration-1000 ${tc.bg}`}
-    >
-
-      {/* ── Mouse glow + cursor trail (self-contained layer, zero page re-renders) ── */}
-      <CursorGlowLayer glow={tc.glow} />
-
-      {/* ── Ambient floating particles (specs fixed once, stable across renders) ── */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
-        {particles.map((p, i) => (
-          <div
-            key={i}
-            className={`absolute rounded-full ${tc.particle} opacity-20`}
-            style={{
-              width:  p.size,
-              height: p.size,
-              top:   p.top,
-              left:  p.left,
-              animation: `pulse ${p.dur}s infinite`,
-              animationDelay: `${p.delay}s`,
-            }}
-          />
-        ))}
-      </div>
+    <div className={`relative min-h-screen w-full overflow-hidden ${tc.bg} ${tc.text}`}>
 
       {/* ── Top bar: logo + voice + theme switcher ────────────── */}
       <div className="fixed top-5 left-5 right-5 z-50 flex justify-between items-center">
@@ -287,57 +191,53 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="flex items-center gap-2">
           <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${tc.button}`}>
-            <i className="fa fa-motorcycle text-sm" />
+            <Icon name="ride" size={18} />
           </div>
-          <span className={`text-lg font-black ${tc.text}`}>
-            Ride<span className="opacity-60">Wise</span>
+          <span className={`text-lg font-bold tracking-tight ${tc.text}`}>
+            Ride<span className="opacity-50">Wise</span>
           </span>
         </div>
 
         {/* Right: Voice + Theme */}
         <div className="flex items-center gap-2">
-          {/* Voice button */}
-          <button
+          {/* Voice button — red while the mic is listening (functional state) */}
+          <IconButton
+            variant={voiceMode ? "danger" : "secondary"}
+            size="sm"
+            icon={voiceMode ? "micOff" : "mic"}
+            label='Voice control: say "dark", "light", "login", "signup"'
+            tc={tc}
             onClick={startVoice}
-            title='Voice: say "dark", "light", "login", "signup"'
-            className={`relative w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110 ${
-              voiceMode
-                ? "bg-red-500 text-white animate-pulse"
-                : `${tc.record} ${tc.text}`
-            }`}
-          >
-            <i className={`fa ${voiceMode ? "fa-microphone-slash" : "fa-microphone"} text-sm`} />
-            {voiceMode && (
-              <span className="absolute inset-0 rounded-full bg-red-500 animate-ping opacity-30" />
-            )}
-          </button>
+          />
 
           {/* Theme dropdown */}
           <div ref={dropdownRef} className="relative">
-            <button
+            <Button
+              variant="secondary"
+              size="sm"
+              iconRight
+              icon={themeOpen ? "chevronUp" : "chevronDown"}
+              tc={tc}
+              title="Change theme"
               onClick={() => setThemeOpen(!themeOpen)}
-              className={`flex items-center gap-2 px-3 py-2 rounded-full border backdrop-blur-md transition-all hover:scale-105 ${tc.card}`}
             >
-              <span>{tc.icon}</span>
-              <span className={`text-sm font-semibold ${tc.text}`}>{tc.label}</span>
-              <i className={`fa fa-chevron-down text-xs ${tc.sub} transition-transform ${themeOpen ? "rotate-180" : ""}`} />
-            </button>
+              <Icon name={tc.icon} size={15} />
+              {tc.label}
+            </Button>
 
             {themeOpen && (
-              <div className={`absolute right-0 mt-2 w-40 rounded-xl border backdrop-blur-xl shadow-2xl z-50 overflow-hidden ${tc.card}`}>
+              <div className={`absolute right-0 mt-2 w-44 rounded-xl border overflow-hidden z-50 ${tc.card}`}>
                 {Object.entries(themes).map(([key, val]) => (
                   <button
                     key={key}
                     onClick={() => { setTheme(key); setThemeOpen(false); }}
-                    className={`w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm transition-all hover:bg-white/10 ${
-                      theme === key ? "font-bold" : ""
+                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors ${
+                      theme === key ? `${tc.navActive} font-semibold` : tc.navIdle
                     }`}
                   >
-                    <span>{val.icon}</span>
+                    <Icon name={val.icon} size={16} />
                     <span>{val.label}</span>
-                    {theme === key && (
-                      <i className="fa fa-check ml-auto text-green-400 text-xs" />
-                    )}
+                    {theme === key && <Icon name="check" size={14} className="ml-auto" />}
                   </button>
                 ))}
               </div>
@@ -354,20 +254,18 @@ export default function LoginPage() {
           <div className="hidden lg:block space-y-7">
 
             {/* Live badge */}
-            <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full border text-xs tracking-widest font-bold ${tc.card}`}>
-              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-              5,000+ Active Riders
+            <div className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-full border text-xs tracking-widest font-semibold ${tc.card}`}>
+              <span className={`w-2 h-2 rounded-full bg-current ${tc.ok}`} />
+              5,000+ ACTIVE RIDERS
             </div>
 
             {/* Headline */}
-            <h1 className={`text-6xl font-black leading-tight ${tc.text}`}>
+            <h1 className={`text-5xl font-bold leading-tight tracking-tight ${tc.text}`}>
               Your Next<br />
-              <span className={`bg-gradient-to-r ${tc.accent} bg-clip-text text-transparent`}>
-                Ride Starts Here
-              </span>
+              Ride Starts Here
             </h1>
 
-            <p className={`text-lg leading-relaxed max-w-sm ${tc.sub}`}>
+            <p className={`text-base leading-relaxed max-w-sm ${tc.sub}`}>
               Connect with riders nearby, plan epic routes, and share your journey with a passionate community.
             </p>
 
@@ -386,9 +284,9 @@ export default function LoginPage() {
             </div>
 
             {/* Testimonial */}
-            <div className={`p-5 rounded-2xl border backdrop-blur-md ${tc.card}`}>
+            <div className={`p-5 rounded-xl border ${tc.card}`}>
               <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center font-bold text-white text-sm">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold text-sm ${tc.button}`}>
                   A
                 </div>
                 <div>
@@ -402,47 +300,35 @@ export default function LoginPage() {
             </div>
 
             <p className={`text-xs ${tc.sub}`}>
-              💡 Voice control: say "dark", "light", "warm", "midnight", "login" or "signup"
+              Voice control: say "dark", "light", "warm", "midnight", "login" or "signup"
             </p>
           </div>
 
-          {/* Right column: auth form card (3D tilt runs on the card node itself via TiltCard below) */}
-          <TiltCard cardRef={cardRef}>
-            {/* Card outer glow */}
-            <div
-              className="absolute -inset-3 rounded-3xl blur-3xl opacity-30"
-              style={{
-                background: `radial-gradient(circle, ${
-                  theme === "light" ? "rgba(0,0,0,0.15)" : "rgba(255,120,40,0.4)"
-                }, transparent 60%)`,
-              }}
-            />
-
-            <div
-              className={`relative p-8 md:p-10 rounded-3xl border backdrop-blur-2xl transition-all duration-500 ${tc.card}`}
-              style={{ transform: "translateZ(30px)" }}
-            >
+          {/* Right column: auth form card */}
+          <div className="relative">
+            <div className={`relative p-7 md:p-9 rounded-xl border ${tc.card}`}>
               {/* ── Login / Sign Up tab switcher ─────────────── */}
-              <div className={`flex p-1 rounded-full mb-8 ${theme === "light" ? "bg-black/5" : "bg-white/5"}`}>
-                {["Login", "Sign Up"].map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => { setIsLogin(tab === "Login"); setError(""); }}
-                    className={`flex-1 py-2.5 rounded-full text-sm font-bold transition-all duration-300 ${
-                      (isLogin && tab === "Login") || (!isLogin && tab === "Sign Up")
-                        ? `${tc.button} scale-105 shadow-lg`
-                        : `${tc.sub} hover:scale-105`
-                    }`}
-                  >
-                    {tab}
-                  </button>
-                ))}
+              <div className={`flex p-1 rounded-full mb-8 ${tc.surface2}`}>
+                {["Login", "Sign Up"].map((tab) => {
+                  const active = (isLogin && tab === "Login") || (!isLogin && tab === "Sign Up");
+                  return (
+                    <button
+                      key={tab}
+                      onClick={() => { setIsLogin(tab === "Login"); setError(""); }}
+                      className={`flex-1 py-2 rounded-full text-sm font-semibold transition-colors ${
+                        active ? tc.button : tc.navIdle
+                      }`}
+                    >
+                      {tab}
+                    </button>
+                  );
+                })}
               </div>
 
               {/* ── Heading ──────────────────────────────────── */}
               <div className="mb-6">
-                <h2 className={`text-3xl font-black ${tc.text}`}>
-                  {isLogin ? "Welcome back 👋" : "Join the ride 🏍️"}
+                <h2 className={`text-2xl font-bold tracking-tight ${tc.text}`}>
+                  {isLogin ? "Welcome back" : "Join the ride"}
                 </h2>
                 <p className={`text-sm mt-1 ${tc.sub}`}>
                   {isLogin
@@ -453,8 +339,8 @@ export default function LoginPage() {
 
               {/* ── Inline error message ─────────────────────── */}
               {error && (
-                <div className="mb-4 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm flex items-center gap-2">
-                  <i className="fa fa-exclamation-circle shrink-0" />
+                <div className={`mb-4 px-4 py-3 rounded-lg border text-sm flex items-center gap-2 ${tc.dangerSoft}`}>
+                  <Icon name="alertCircle" size={16} />
                   <span>{error}</span>
                 </div>
               )}
@@ -464,62 +350,57 @@ export default function LoginPage() {
 
                 {/* Email field */}
                 <div>
-                  <label className={`text-xs font-bold tracking-wider mb-2 block ${tc.sub}`}>
+                  <label className={`text-xs font-medium tracking-wide mb-2 block ${tc.sub}`}>
                     EMAIL
                   </label>
                   <div className="relative">
-                    <i className={`fa fa-envelope absolute left-4 top-1/2 -translate-y-1/2 ${tc.sub}`} />
+                    <Icon name="mail" size={16} className={`absolute left-3.5 top-1/2 -translate-y-1/2 ${tc.sub}`} />
                     <input
                       type="email"
                       id="login-email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      onFocus={() => setFocused("email")}
-                      onBlur={() => setFocused(null)}
                       placeholder="you@example.com"
                       autoComplete="email"
-                      className={`w-full pl-12 pr-4 py-3.5 rounded-xl border-2 outline-none transition-all duration-300 ${
-                        focused === "email" ? "scale-[1.02]" : ""
-                      } ${tc.input}`}
+                      className={`w-full pl-10 pr-4 py-3 rounded-lg border text-sm ${tc.input}`}
                     />
                   </div>
                 </div>
 
                 {/* Password field */}
                 <div>
-                  <label className={`text-xs font-bold tracking-wider mb-2 block ${tc.sub}`}>
+                  <label className={`text-xs font-medium tracking-wide mb-2 block ${tc.sub}`}>
                     PASSWORD
                   </label>
                   <div className="relative">
-                    <i className={`fa fa-lock absolute left-4 top-1/2 -translate-y-1/2 ${tc.sub}`} />
+                    <Icon name="lock" size={16} className={`absolute left-3.5 top-1/2 -translate-y-1/2 ${tc.sub}`} />
                     <input
                       type={showPassword ? "text" : "password"}
                       id="login-password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      onFocus={() => setFocused("password")}
-                      onBlur={() => setFocused(null)}
                       placeholder="••••••••"
                       autoComplete={isLogin ? "current-password" : "new-password"}
-                      className={`w-full pl-12 pr-12 py-3.5 rounded-xl border-2 outline-none transition-all duration-300 ${
-                        focused === "password" ? "scale-[1.02]" : ""
-                      } ${tc.input}`}
+                      className={`w-full pl-10 pr-11 py-3 rounded-lg border text-sm ${tc.input}`}
                     />
                     {/* Show / hide password toggle */}
-                    <button
+                    <IconButton
+                      variant="ghost"
+                      size="sm"
+                      icon={showPassword ? "eyeOff" : "eye"}
+                      label={showPassword ? "Hide password" : "Show password"}
+                      tc={tc}
                       type="button"
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 border-transparent"
                       onClick={() => setShowPassword(!showPassword)}
-                      className={`absolute right-4 top-1/2 -translate-y-1/2 hover:scale-125 transition-transform ${tc.sub}`}
-                    >
-                      <i className={`fa ${showPassword ? "fa-eye-slash" : "fa-eye"}`} />
-                    </button>
+                    />
                   </div>
 
                   {/* Password strength bar (sign up only, only when password entered) */}
                   {!isLogin && password && (
-                    <div className="mt-2 h-1.5 rounded-full overflow-hidden bg-gray-300/20">
+                    <div className={`mt-2 h-1 rounded-full overflow-hidden ${tc.surface2}`}>
                       <div
-                        className={`h-full transition-all duration-500 ${strengthColor}`}
+                        className={`h-full transition-all duration-500 bg-current ${strengthColor}`}
                         style={{ width: `${passwordStrength}%` }}
                       />
                     </div>
@@ -530,7 +411,7 @@ export default function LoginPage() {
                 {isLogin && (
                   <div className="flex items-center justify-between text-sm">
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" className="w-4 h-4 accent-orange-500" />
+                      <input type="checkbox" className="w-4 h-4 accent-[#FF7A1A]" />
                       <span className={tc.sub}>Remember me</span>
                     </label>
                     <button type="button" className={`${tc.sub} hover:underline text-xs`}>
@@ -539,39 +420,27 @@ export default function LoginPage() {
                   </div>
                 )}
 
-                {/* Submit button with ripple effect */}
-                <button
+                {/* Submit button */}
+                <Button
                   type="submit"
                   id="auth-submit-btn"
-                  disabled={loading}
-                  onClick={createRipple}
-                  className={`relative w-full py-3.5 rounded-xl font-bold overflow-hidden transition-all hover:scale-[1.02] hover:-translate-y-0.5 active:scale-95 disabled:opacity-70 flex items-center justify-center gap-2 ${tc.button}`}
+                  variant="primary"
+                  size="lg"
+                  full
+                  tc={tc}
                 >
                   {loading ? (
                     <>
-                      <i className="fa fa-spinner fa-spin" />
+                      <Icon name="spinner" size={18} className="rw-spin" />
                       {isLogin ? "Signing in…" : "Creating account…"}
                     </>
                   ) : (
                     <>
                       {isLogin ? "Sign In" : "Create Account"}
-                      <i className="fa fa-arrow-right" />
+                      <Icon name="arrowRight" size={18} />
                     </>
                   )}
-                  {/* Ripple spans */}
-                  {ripples.map((r) => (
-                    <span
-                      key={r.id}
-                      className="absolute rounded-full pointer-events-none"
-                      style={{
-                        left: r.x, top: r.y, width: r.size, height: r.size,
-                        background: "radial-gradient(circle, rgba(255,255,255,0.4), transparent 70%)",
-                        transform: "scale(0)",
-                        animation: "ripple 0.8s ease-out",
-                      }}
-                    />
-                  ))}
-                </button>
+                </Button>
 
                 {/* Tab switch link */}
                 <p className={`text-center text-sm ${tc.sub}`}>
@@ -579,7 +448,7 @@ export default function LoginPage() {
                   <button
                     type="button"
                     onClick={() => { setIsLogin(!isLogin); setError(""); }}
-                    className={`font-bold ${tc.text} hover:underline`}
+                    className={`font-semibold ${tc.text} hover:underline`}
                   >
                     {isLogin ? "Sign Up" : "Log in"}
                   </button>
@@ -588,25 +457,19 @@ export default function LoginPage() {
 
               {/* ── "What happens next" steps (sign up only) ──── */}
               {!isLogin && (
-                <div className={`mt-6 p-4 rounded-xl border ${
-                  theme === "light"
-                    ? "bg-black/5 border-black/10"
-                    : "bg-white/5 border-white/10"
-                }`}>
-                  <p className={`text-xs font-bold mb-3 tracking-wider ${tc.sub}`}>
+                <div className={`mt-6 p-4 rounded-lg border ${tc.surface2} ${tc.divider}`}>
+                  <p className={`text-xs font-semibold mb-3 tracking-wide ${tc.sub}`}>
                     WHAT HAPPENS NEXT
                   </p>
                   <div className="space-y-2">
                     {[
                       "Create your account (you are here)",
                       "Tell us about yourself — 30 seconds",
-                      "Start connecting with riders 🏍️",
+                      "Start connecting with riders",
                     ].map((step, i) => (
                       <div key={i} className={`flex items-center gap-2.5 text-xs ${tc.sub}`}>
-                        <span className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px] shrink-0 ${
-                          i === 0
-                            ? "bg-orange-500/30 text-orange-400"
-                            : "bg-white/10 text-gray-400"
+                        <span className={`w-5 h-5 rounded-full flex items-center justify-center font-semibold text-[10px] shrink-0 ${
+                          i === 0 ? `${tc.button}` : `${tc.surface2} ${tc.text}`
                         }`}>
                           {i + 1}
                         </span>
@@ -623,153 +486,9 @@ export default function LoginPage() {
               <span className="underline cursor-pointer hover:opacity-70">Privacy Policy</span>
             </p>
           </div>
-      </TiltCard>
+          </div>
         </div>
       </div>
-
-      {/* Ripple animation keyframe */}
-      <style>{`@keyframes ripple { to { transform: scale(4); opacity: 0; } }`}</style>
     </div>
   );
 }
-
-// ============================================================
-// TiltCard - 3D card tilt WITHOUT re-rendering the Login page.
-// Listens to mousemove itself and writes the transform straight to
-// the card node (rAF-throttled). Zero React renders while moving.
-// ============================================================
-const TiltCard = memo(function TiltCard({ cardRef, children }) {
-  const innerRef = useRef(null);
-  useEffect(() => {
-    let rafId = 0;
-    let pending = null;
-    const paint = () => {
-      rafId = 0;
-      const node = cardRef?.current || innerRef.current;
-      if (!node || !pending) return;
-      const r = node.getBoundingClientRect();
-      const cx = r.left + r.width / 2;
-      const cy = r.top + r.height / 2;
-      const x = -((pending.y - cy) / r.height) * 10;
-      const y = ((pending.x - cx) / r.width) * 10;
-      node.style.transform = `perspective(1500px) rotateX(${x}deg) rotateY(${y}deg)`;
-      pending = null;
-    };
-    const onMove = (e) => {
-      pending = { x: e.clientX, y: e.clientY };
-      if (!rafId) rafId = requestAnimationFrame(paint);
-    };
-    window.addEventListener("mousemove", onMove, { passive: true });
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      if (rafId) cancelAnimationFrame(rafId);
-    };
-  }, [cardRef]);
-  return (
-    <div ref={cardRef || innerRef} className="relative transition-transform duration-200 ease-out" style={{ transformStyle: "preserve-3d" }}>
-      {children}
-    </div>
-  );
-});
-
-// ============================================================
-// CursorGlowLayer — mouse glow + cursor trail WITHOUT re-rendering
-// the Login page.
-//
-// Why this exists: the old code stored mousePos + 3D-tilt in React state,
-// so every pixel of mouse movement re-rendered the whole login page
-// (form, particles, everything). This layer instead:
-//   • listens to mousemove itself,
-//   • paints the glow + trail by writing directly to DOM-node styles
-//     via refs (no setState per event),
-//   • throttles paint work with requestAnimationFrame.
-// It only ever re-renders when the `glow` colour prop changes (theme
-// switch) — cursor movement costs zero React renders.
-// ============================================================
-const CursorGlowLayer = memo(function CursorGlowLayer({ glow }) {
-  const glowRef  = useRef(null); // the radial-gradient overlay div
-  const trailRef = useRef(null); // fixed container holding the trail dots
-  const dotsRef  = useRef([]);   // pooled trail dot nodes (reused, not recreated)
-
-  useEffect(() => {
-    const glowEl  = glowRef.current;
-    const trailEl = trailRef.current;
-    if (!glowEl || !trailEl) return;
-
-    // Pre-create 12 reusable dots (avoids DOM churn on every mousemove)
-    for (let i = 0; i < 12; i++) {
-      const d = document.createElement("div");
-      d.className = "absolute rounded-full";
-      d.style.width = "8px";
-      d.style.height = "8px";
-      d.style.filter = "blur(2px)";
-      d.style.pointerEvents = "none";
-      trailEl.appendChild(d);
-      dotsRef.current.push(d);
-    }
-
-    const trail = []; // recent positions, newest last
-    let rafId = 0;
-    let pending = null;
-
-    // Paint: glow follows cursor; dots show the last 12 positions, fading out
-    const paint = () => {
-      rafId = 0;
-      if (!pending) return;
-      const { x, y } = pending;
-      pending = null;
-      glowEl.style.background =
-        `radial-gradient(circle 600px at ${x}px ${y}px, ${glowRef.current?.dataset.glow || ""}, transparent 40%)`;
-      trail.push({ x, y });
-      if (trail.length > 12) trail.shift();
-      const dots = dotsRef.current;
-      for (let i = 0; i < dots.length; i++) {
-        const p = trail[trail.length - dots.length + i];
-        const dot = dots[i];
-        if (!p) { dot.style.opacity = "0"; continue; }
-        const age = (dots.length - 1 - i) / dots.length; // 0 = newest
-        dot.style.left = `${p.x - 4}px`;
-        dot.style.top  = `${p.y - 4}px`;
-        dot.style.background = `rgba(255,255,255,${(1 - age) * 0.5})`;
-        dot.style.opacity = String(1 - age);
-      }
-    };
-
-    const onMove = (e) => {
-      pending = { x: e.clientX, y: e.clientY };
-      if (!rafId) rafId = requestAnimationFrame(paint);
-    };
-    // Dots fade out when the mouse stops (same 100ms behaviour as before)
-    const clearer = setInterval(() => {
-      trail.length = 0;
-      for (const dot of dotsRef.current) dot.style.opacity = "0";
-    }, 100);
-
-    window.addEventListener("mousemove", onMove, { passive: true });
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      clearInterval(clearer);
-      if (rafId) cancelAnimationFrame(rafId);
-      dotsRef.current = [];
-    };
-  }, []);
-
-  // Keep the glow colour in sync when the theme changes (no re-render cost:
-  // stored on the node, read at paint time).
-  useEffect(() => {
-    if (glowRef.current) {
-      glowRef.current.dataset.glow = glow;
-      glowRef.current.style.background =
-        `radial-gradient(circle 600px at 50% 30%, ${glow}, transparent 40%)`;
-    }
-  }, [glow]);
-
-  return (
-    <>
-      {/* cursor trail dots live here (position:fixed via the wrapper) */}
-      <div ref={trailRef} className="fixed inset-0 pointer-events-none z-40" />
-      {/* radial glow overlay */}
-      <div ref={glowRef} data-glow={glow} className="pointer-events-none fixed inset-0 z-0" />
-    </>
-  );
-});

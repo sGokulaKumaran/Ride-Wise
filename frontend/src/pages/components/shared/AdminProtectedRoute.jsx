@@ -1,5 +1,5 @@
 // ============================================================
-// 🛡️ AdminProtectedRoute — Guards admin routes
+// AdminProtectedRoute — Guards admin routes
 //
 // USAGE (in App.jsx):
 //   <Route path="/admin" element={
@@ -7,7 +7,7 @@
 //   } />
 //
 // REDIRECT LOGIC:
-//   loading               → show branded loader
+//   loading               → show themed loader
 //   not isAuthenticated   → redirect to / (Login page)
 //   not isFullyOnboarded  → redirect to /onboarding
 //   not isAdmin           → redirect to /home (unauthorized)
@@ -15,19 +15,20 @@
 // ============================================================
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../../../context/AuthContext";
+import { useTheme } from "../../hooks/useTheme";
+import Icon from "../ui/Icon";
 
 export default function AdminProtectedRoute({ children }) {
-  const { isAuthenticated, isFullyOnboarded, isAdmin, loading } = useAuth();
+  const { isAuthenticated, isFullyOnboarded, isAdmin, loading, user } = useAuth();
+  const { tc } = useTheme(user?.id);   // same tokens the admin pages use
 
   // ── CHECK 1: Still loading? Show spinner ──
   if (loading) {
     return (
-      <div className="min-h-screen w-full flex items-center justify-center bg-black">
-        <div className="text-white text-center">
-          <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center animate-pulse shadow-2xl shadow-orange-500/40">
-            <i className="fa fa-shield text-xl text-white" />
-          </div>
-          <p className="text-sm text-gray-400 font-medium tracking-wide">
+      <div className={`min-h-screen w-full flex items-center justify-center ${tc.bg} ${tc.text}`}>
+        <div className={`rounded-xl border px-6 py-5 text-center ${tc.card}`}>
+          <Icon name="spinner" size={18} className={`rw-spin block mx-auto mb-3 ${tc.sub}`} />
+          <p className={`text-sm font-medium tracking-wide ${tc.sub}`}>
             Loading RideWise Admin…
           </p>
         </div>

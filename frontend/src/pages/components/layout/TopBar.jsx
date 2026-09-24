@@ -1,5 +1,5 @@
 // ============================================================
-// 🔝 TopBar — Fixed top navigation bar for authenticated pages
+// TopBar — Fixed top navigation bar for authenticated pages
 //
 // LEFT:   Mobile-only logo (sidebar handles desktop)
 // CENTER: Search bar with dropdown (desktop only)
@@ -16,6 +16,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../../context/AuthContext";
 import ThemeDropdown from "../shared/ThemeDropdown";
+import Icon from "../ui/Icon";
+import { IconButton } from "../ui/Button";
 import { getNotifications, getUnreadCount, markAsRead, markAllAsRead } from "../../../services/notificationApi";
 
 export default function TopBar({
@@ -29,16 +31,9 @@ export default function TopBar({
   const navigate = useNavigate();
   const { avatarLetter } = useAuth(); // get real avatar letter from auth context
 
-  // ── Theme-aware palette for the notification dropdown ──────────
-  // (the dropdown uses inline styles, so derive colors from theme)
-  const dark = theme === "dark" || theme === "midnight";
-  const ddBg         = dark ? "rgba(15,15,26,0.98)"             : "rgba(255,255,255,0.97)";
-  const ddBorder     = dark ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(0,0,0,0.12)";
-  const ddText       = dark ? "white"                           : "#18181b";
-  const ddSub        = dark ? "rgba(255,255,255,0.4)"           : "rgba(0,0,0,0.45)";
-  const ddHover      = dark ? "rgba(255,255,255,0.04)"          : "rgba(0,0,0,0.05)";
-  const ddIconBg     = dark ? "rgba(255,255,255,0.06)"          : "rgba(0,0,0,0.05)";
-  const ddIconBorder = dark ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(0,0,0,0.1)";
+  // ── Notification dropdown styling comes from the theme tokens ───
+  // (tc.card / tc.sub / tc.divider / tc.cardHover / tc.navActive) —
+  // one flat monochrome surface shared by all four themes.
 
   // ── State ────────────────────────────────────────────────────
   const [searchQuery,       setSearchQuery]       = useState("");
@@ -75,17 +70,17 @@ export default function TopBar({
 
   return (
     <header
-      className={`fixed top-0 left-0 lg:left-64 right-0 z-30 backdrop-blur-xl border-b ${tc.divider} ${tc.bar} h-16`}
+      className={`fixed top-0 left-0 lg:left-64 right-0 z-30 border-b ${tc.divider} ${tc.bar} h-16`}
     >
       <div className="flex items-center justify-between h-full px-4 md:px-6 gap-4">
 
         {/* ── Mobile: Logo (desktop uses Sidebar logo) ─────── */}
         <div className="lg:hidden flex items-center gap-2 shrink-0">
           <div
-            className={`w-9 h-9 rounded-xl flex items-center justify-center ${tc.button} text-sm cursor-pointer`}
+            className={`w-9 h-9 rounded-lg border flex items-center justify-center ${tc.button} cursor-pointer`}
             onClick={() => navigate("/home")}
           >
-            <i className="fa fa-motorcycle" />
+            <Icon name="ride" size={18} />
           </div>
           <span className="text-lg font-black cursor-pointer" onClick={() => navigate("/home")}>
             Ride<span className="opacity-60">Wise</span>
@@ -95,9 +90,9 @@ export default function TopBar({
         {/* ── Desktop: Search bar ───────────────────────────── */}
         <div className="flex-1 max-w-2xl relative hidden md:block">
           <div
-            className={`flex items-center gap-2 px-4 py-2 rounded-full border transition-all focus-within:ring-2 focus-within:ring-orange-500/30 ${tc.card}`}
+            className={`flex items-center gap-2 px-4 py-2 rounded-full border transition-colors ${tc.card}`}
           >
-            <i className={`fa fa-search text-sm ${tc.sub}`} />
+            <Icon name="search" size={16} className={tc.sub} />
             <input
               type="text"
               value={searchQuery}
@@ -108,15 +103,17 @@ export default function TopBar({
                 }
               }}
               placeholder="Search riders… (press Enter)"
-              className={`flex-1 bg-transparent outline-none text-sm ${tc.text}`}
+              className={`flex-1 bg-transparent text-sm ${tc.text}`}
             />
             {searchQuery && (
-              <button
+              <IconButton
+                icon="close"
+                label="Clear search"
+                size="sm"
+                variant="ghost"
+                tc={tc}
                 onClick={() => setSearchQuery("")}
-                className={`text-xs ${tc.sub} hover:opacity-70`}
-              >
-                <i className="fa fa-times" />
-              </button>
+              />
             )}
           </div>
         </div>
@@ -125,56 +122,39 @@ export default function TopBar({
         <div className="flex items-center gap-1.5 shrink-0">
 
           {/* Mobile search button */}
-          <button
+          <IconButton
+            icon="search"
+            label="Search riders"
+            variant="secondary"
+            tc={tc}
+            className="md:hidden"
             onClick={() => setMobileSearchOpen(!mobileSearchOpen)}
-            className={`md:hidden w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110 ${tc.record}`}
-          >
-            <i className="fa fa-search text-sm" />
-          </button>
+          />
 
-          {/* Voice button — glows red while listening */}
+          {/* Voice button — swaps to micOff while listening */}
           {startVoice && (
-            <button
-              onClick={startVoice}
+            <IconButton
+              icon={voiceMode ? "micOff" : "mic"}
+              label="Voice search"
+              variant={voiceMode ? "soft" : "secondary"}
+              tc={tc}
               title='Voice commands: "dark", "light", "start", "find"'
-              className={`relative w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110 ${
-                voiceMode ? "bg-red-500 animate-pulse" : tc.record
-              }`}
-            >
-              <i className={`fa ${voiceMode ? "fa-microphone-slash" : "fa-microphone"} text-sm`} />
-              {voiceMode && (
-                <span className="absolute inset-0 rounded-full bg-red-500 animate-ping opacity-30" />
-              )}
-            </button>
+              onClick={startVoice}
+            />
           )}
 
           {/* Notification bell */}
-          <div style={{ position: "relative" }} data-notif-dropdown="true">
+          <div className="relative" data-notif-dropdown="true">
             <button
               onClick={openNotifications}
               title="Notifications"
-              style={{
-                width: "38px", height: "38px", borderRadius: "12px",
-                background: showNotifDropdown ? "rgba(249,115,22,0.15)" : ddIconBg,
-                border: showNotifDropdown ? "1px solid rgba(249,115,22,0.3)" : ddIconBorder,
-                color: showNotifDropdown ? "#f97316" : ddText,
-                cursor: "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                position: "relative", fontSize: "15px",
-                transition: "all 0.2s",
-              }}
+              className={`relative w-10 h-10 rounded-full border flex items-center justify-center transition-colors ${
+                showNotifDropdown ? `${tc.navActive} ${tc.divider}` : tc.record
+              }`}
             >
-              <i className="fa fa-bell" />
+              <Icon name="bell" size={16} />
               {unreadCount > 0 && (
-                <span style={{
-                  position: "absolute", top: "-3px", right: "-3px",
-                  width: "18px", height: "18px", borderRadius: "50%",
-                  background: "linear-gradient(135deg, #ef4444, #dc2626)",
-                  color: "white", fontSize: "10px", fontWeight: 900,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  border: dark ? "2px solid rgba(15,15,26,0.95)" : "2px solid rgba(255,255,255,0.95)",
-                  boxShadow: "0 2px 8px rgba(239,68,68,0.4)",
-                }}>
+                <span className={`absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-black flex items-center justify-center ${tc.chipSelected}`}>
                   {unreadCount > 9 ? "9+" : unreadCount}
                 </span>
               )}
@@ -182,25 +162,10 @@ export default function TopBar({
 
             {/* Notification dropdown */}
             {showNotifDropdown && (
-              <div style={{
-                position: "absolute", top: "46px", right: 0,
-                width: "320px", maxHeight: "400px",
-                background: ddBg,
-                backdropFilter: "blur(24px)",
-                border: ddBorder,
-                borderRadius: "16px",
-                boxShadow: "0 8px 40px rgba(0,0,0,0.6)",
-                zIndex: 9999,
-                overflow: "hidden",
-                display: "flex", flexDirection: "column",
-              }}>
+              <div className={`absolute top-[46px] right-0 w-80 max-h-[400px] rounded-xl border overflow-hidden z-50 flex flex-col ${tc.card}`}>
                 {/* Header */}
-                <div style={{
-                  display: "flex", alignItems: "center", justifyContent: "space-between",
-                  padding: "14px 16px",
-                  borderBottom: ddBorder,
-                }}>
-                  <span style={{ fontWeight: 900, fontSize: "14px", color: ddText }}>Notifications</span>
+                <div className={`flex items-center justify-between px-4 py-3.5 border-b ${tc.divider}`}>
+                  <span className="font-black text-sm">Notifications</span>
                   {notifications.length > 0 && (
                     <button
                       onClick={() => {
@@ -208,11 +173,7 @@ export default function TopBar({
                         setUnreadCount(0);
                         setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
                       }}
-                      style={{
-                        background: "none", border: "none",
-                        color: "#8b5cf6", fontSize: "11px", fontWeight: 700,
-                        cursor: "pointer",
-                      }}
+                      className={`text-[11px] font-bold transition-opacity hover:opacity-70 ${tc.sub}`}
                     >
                       Mark all read
                     </button>
@@ -220,10 +181,10 @@ export default function TopBar({
                 </div>
 
                 {/* Notification list */}
-                <div style={{ overflowY: "auto", flex: 1, maxHeight: "340px" }}>
+                <div className="overflow-y-auto flex-1 max-h-[340px]">
                   {notifications.length === 0 ? (
-                    <div style={{ padding: "32px 16px", textAlign: "center", color: ddSub, fontSize: "13px" }}>
-                      <i className="fa fa-bell-slash" style={{ fontSize: "24px", marginBottom: "8px", display: "block" }} />
+                    <div className={`px-4 py-8 text-center text-[13px] ${tc.sub}`}>
+                      <Icon name="bellOff" size={24} className="block mx-auto mb-2" />
                       No notifications yet
                     </div>
                   ) : (
@@ -244,43 +205,26 @@ export default function TopBar({
                             navigate(`/home?openRide=${n.rideId}`, { state: { openRideId: n.rideId } });
                           }
                         }}
-                        style={{
-                          padding: "12px 16px",
-                          borderBottom: ddBorder,
-                          cursor: n.rideId ? "pointer" : "default",
-                          background: n.isRead ? "transparent" : "rgba(139,92,246,0.06)",
-                          transition: "background 0.2s",
-                        }}
-                        onMouseEnter={e => e.currentTarget.style.background = ddHover}
-                        onMouseLeave={e => e.currentTarget.style.background = n.isRead ? "transparent" : "rgba(139,92,246,0.06)"}
+                        className={`px-4 py-3 border-b transition-colors ${tc.divider} ${tc.cardHover} ${
+                          n.rideId ? "cursor-pointer" : "cursor-default"
+                        }`}
                       >
-                        <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
-                          <div style={{
-                            width: "32px", height: "32px", borderRadius: "10px", flexShrink: 0,
-                            background: n.type === "group_ride_invite"
-                              ? "linear-gradient(135deg, rgba(139,92,246,0.2), rgba(99,102,241,0.15))"
-                              : ddIconBg,
-                            border: ddIconBorder,
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            fontSize: "13px",
-                          }}>
-                            {n.type === "group_ride_invite" ? "👥" : "🔔"}
+                        <div className="flex items-start gap-2.5">
+                          <div className={`w-8 h-8 rounded-lg border flex items-center justify-center shrink-0 ${
+                            n.type === "group_ride_invite" ? tc.accentSoft : `${tc.surface2} ${tc.divider}`
+                          }`}>
+                            <Icon name={n.type === "group_ride_invite" ? "riders" : "bell"} size={14} />
                           </div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <p style={{ fontWeight: 700, fontSize: "13px", margin: "0 0 3px",
-                              color: n.isRead ? ddSub : ddText }}>
+                          <div className="flex-1 min-w-0">
+                            <p className={`font-bold text-[13px] mb-1 ${n.isRead ? tc.sub : tc.text}`}>
                               {n.title}
                             </p>
-                            <p style={{ fontSize: "11px", color: ddSub, margin: 0,
-                              lineHeight: "1.4" }}>
+                            <p className={`text-[11px] leading-snug ${tc.sub}`}>
                               {n.message}
                             </p>
                           </div>
                           {!n.isRead && (
-                            <span style={{
-                              width: "8px", height: "8px", borderRadius: "50%",
-                              background: "#8b5cf6", flexShrink: 0, marginTop: "4px",
-                            }} />
+                            <span className={`w-2 h-2 rounded-full bg-current shrink-0 mt-1 ${tc.accent}`} />
                           )}
                         </div>
                       </div>
@@ -300,7 +244,7 @@ export default function TopBar({
             id="topbar-profile-btn"
             onClick={() => navigate("/account")}
             title="My profile"
-            className="w-10 h-10 rounded-full bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center font-bold text-white hover:scale-110 transition-transform ring-2 ring-orange-500/30 text-sm"
+            className={`w-10 h-10 rounded-full border flex items-center justify-center font-bold text-sm transition-colors ${tc.button}`}
           >
             {avatarLetter}
           </button>
@@ -310,14 +254,14 @@ export default function TopBar({
       {/* ── Mobile search slide-down ──────────────────────────── */}
       {mobileSearchOpen && (
         <div
-          className={`md:hidden absolute top-full left-0 right-0 p-4 border-b ${tc.divider} ${tc.bar} backdrop-blur-xl`}
+          className={`md:hidden absolute top-full left-0 right-0 p-4 border-b ${tc.divider} ${tc.bar}`}
         >
           <div className={`flex items-center gap-2 px-4 py-2 rounded-full border ${tc.card}`}>
-            <i className={`fa fa-search text-sm ${tc.sub}`} />
+            <Icon name="search" size={16} className={tc.sub} />
             <input
               type="text"
               placeholder="Search riders… (press Enter)"
-              className={`flex-1 bg-transparent outline-none text-sm ${tc.text}`}
+              className={`flex-1 bg-transparent text-sm ${tc.text}`}
               autoFocus
               onKeyDown={(e) => {
                 if (e.key === "Enter" && e.target.value.trim()) {

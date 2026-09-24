@@ -17,6 +17,7 @@
 import { useState } from "react";
 import { getConnectionsFull } from "../../../services/ridersApi";
 import { addGroupRideParticipant } from "../../../services/rideApi";
+import Icon from "../ui/Icon";
 
 export default function GroupRidersPanel({
   participants = [],
@@ -142,7 +143,7 @@ export default function GroupRidersPanel({
         <span style={{ fontWeight: 800, fontSize: "12px", color: "#a78bfa" }}>
           {otherCount}
         </span>
-        <i className="fa fa-chevron-down" style={{ fontSize: "9px", color: "rgba(255,255,255,0.4)" }} />
+        <Icon name="chevronDown" size={10} className="opacity-50" />
       </button>
     );
   }
@@ -175,7 +176,9 @@ export default function GroupRidersPanel({
         borderBottom: "1px solid rgba(255,255,255,0.06)",
       }}>
         <span style={{ fontSize: "11px", fontWeight: 700, color: "rgba(255,255,255,0.5)" }}>
-          👥 {participants.length} Riders
+          <span className="inline-flex items-center gap-1.5">
+            <Icon name="riders" size={12} /> {participants.length} Riders
+          </span>
         </span>
         <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
           {/* Admin-only: add friends while the ride is live */}
@@ -199,7 +202,7 @@ export default function GroupRidersPanel({
                 fontWeight: 800,
               }}
             >
-              <i className={`fa ${showAdd ? "fa-xmark" : "fa-user-plus"}`} />
+              <Icon name={showAdd ? "close" : "userPlus"} size={11} />
               {showAdd ? "Close" : "Add"}
             </button>
           )}
@@ -219,7 +222,7 @@ export default function GroupRidersPanel({
               fontSize: "10px",
             }}
           >
-            <i className="fa fa-chevron-up" />
+            <Icon name="chevronUp" size={11} />
           </button>
         </div>
       </div>
@@ -276,10 +279,16 @@ export default function GroupRidersPanel({
                     position: "absolute",
                     top: "-6px",
                     right: "-4px",
-                    fontSize: "10px",
-                    filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.5))"
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: "13px",
+                    height: "13px",
+                    borderRadius: "50%",
+                    background: "#0b0b0c",
+                    color: "#f5f5f5",
                   }}>
-                    👑
+                    <Icon name="shield" size={9} />
                   </div>
                 )}
               </div>
@@ -324,7 +333,7 @@ export default function GroupRidersPanel({
           {/* Loading state */}
           {loadingFriends && (
             <div style={{ color: "rgba(255,255,255,0.5)", fontSize: "11px", padding: "6px 0" }}>
-              <i className="fa fa-spinner fa-spin" style={{ marginRight: "6px" }} />
+              <Icon name="spinner" size={12} className="mr-1.5 inline-block animate-spin" />
               Loading friends...
             </div>
           )}
@@ -332,7 +341,7 @@ export default function GroupRidersPanel({
           {/* Load error state (with retry) */}
           {!loadingFriends && friendsError && (
             <div style={{ fontSize: "11px", color: "#fca5a5" }}>
-              <i className="fa fa-triangle-exclamation" style={{ marginRight: "6px" }} />
+              <Icon name="alertTriangle" size={12} className="mr-1.5 inline-block" />
               {friendsError}
               <button
                 onClick={loadFriends}
@@ -351,7 +360,7 @@ export default function GroupRidersPanel({
           {/* Add error state */}
           {addError && (
             <div style={{ fontSize: "11px", color: "#fca5a5" }}>
-              <i className="fa fa-triangle-exclamation" style={{ marginRight: "6px" }} />
+              <Icon name="alertTriangle" size={12} className="mr-1.5 inline-block" />
               {addError}
             </div>
           )}
@@ -359,7 +368,7 @@ export default function GroupRidersPanel({
           {/* Empty state */}
           {!loadingFriends && !friendsError && addableFriends.length === 0 && (
             <p style={{ margin: 0, fontSize: "11px", color: "rgba(255,255,255,0.35)" }}>
-              All your friends are already riding 🎉
+              All your friends are already riding
             </p>
           )}
 
@@ -407,8 +416,8 @@ export default function GroupRidersPanel({
                 }}
               >
                 {addingId === friend.id
-                  ? <i className="fa fa-spinner fa-spin" />
-                  : <><i className="fa fa-plus" style={{ marginRight: "4px" }} />Add</>}
+                  ? <Icon name="spinner" size={11} className="inline-block animate-spin" />
+                  : <><Icon name="plus" size={11} className="mr-1 inline-block" />Add</>}
               </button>
             </div>
           ))}

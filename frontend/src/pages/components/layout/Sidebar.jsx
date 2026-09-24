@@ -1,14 +1,14 @@
 // ============================================================
-// 📌 Sidebar — Minimal left navigation for RideWise
+// Sidebar — Minimal left navigation for RideWise
 //
 // INTENTIONALLY SIMPLE:
 //   This sidebar only shows what's actually built and useful right now.
 //   Future features (Riders feed, Map, etc.) will be added here later.
 //
 // CURRENT ITEMS:
-//   🏍️ Logo → navigates to /home
-//   🏠 Home → /home (active route highlighted)
-//   👥 Riders → placeholder, no action (shows "SOON" badge)
+//   Logo → navigates to /home
+//   Home → /home (active route highlighted)
+//   Riders → /riders (placeholder)
 //
 // BOTTOM:
 //   AccountMenu → shows avatar + name + email.
@@ -19,6 +19,7 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../../context/AuthContext";
 import AccountMenu from "../account/AccountMenu";
+import Icon from "../ui/Icon";
 
 export default function Sidebar({ tc }) {
   const navigate  = useNavigate();
@@ -29,7 +30,7 @@ export default function Sidebar({ tc }) {
 
   return (
     <aside
-      className={`hidden lg:flex fixed left-0 top-0 h-screen w-64 flex-col p-4 border-r ${tc.divider} ${tc.bar} backdrop-blur-xl z-40`}
+      className={`hidden lg:flex fixed left-0 top-0 h-screen w-64 flex-col p-4 border-r ${tc.divider} ${tc.bar} z-40`}
     >
       {/* ── Logo ──────────────────────────────────────────────── */}
       <div
@@ -37,9 +38,9 @@ export default function Sidebar({ tc }) {
         className="flex items-center gap-3 px-4 py-4 cursor-pointer group"
       >
         <div
-          className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 group-hover:scale-110 group-hover:rotate-3 ${tc.button} text-sm`}
+          className={`w-10 h-10 rounded-lg border flex items-center justify-center transition-colors ${tc.button}`}
         >
-          <i className="fa fa-motorcycle" />
+          <Icon name="ride" size={20} />
         </div>
         <span className="text-xl font-black tracking-tight">
           Ride<span className="opacity-50">Wise</span>
@@ -52,13 +53,13 @@ export default function Sidebar({ tc }) {
         {/* Home — active nav item */}
         <button
           onClick={() => navigate("/home")}
-          className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl font-semibold transition-all duration-200 hover:scale-[1.02] ${
+          className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl font-semibold transition-colors ${
             isHome
-              ? `${tc.button} shadow-lg`          // active = filled
-              : `hover:bg-white/10 ${tc.text}`    // inactive = ghost
+              ? tc.navActive     // active = monochrome ink surface
+              : tc.navIdle       // inactive = ghost
           }`}
         >
-          <i className={`fa fa-home text-lg w-5 text-center`} />
+          <Icon name="home" size={20} />
           <span className="flex-1 text-left">Home</span>
         </button>
 
@@ -67,13 +68,13 @@ export default function Sidebar({ tc }) {
         {/* Riders — active nav link */}
 <button
   onClick={() => navigate("/riders")}
-  className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl font-semibold transition-all duration-200 hover:scale-[1.02] ${
+  className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl font-semibold transition-colors ${
     location.pathname === "/riders"
-      ? `${tc.button} shadow-lg`
-      : `hover:bg-white/10 ${tc.text}`
+      ? tc.navActive
+      : tc.navIdle
   }`}
 >
-  <i className="fa fa-users text-lg w-5 text-center" />
+  <Icon name="riders" size={20} />
   <span className="flex-1 text-left">Riders</span>
 </button>
 
@@ -81,13 +82,13 @@ export default function Sidebar({ tc }) {
         {isAdmin && (
           <button
             onClick={() => navigate("/admin")}
-            className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl font-semibold transition-all duration-200 hover:scale-[1.02] ${
+            className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl font-semibold transition-colors ${
               location.pathname.startsWith("/admin")
-                ? `bg-gradient-to-r from-orange-500 to-pink-500 text-white shadow-lg`
-                : `hover:bg-white/10 ${tc.text}`
+                ? tc.navActive
+                : tc.navIdle
             }`}
           >
-            <i className="fa fa-shield-alt text-lg w-5 text-center" />
+            <Icon name="shield" size={20} />
             <span className="flex-1 text-left">Admin</span>
           </button>
         )}
