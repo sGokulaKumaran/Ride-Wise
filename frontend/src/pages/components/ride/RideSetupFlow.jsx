@@ -27,6 +27,7 @@ import { getCurrentLocation }                                  from "../../../se
 import { createRide }                                          from "../../../services/rideApi";
 import RideMap                                                 from "./RideMap";
 import LocationSearchInput                                     from "../shared/LocationSearchInput";
+import { themes }                                              from "../../hooks/useTheme";
 
 // ---------------------------------------------------------------------------
 // Preset popular destinations — shown as quick-pick chips
@@ -48,7 +49,10 @@ const POPULAR_PLACES = [
 // ---------------------------------------------------------------------------
 const STEP = { FROM: 1, DESTINATION: 2, PREVIEW: 3 };
 
-export default function RideSetupFlow({ rideType, userId, participantIds = [], onRideCreated, onCancel, tc }) {
+export default function RideSetupFlow({ rideType, userId, participantIds = [], onRideCreated, onCancel, tc: tcProp }) {
+  // ---- Theme tokens (fallback if the parent did not pass tc) ----
+  const tc = tcProp || themes[localStorage.getItem("ridewise-theme")] || themes.dark;
+
   // ---- Step tracker ----
   const [step, setStep] = useState(STEP.FROM);
 

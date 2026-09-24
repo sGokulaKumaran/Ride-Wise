@@ -24,6 +24,7 @@ import RideSetupFlow from "../ride/RideSetupFlow";
 import { getConnectionsFull } from "../../../services/ridersApi";
 import Button, { IconButton } from "../ui/Button";
 import Icon from "../ui/Icon";
+import { themes } from "../../hooks/useTheme";
 
 // Internal screen names
 const SCREEN = {
@@ -33,8 +34,12 @@ const SCREEN = {
   SETUP:   "setup",
 };
 
-export default function StartRideModal({ open, onClose, tc, onRideCreated, onOpenHistory }) {
+export default function StartRideModal({ open, onClose, tc: tcProp, onRideCreated, onOpenHistory }) {
   const { user } = useAuth();
+
+  // Theme tokens. `tc` is normally passed in by Home, but resolving it here
+  // as a fallback means a missing prop can never blank the screen.
+  const tc = tcProp || themes[localStorage.getItem("ridewise-theme")] || themes.dark;
 
   // Which screen is currently shown inside the modal
   const [screen,   setScreen]   = useState(SCREEN.HOME);

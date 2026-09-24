@@ -493,6 +493,7 @@ export default function Home() {
       <StartRideModal
         open={showStart}
         onClose={() => setShowStart(false)}
+        tc={tc}
         onRideCreated={handleRideCreated}
         onOpenHistory={() => { setShowStart(false); setShowHistory(true); }}
       />
