@@ -300,7 +300,6 @@ export default function Home() {
               className="text-4xl md:text-5xl font-black mb-2 leading-tight"
               style={{ animation: "slideUp 0.5s ease-out both" }}
             >
-              <i className={`fa ${greetingIcon} mr-3 text-orange-400`} />
               {greeting}
               <span
                 className="bg-clip-text text-transparent"
@@ -335,7 +334,7 @@ export default function Home() {
                 }}
               >
                 <span className="flex items-center justify-center gap-3">
-                  <i className="fa fa-motorcycle text-2xl transition-transform duration-300 group-hover:translate-x-1" />
+                  
                   Start a Ride
                   <i className="fa fa-arrow-right text-base opacity-70 transition-all duration-300 group-hover:translate-x-2" />
                 </span>
@@ -346,7 +345,7 @@ export default function Home() {
               className={`mt-4 text-xs ${tc.sub}`}
               style={{ animation: "slideUp 0.75s ease-out both" }}
             >
-              🎙️ Or say <span className="font-semibold">"start"</span> to your mic
+               say <span className="font-semibold">"start"</span> to your mic
             </p>
           </div>
 
@@ -388,7 +387,7 @@ export default function Home() {
                 onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-6px) scale(1.03)"; e.currentTarget.style.boxShadow = "0 16px 40px rgba(0,0,0,0.25)"; }}
                 onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = ""; }}
               >
-                <i className={`fa ${s.icon} text-2xl mb-2 block`} style={{ color: s.color }} />
+                
                 <p className="text-xl md:text-2xl font-black">{s.value}</p>
                 <p className={`text-[10px] md:text-xs mt-0.5 ${tc.sub}`}>{s.label}</p>
               </div>
@@ -440,7 +439,7 @@ export default function Home() {
                 onClick={() => setShowHistory(true)}
                 className={`mt-3 w-full py-3 rounded-2xl text-sm font-bold border transition-all hover:scale-[1.01] ${tc.card}`}
               >
-                <i className="fa fa-clock-rotate-left mr-2 text-orange-400" />
+                <i className="fa fa-clock-rotate-left mr-2 " />
                 {rides.length === 0 ? "Ride History" : `See all ${rides.length} ride${rides.length !== 1 ? "s" : ""}`}
               </button>
             </div>
@@ -468,13 +467,7 @@ export default function Home() {
               className={`rounded-2xl border p-5 flex items-start gap-4 ${tc.card}`}
               style={{ background: "linear-gradient(135deg, rgba(249,115,22,0.05) 0%, rgba(236,72,153,0.03) 100%)" }}
             >
-              <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                style={{ background: "rgba(249,115,22,0.15)", border: "1px solid rgba(249,115,22,0.2)" }}
-              >
-                {/* Icon instead of emoji — replaceable by changing the fa- class */}
-                <i className="fa fa-lightbulb" style={{ color: "#f97316", fontSize: "16px" }} />
-              </div>
+              
               <div>
                 <p className="font-black text-sm mb-1">Tip of the Day</p>
                 <p className={`text-xs leading-relaxed ${tc.sub}`}>{dailyTip}</p>
@@ -562,21 +555,7 @@ function RideCard({ ride, onOpen, tc, isLive }) {
       className={`rounded-2xl border p-3.5 flex items-center gap-3 transition-all hover:scale-[1.01] cursor-pointer ${tc.card}`}
       onClick={onOpen}
     >
-      {/* Left: icon bubble */}
-      <div
-        className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-        style={{
-          background: isLive
-            ? "linear-gradient(135deg, rgba(34,197,94,0.2), rgba(16,185,129,0.15))"
-            : "rgba(255,255,255,0.06)",
-          border: isLive ? "1px solid rgba(34,197,94,0.3)" : "1px solid rgba(255,255,255,0.1)",
-        }}
-      >
-        {isLive
-          ? <span className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse" />
-          : <i className="fa fa-route" style={{ color: "rgba(255,255,255,0.4)", fontSize: "13px" }} />
-        }
-      </div>
+    
 
       {/* Center: route + meta */}
       <div className="flex-1 min-w-0">
@@ -609,7 +588,7 @@ function RideCard({ ride, onOpen, tc, isLive }) {
             alignItems: "center",
             gap: "4px",
           }}>
-            👥 Group
+            Group
           </span>
         )}
         {ride.participants && ride.participants.length > 0 && (
@@ -645,7 +624,7 @@ function RideCard({ ride, onOpen, tc, isLive }) {
           </div>
         )}
         {isLive ? (
-          <span className="text-xs font-bold text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full border border-green-500/20">
+          <span className="text-xs font-bold  bg-green-500/10 px-2 py-0.5 rounded-full border border-green-500/20">
             Live
           </span>
         ) : (
