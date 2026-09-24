@@ -508,6 +508,7 @@ export default function Home() {
           onOpenRide={handleOpenRide}
           onDeleteRide={handleDeleteRide}
           onClose={() => setShowHistory(false)}
+          tc={tc}
         />
       )}
 

@@ -42,6 +42,7 @@ export default function DirectionsPanel({
   totalDist   = 0,
   totalTime   = 0,
   destName    = "Destination",
+  tc,
 }) {
   const activeRef = useRef(null); // ref to the active step row
 
@@ -77,31 +78,34 @@ export default function DirectionsPanel({
       />
 
       {/* ── Drawer ── */}
-      <div style={{
-        position:       "relative",
-        zIndex:         1999,
-        background:     "linear-gradient(180deg, #0f0f1a 0%, #0a0a14 100%)",
-        borderRadius:   "24px 24px 0 0",
-        maxHeight:      "72vh",
-        display:        "flex",
-        flexDirection:  "column",
-        border:         "1px solid rgba(255,255,255,0.08)",
-        borderBottom:   "none",
-        boxShadow:      "0 -24px 80px rgba(0,0,0,0.7)",
+      <div
+        className={`${tc.card} ${tc.text}`}
+        style={{
+          position:       "relative",
+          zIndex:         1999,
+          borderRadius:   "24px 24px 0 0",
+          maxHeight:      "72vh",
+          display:        "flex",
+          flexDirection:  "column",
+          border:         "1px solid currentColor",
+          borderBottom:   "none",
+          boxShadow:      "0 -24px 80px rgba(0,0,0,0.35)",
         animation:      "dpSlideUp 0.32s cubic-bezier(0.32,0,0.67,0) both",
       }}>
 
         {/* ── Drawer header ── */}
-        <div style={{
-          padding:        "16px 20px 12px",
-          borderBottom:   "1px solid rgba(255,255,255,0.07)",
+        <div
+          className={tc.divider}
+          style={{
+           padding:        "16px 20px 12px",
+          borderBottomWidth: "1px",
           display:        "flex",
           alignItems:     "center",
           gap:            "12px",
           flexShrink:     0,
         }}>
           {/* Drag handle */}
-          <div style={{
+          <div className={`${tc.sub} opacity-50`} style={{
             position:   "absolute",
             top:        "10px",
             left:       "50%",
@@ -109,16 +113,15 @@ export default function DirectionsPanel({
             width:      "40px",
             height:     "4px",
             borderRadius:"2px",
-            background: "rgba(255,255,255,0.18)",
           }} />
 
           {/* Destination icon */}
-          <div style={{
-            width:          "44px",
-            height:         "44px",
-            borderRadius:   "14px",
-            background:     "linear-gradient(135deg, rgba(249,115,22,0.25), rgba(236,72,153,0.15))",
-            border:         "1px solid rgba(249,115,22,0.3)",
+          <div
+            className={tc.accentSoft}
+            style={{
+             width:          "44px",
+             height:         "44px",
+             borderRadius:   "14px",
             display:        "flex",
             alignItems:     "center",
             justifyContent: "center",
@@ -130,7 +133,6 @@ export default function DirectionsPanel({
           {/* Title + summary */}
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{
-              color:     "white",
               fontWeight: 800,
               fontSize:  "15px",
               margin:    0,
@@ -140,8 +142,7 @@ export default function DirectionsPanel({
             }}>
               {destName}
             </p>
-            <p style={{
-              color:    "rgba(255,255,255,0.45)",
+            <p className={tc.sub} style={{
               fontSize: "12px",
               margin:   "2px 0 0",
             }}>
@@ -152,13 +153,11 @@ export default function DirectionsPanel({
           {/* Close button */}
           <button
             onClick={onClose}
+            className={tc.btnGhost}
             style={{
               width:          "36px",
               height:         "36px",
               borderRadius:   "50%",
-              background:     "rgba(255,255,255,0.08)",
-              border:         "1px solid rgba(255,255,255,0.12)",
-              color:          "rgba(255,255,255,0.7)",
               cursor:         "pointer",
               display:        "flex",
               alignItems:     "center",
@@ -183,11 +182,12 @@ export default function DirectionsPanel({
             const isPast    = i < activeStep;
 
             return (
-              <div
-                key={i}
-                ref={isActive ? activeRef : null}
-                style={{
-                  display:        "flex",
+                <div
+                  key={i}
+                  ref={isActive ? activeRef : null}
+                  className={isActive ? tc.accentSoft : ""}
+                  style={{
+                   display:        "flex",
                   alignItems:     "flex-start",
                   gap:            "14px",
                   padding:        "12px 20px",
@@ -202,7 +202,9 @@ export default function DirectionsPanel({
                 }}
               >
                 {/* Icon circle */}
-                <div style={{
+                <div
+                  className={isActive ? tc.accentSoft : tc.surface2}
+                  style={{
                   width:          "36px",
                   height:         "36px",
                   borderRadius:   "50%",
@@ -210,28 +212,22 @@ export default function DirectionsPanel({
                   display:        "flex",
                   alignItems:     "center",
                   justifyContent: "center",
-                  background: isActive
-                    ? "linear-gradient(135deg, rgba(249,115,22,0.3), rgba(236,72,153,0.2))"
-                    : isPast
-                    ? "rgba(255,255,255,0.04)"
-                    : "rgba(255,255,255,0.07)",
                   border: isActive
-                    ? "1.5px solid rgba(249,115,22,0.5)"
-                    : "1.5px solid rgba(255,255,255,0.08)",
+                    ? "1.5px solid #f97316"
+                    : "1.5px solid transparent",
                   transition: "background 0.3s, border 0.3s",
                 }}>
                   <Icon
                     name={getStepIconName(step)}
                     size={17}
-                    style={{ color: isActive ? "#f97316" : "rgba(255,255,255,0.5)" }}
+                    className={isActive ? tc.accent : tc.sub}
                   />
                 </div>
 
                 {/* Text content */}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   {/* Instruction */}
-                  <p style={{
-                    color:      isActive ? "white" : "rgba(255,255,255,0.7)",
+                  <p className={isActive ? "" : tc.sub} style={{
                     fontWeight: isActive ? 700 : 500,
                     fontSize:   "13px",
                     margin:     0,
@@ -242,8 +238,7 @@ export default function DirectionsPanel({
 
                   {/* Distance for this step */}
                   {step.distance > 0 && (
-                    <p style={{
-                      color:     isActive ? "#f97316" : "rgba(255,255,255,0.3)",
+                    <p className={isActive ? tc.accent : tc.sub} style={{
                       fontSize:  "11px",
                       margin:    "4px 0 0",
                       fontWeight: isActive ? 700 : 400,
@@ -255,9 +250,8 @@ export default function DirectionsPanel({
 
                 {/* Step number badge (right side) */}
                 {!isLast && (
-                  <div style={{
+                  <div className={tc.sub} style={{
                     fontSize:   "10px",
-                    color:      "rgba(255,255,255,0.2)",
                     fontWeight: 700,
                     flexShrink: 0,
                     marginTop:  "2px",

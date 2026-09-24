@@ -43,6 +43,7 @@ import { updateUserLocation, getGroupRideParticipants, updateParticipantStatus }
 import GroupRidersPanel from "./GroupRidersPanel";
 import Icon from "../ui/Icon";
 import { useAuth } from "../../../context/AuthContext";
+import { useTheme } from "../../hooks/useTheme";
 import { useRideDistance } from "../../hooks/useRideDistance";
 
 const RIDER_COLORS = [
@@ -103,6 +104,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
   const [participantLocations, setParticipantLocations] = useState({});
 
   const { user } = useAuth();
+  const { tc } = useTheme(user?.id);
 
   const stopGpsRef = useRef(null);
   const miniDragRef = useRef({ pointerId: null, offsetX: 0, offsetY: 0, moved: false });
@@ -1017,6 +1019,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
           totalDist={ride.distanceMeters}
           totalTime={ride.durationSeconds}
           destName={(ride.destinationName || "Destination").split(",")[0]}
+          tc={tc}
         />
       )}
 

@@ -19,6 +19,7 @@
 
 import { useState } from "react";
 import RideMap from "./RideMap";
+import Icon from "../ui/Icon";
 import { formatDistance, formatDuration } from "../../../services/routingApi";
 
 // ---- Status → colour mapping ----
@@ -28,7 +29,7 @@ const STATUS_STYLE = {
   cancelled: { bg: "#ef444422", border: "#ef444444", text: "#ef4444" },
 };
 
-export default function RideHistoryPanel({ rides, onOpenRide, onDeleteRide, onClose }) {
+export default function RideHistoryPanel({ rides, onOpenRide, onDeleteRide, onClose, tc }) {
   // Track which card's map is expanded
   const [expandedId, setExpandedId]   = useState(null);
   // Track which card has a delete confirmation pending
@@ -58,66 +59,64 @@ export default function RideHistoryPanel({ rides, onOpenRide, onDeleteRide, onCl
   };
 
   return (
-    <div style={{
-      position:       "fixed",
-      inset:          0,
-      zIndex:         7000,
-      background:     "rgba(0,0,0,0.75)",
-      backdropFilter: "blur(8px)",
-      display:        "flex",
-      justifyContent: "flex-end",  // panel slides in from the right
-    }}
+    <div
+      className={tc.overlay}
+      style={{
+        position:       "fixed",
+        inset:          0,
+        zIndex:         7000,
+        backdropFilter: "blur(8px)",
+        display:        "flex",
+        justifyContent: "flex-end",
+      }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       {/* ---- Side panel ---- */}
-      <div style={{
-        width:         "100%",
-        maxWidth:      "480px",
-        height:        "100%",
-        background:    "linear-gradient(135deg, rgba(8,8,12,0.99), rgba(12,12,20,0.99))",
-        backdropFilter:"blur(24px)",
-        borderLeft:    "1px solid rgba(255,255,255,0.07)",
-        display:       "flex",
-        flexDirection: "column",
-        animation:     "slideRight 0.3s cubic-bezier(0.32,0.72,0,1)",
-        boxShadow:     "-20px 0 80px rgba(0,0,0,0.6)",
-      }}>
-        {/* ---- Header ---- */}
-        <div style={{
+      <div
+        className={`${tc.card} ${tc.text}`}
+        style={{
+          width:         "100%",
+          maxWidth:      "480px",
+          height:        "100%",
           display:       "flex",
-          alignItems:    "center",
-          justifyContent:"space-between",
-          padding:       "20px",
-          borderBottom:  "1px solid rgba(255,255,255,0.06)",
-          flexShrink:    0,
+          flexDirection: "column",
+          animation:     "slideRight 0.3s cubic-bezier(0.32,0.72,0,1)",
+          boxShadow:     "-20px 0 80px rgba(0,0,0,0.35)",
         }}>
+        {/* ---- Header ---- */}
+        <div
+          className={tc.divider}
+          style={{
+            display:       "flex",
+            alignItems:    "center",
+            justifyContent:"space-between",
+            padding:       "20px",
+            borderBottomWidth: "1px",
+            flexShrink:    0,
+          }}>
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <div style={{
+            <div className={tc.accentSoft} style={{
               width: "38px", height: "38px", borderRadius: "12px",
-              background: "rgba(249,115,22,0.15)",
-              border: "1px solid rgba(249,115,22,0.25)",
               display: "flex", alignItems: "center", justifyContent: "center",
             }}>
-              <i className="fa fa-clock-rotate-left" style={{ color: "#f97316", fontSize: "16px" }} />
+              <Icon name="history" size={17} />
             </div>
             <div>
               <p style={{ fontWeight: 900, fontSize: "16px", margin: 0 }}>Ride History</p>
-              <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.35)", margin: 0 }}>
+              <p className={tc.sub} style={{ fontSize: "11px", margin: 0 }}>
                 {rides.length} ride{rides.length !== 1 ? "s" : ""} total
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
+            className={tc.btnGhost}
             style={{
-              width: "36px", height: "36px", borderRadius: "50%",
-              background: "rgba(255,255,255,0.06)",
-              border: "1px solid rgba(255,255,255,0.1)",
-              color: "rgba(255,255,255,0.6)", cursor: "pointer",
+              width: "36px", height: "36px", borderRadius: "50%", cursor: "pointer",
               display: "flex", alignItems: "center", justifyContent: "center",
             }}
           >
-            <i className="fa fa-times" />
+            <Icon name="close" size={17} />
           </button>
         </div>
 
@@ -126,9 +125,9 @@ export default function RideHistoryPanel({ rides, onOpenRide, onDeleteRide, onCl
           {rides.length === 0 ? (
             // Empty state
             <div style={{ textAlign: "center", padding: "60px 0" }}>
-              <i className="fa fa-route" style={{ fontSize: "48px", color: "rgba(255,255,255,0.15)", display: "block", marginBottom: "16px" }} />
-              <p style={{ fontWeight: 700, color: "rgba(255,255,255,0.4)", margin: "0 0 6px" }}>No rides yet</p>
-              <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.25)", margin: 0 }}>
+              <Icon name="route" size={48} className={`${tc.sub} mx-auto mb-4 opacity-40`} />
+              <p className={tc.sub} style={{ fontWeight: 700, margin: "0 0 6px" }}>No rides yet</p>
+              <p className={tc.sub} style={{ fontSize: "12px", margin: 0 }}>
                 Start your first ride and it will appear here.
               </p>
             </div>
@@ -145,16 +144,13 @@ export default function RideHistoryPanel({ rides, onOpenRide, onDeleteRide, onCl
               return (
                 <div
                   key={ride.id}
+                  className={`${tc.surface2} ${tc.divider}`}
                   style={{
-                    marginBottom:  "12px",
-                    borderRadius:  "18px",
-                    border:        "1px solid rgba(255,255,255,0.07)",
-                    background:    "rgba(255,255,255,0.025)",
-                    overflow:      "hidden",
-                    transition:    "border-color 0.2s",
+                   marginBottom:  "12px",
+                   borderRadius:  "18px",
+                   overflow:      "hidden",
+                   transition:    "background-color 0.2s, border-color 0.2s",
                   }}
-                  onMouseEnter={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.13)"}
-                  onMouseLeave={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.07)"}
                 >
                   {/* Card header (always visible) */}
                   <div style={{ padding: "14px 16px" }}>
@@ -182,9 +178,9 @@ export default function RideHistoryPanel({ rides, onOpenRide, onDeleteRide, onCl
                     </div>
 
                     {/* Meta row: distance · duration · date */}
-                    <div style={{
+                    <div className={tc.sub} style={{
                       display: "flex", alignItems: "center", gap: "8px",
-                      fontSize: "11px", color: "rgba(255,255,255,0.35)", flexWrap: "wrap",
+                      fontSize: "11px", flexWrap: "wrap",
                     }}>
                       {ride.actualDistanceMeters > 0 && (
                         <>
@@ -215,14 +211,11 @@ export default function RideHistoryPanel({ rides, onOpenRide, onDeleteRide, onCl
                       {/* Open Map button */}
                       <button
                         onClick={() => onOpenRide(ride)}
+                        className={ride.status === "active" ? tc.btnAccent : tc.btnSoft}
                         style={{
                           flex: 1, padding: "8px 12px",
-                          background: ride.status === "active"
-                            ? "linear-gradient(135deg, #f97316, #ec4899)"
-                            : "rgba(255,255,255,0.06)",
-                          border: ride.status === "active" ? "none" : "1px solid rgba(255,255,255,0.1)",
                           borderRadius: "10px",
-                          color: "white", fontWeight: 700, fontSize: "12px",
+                          fontWeight: 700, fontSize: "12px",
                           cursor: "pointer",
                           display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
                         }}
@@ -235,12 +228,10 @@ export default function RideHistoryPanel({ rides, onOpenRide, onDeleteRide, onCl
                       {ride.routeCoordinates && (
                         <button
                           onClick={() => toggleExpand(String(ride.id))}
+                          className={isExpanded ? tc.accentSoft : tc.btnGhost}
                           style={{
                             padding: "8px 12px",
-                            background: isExpanded ? "rgba(249,115,22,0.15)" : "rgba(255,255,255,0.05)",
-                            border: `1px solid ${isExpanded ? "rgba(249,115,22,0.3)" : "rgba(255,255,255,0.1)"}`,
                             borderRadius: "10px",
-                            color: isExpanded ? "#f97316" : "rgba(255,255,255,0.5)",
                             cursor: "pointer", fontSize: "12px",
                           }}
                           title={isExpanded ? "Collapse map" : "Preview route"}
@@ -255,11 +246,10 @@ export default function RideHistoryPanel({ rides, onOpenRide, onDeleteRide, onCl
                         <div style={{ display: "flex", gap: "6px" }}>
                           <button
                             onClick={cancelDelete}
+                            className={tc.btnGhost}
                             style={{
                               padding: "8px 10px", borderRadius: "10px",
-                              background: "rgba(255,255,255,0.06)",
-                              border: "1px solid rgba(255,255,255,0.1)",
-                              color: "white", cursor: "pointer", fontSize: "11px",
+                              cursor: "pointer", fontSize: "11px",
                             }}
                           >
                             <i className="fa fa-times" />
@@ -297,7 +287,10 @@ export default function RideHistoryPanel({ rides, onOpenRide, onDeleteRide, onCl
 
                   {/* Expandable mini map */}
                   {isExpanded && (
-                    <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", height: "200px" }}>
+                      <div
+                        className={tc.divider}
+                        style={{ borderTopWidth: "1px", height: "200px" }}
+                      >
                       <RideMap ride={ride} isLive={false} />
                     </div>
                   )}
