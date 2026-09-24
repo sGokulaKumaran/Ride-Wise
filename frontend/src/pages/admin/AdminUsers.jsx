@@ -12,9 +12,12 @@ import { useState, useEffect, useCallback } from "react";
 import { getUsers, updateUserStatus } from "../../services/adminApi";
 import { useTheme } from "../hooks/useTheme";
 import AdminLayout from "./AdminLayout";
+import { useAuth } from "../../context/AuthContext";
 
 export default function AdminUsers() {
-  const { tc } = useTheme();
+  const { user } = useAuth();
+  // Pass user?.id so the admin panel uses the same saved theme as the app
+  const { tc } = useTheme(user?.id);
   const [users, setUsers] = useState([]);
   const [totalUsers, setTotalUsers] = useState(0);
   const [page, setPage] = useState(0);

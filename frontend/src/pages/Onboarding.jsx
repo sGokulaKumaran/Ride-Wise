@@ -29,7 +29,9 @@ import { useTheme } from "./hooks/useTheme";
 export default function Onboarding() {
   const navigate = useNavigate();
   const { user, updateProfile } = useAuth();
-  const { theme, tc } = useTheme(); // use the same theme system as the rest of the app
+  // Pass user?.id so onboarding honours THIS account's saved theme
+  // (same theme system as Home / Settings / the admin panel).
+  const { theme, tc } = useTheme(user?.id);
 
   // ── Which step we're on (1, 2, or 3) ────────────────────────
   const [step, setStep] = useState(1);
@@ -227,7 +229,7 @@ export default function Onboarding() {
               className={`h-1.5 rounded-full transition-all duration-500 flex-1 ${
                 s <= step
                   ? "bg-gradient-to-r from-orange-500 to-pink-500"
-                  : theme === "light" ? "bg-black/10" : "bg-white/10"
+                  : theme === "light" || theme === "warm" ? "bg-black/10" : "bg-white/10"
               }`}
             />
           ))}

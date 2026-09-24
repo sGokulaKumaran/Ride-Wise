@@ -12,9 +12,12 @@ import { useState, useEffect, useCallback } from "react";
 import { getRides, getRideDetail } from "../../services/adminApi";
 import { useTheme } from "../hooks/useTheme";
 import AdminLayout from "./AdminLayout";
+import { useAuth } from "../../context/AuthContext";
 
 export default function AdminRides() {
-  const { tc } = useTheme();
+  const { user } = useAuth();
+  // Pass user?.id so the admin panel uses the same saved theme as the app
+  const { tc } = useTheme(user?.id);
   const [rides, setRides] = useState([]);
   const [totalRides, setTotalRides] = useState(0);
   const [totalPages, setTotalPages] = useState(0);

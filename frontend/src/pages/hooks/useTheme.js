@@ -85,39 +85,38 @@ function detectThemeByTime() {
   return "midnight";
 }
 
+// ── Resolve the theme that should apply right now ────────────────
+// Priority: 1. per-user saved choice  2. login-page (global) choice
+//           3. auto-detect by time of day
+// Both the first render AND the userId effect use this one helper, so
+// every page resolves the SAME theme — admin panel and onboarding too.
+function resolveTheme(userId) {
+  try {
+    // 1. Try the per-user key first
+    if (userId) {
+      const perUser = localStorage.getItem(themeKey(userId));
+      if (perUser && themes[perUser]) return perUser;
+    }
+    // 2. Fall back to the legacy global key (login-page pick / old data)
+    const legacy = localStorage.getItem("ridewise-theme");
+    if (legacy && themes[legacy]) return legacy;
+  } catch (_) {}
+  // 3. Nothing saved yet → auto-detect by time
+  return detectThemeByTime();
+}
+
 // ── useTheme hook ───────────────────────────────────────────────
 // userId  — pass user?.id so the theme is scoped per account.
 //           Omit (or pass null) on public pages.
 export function useTheme(userId) {
-  const [theme, setThemeState] = useState(() => {
-    try {
-      // 1. Try the per-user key first
-      if (userId) {
-        const perUser = localStorage.getItem(themeKey(userId));
-        if (perUser && themes[perUser]) return perUser;
-      }
-      // 2. Fall back to the legacy global key (handles first login after old data)
-      const legacy = localStorage.getItem("ridewise-theme");
-      if (legacy && themes[legacy]) return legacy;
-    } catch (_) {}
-    // 3. Auto-detect by time
-    return detectThemeByTime();
-  });
+  // First render: resolve immediately so there is no theme flash
+  const [theme, setThemeState] = useState(() => resolveTheme(userId));
 
-  // Re-read from localStorage (and re-detect) whenever userId changes.
-  // This ensures switching accounts immediately loads the correct theme.
+  // Re-resolve whenever userId changes — switching accounts loads that
+  // account's saved theme right away. A saved choice always wins; only
+  // a brand-new user with nothing stored falls back to the clock.
   useEffect(() => {
-    try {
-      if (userId) {
-        const saved = localStorage.getItem(themeKey(userId));
-        if (saved && themes[saved]) {
-          setThemeState(saved);
-          return;
-        }
-      }
-    } catch (_) {}
-    // New user with no saved theme → auto-detect
-    setThemeState(detectThemeByTime());
+    setThemeState(resolveTheme(userId));
   }, [userId]);
 
   // Persist theme under the per-user key whenever it changes

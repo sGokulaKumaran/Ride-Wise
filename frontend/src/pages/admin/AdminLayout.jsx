@@ -12,7 +12,8 @@ export default function AdminLayout({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, avatarLetter } = useAuth();
-  const { tc } = useTheme();
+  // Pass user?.id so the admin panel uses the same saved theme as the app
+  const { tc } = useTheme(user?.id);
 
   const tabs = [
     { path: "/admin",       label: "Dashboard", icon: "fa-tachometer-alt" },

@@ -13,9 +13,12 @@ import { useState, useEffect } from "react";
 import { getDashboardStats } from "../../services/adminApi";
 import { useTheme } from "../hooks/useTheme";
 import AdminLayout from "./AdminLayout";
+import { useAuth } from "../../context/AuthContext";
 
 export default function AdminDashboard() {
-  const { tc } = useTheme();
+  const { user } = useAuth();
+  // Pass user?.id so the admin panel uses the same saved theme as the app
+  const { tc } = useTheme(user?.id);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
