@@ -41,6 +41,7 @@ import {
 } from "../../../services/routingApi";
 import { updateUserLocation, getGroupRideParticipants, updateParticipantStatus } from "../../../services/rideApi";
 import GroupRidersPanel from "./GroupRidersPanel";
+import Icon from "../ui/Icon";
 import { useAuth } from "../../../context/AuthContext";
 import { useRideDistance } from "../../hooks/useRideDistance";
 
@@ -57,6 +58,23 @@ function parseSteps(ride) {
     try { return JSON.parse(ride.routeSteps); } catch { return []; }
   }
   return [];
+}
+
+function getStepIconName(step) {
+  const type = step.maneuverType || "";
+  const modifier = String(step.maneuverModifier || "");
+  const legacyIcon = String(step.icon || "");
+  if (type === "arrive" || legacyIcon.includes("flag")) return "maneuverArrive";
+  if (type === "depart" || legacyIcon.includes("location")) return "maneuverDepart";
+  if (["merge", "roundabout", "rotary"].includes(type) || legacyIcon.includes("merge") || legacyIcon.includes("rotate")) {
+    return "maneuverMerge";
+  }
+  if (modifier === "uturn" || legacyIcon.includes("rotate-left")) return "maneuverUTurn";
+  if (modifier === "slight left" || legacyIcon.includes("up-left")) return "maneuverSlightLeft";
+  if (modifier === "slight right" || legacyIcon.includes("up-right")) return "maneuverSlightRight";
+  if (modifier.includes("left") || legacyIcon.includes("left")) return "maneuverLeft";
+  if (modifier.includes("right") || legacyIcon.includes("right")) return "maneuverRight";
+  return "maneuverStraight";
 }
 
 export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
@@ -480,10 +498,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
               justifyContent: "center",
               flexShrink:     0,
             }}>
-              <i
-                className={`fa ${currentStep.icon}`}
-                style={{ color: "#4285F4", fontSize: "20px" }}
-              />
+              <Icon name={getStepIconName(currentStep)} size={21} />
             </div>
 
             {/* Instruction text + distance */}
@@ -542,7 +557,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
                   transition:     "background 0.2s, border 0.2s",
                 }}
               >
-                <i className="fa fa-list" />
+                <Icon name="list" size={18} />
               </button>
               {/* Minimize */}
               <button
@@ -562,7 +577,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
                   fontSize:       "12px",
                 }}
               >
-                <i className="fa fa-minus" />
+                <Icon name="minimize" size={18} />
               </button>
               {/* Close */}
               <button
@@ -582,7 +597,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
                   fontSize:       "13px",
                 }}
               >
-                <i className="fa fa-times" />
+                <Icon name="close" size={18} />
               </button>
             </div>
           </div>
@@ -629,15 +644,15 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
             </div>
             <div style={{ display: "flex", gap: "8px" }}>
               {steps.length > 0 && (
-                <button onClick={() => setShowDirections(v => !v)} style={topBtnStyle}>
-                  <i className="fa fa-list" />
+                <button onClick={() => setShowDirections(v => !v)} style={topBtnStyle} title="Show all directions">
+                  <Icon name="list" size={18} />
                 </button>
               )}
-              <button onClick={() => setMinimized(true)} style={topBtnStyle}>
-                <i className="fa fa-minus" />
+              <button onClick={() => setMinimized(true)} style={topBtnStyle} title="Minimize">
+                <Icon name="minimize" size={18} />
               </button>
-              <button onClick={onClose} style={topBtnStyle}>
-                <i className="fa fa-times" />
+              <button onClick={onClose} style={topBtnStyle} title="Close map">
+                <Icon name="close" size={18} />
               </button>
             </div>
           </div>

@@ -15,7 +15,25 @@
 // ============================================================
 
 import { useEffect, useRef } from "react";
+import Icon from "../ui/Icon";
 import { formatDistance, formatDuration } from "../../../services/routingApi";
+
+function getStepIconName(step) {
+  const type = step.maneuverType || "";
+  const modifier = String(step.maneuverModifier || "");
+  const legacyIcon = String(step.icon || "");
+  if (type === "arrive" || legacyIcon.includes("flag")) return "maneuverArrive";
+  if (type === "depart" || legacyIcon.includes("location")) return "maneuverDepart";
+  if (["merge", "roundabout", "rotary"].includes(type) || legacyIcon.includes("merge") || legacyIcon.includes("rotate")) {
+    return "maneuverMerge";
+  }
+  if (modifier === "uturn" || legacyIcon.includes("rotate-left")) return "maneuverUTurn";
+  if (modifier === "slight left" || legacyIcon.includes("up-left")) return "maneuverSlightLeft";
+  if (modifier === "slight right" || legacyIcon.includes("up-right")) return "maneuverSlightRight";
+  if (modifier.includes("left") || legacyIcon.includes("left")) return "maneuverLeft";
+  if (modifier.includes("right") || legacyIcon.includes("right")) return "maneuverRight";
+  return "maneuverStraight";
+}
 
 export default function DirectionsPanel({
   steps       = [],
@@ -106,7 +124,7 @@ export default function DirectionsPanel({
             justifyContent: "center",
             flexShrink:     0,
           }}>
-            <i className="fa fa-route" style={{ color: "#f97316", fontSize: "18px" }} />
+            <Icon name="route" size={19} />
           </div>
 
           {/* Title + summary */}
@@ -149,7 +167,7 @@ export default function DirectionsPanel({
               fontSize:       "13px",
             }}
           >
-            <i className="fa fa-times" />
+            <Icon name="close" size={17} />
           </button>
         </div>
 
@@ -202,12 +220,10 @@ export default function DirectionsPanel({
                     : "1.5px solid rgba(255,255,255,0.08)",
                   transition: "background 0.3s, border 0.3s",
                 }}>
-                  <i
-                    className={`fa ${step.icon}`}
-                    style={{
-                      color:    isActive ? "#f97316" : "rgba(255,255,255,0.5)",
-                      fontSize: "14px",
-                    }}
+                  <Icon
+                    name={getStepIconName(step)}
+                    size={17}
+                    style={{ color: isActive ? "#f97316" : "rgba(255,255,255,0.5)" }}
                   />
                 </div>
 

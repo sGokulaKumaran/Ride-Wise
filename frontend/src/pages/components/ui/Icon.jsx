@@ -380,6 +380,70 @@ const ICONS = {
     </>
   ),
 
+  // ── Route maneuvers ───────────────────────────────────────
+  maneuverStraight: (
+    <>
+      <path d="M12 20V4.8" />
+      <path d="M7.2 9.6 12 4.8l4.8 4.8" />
+    </>
+  ),
+  maneuverLeft: (
+    <>
+      <path d="M19 20V9.4a3 3 0 0 0-3-3H6.2" />
+      <path d="M10.2 2.6 6.2 6.4l4 3.8" />
+    </>
+  ),
+  maneuverRight: (
+    <>
+      <path d="M5 20V9.4a3 3 0 0 1 3-3h9.8" />
+      <path d="M13.8 2.6l4 3.8-4 3.8" />
+    </>
+  ),
+  maneuverSlightLeft: (
+    <>
+      <path d="M17.8 20V8.2a3 3 0 0 0-3-3H5.4" />
+      <path d="M9.2 1.8 5 5.2l4.2 3.4" />
+    </>
+  ),
+  maneuverSlightRight: (
+    <>
+      <path d="M6.2 20V8.2a3 3 0 0 1 3-3h9.4" />
+      <path d="M14.8 1.8l4.2 3.4-4.2 3.4" />
+    </>
+  ),
+  maneuverUTurn: (
+    <>
+      <path d="M7 20v-8.4a5 5 0 0 1 10 0V16" />
+      <path d="M13.4 12.6 17 16l3.6-3.4" />
+    </>
+  ),
+  maneuverMerge: (
+    <>
+      <path d="M6 20V9.4a3 3 0 0 1 3-3h6" />
+      <path d="M11.4 2.8 15.4 6.4l-4 3.6" />
+      <path d="M18 4v16" />
+    </>
+  ),
+  maneuverDepart: (
+    <>
+      <circle cx="12" cy="12" r="3" fill="currentColor" stroke="none" />
+      <path d="M12 3.4V1.8M3.4 12H1.8M5.6 5.6 4.5 4.5M18.4 5.6l1.1-1.1" />
+    </>
+  ),
+  maneuverArrive: (
+    <>
+      <path d="M6 3.8v16.4" />
+      <path d="M6 4.8h11.4l-2 3.6 2 3.6H6" />
+    </>
+  ),
+
+  // ── Window actions ─────────────────────────────────────────
+  minimize: (
+    <>
+      <path d="M5.6 12h12.8" />
+    </>
+  ),
+
   // ── Navigation ────────────────────────────────────────────
   home: (
     <>
