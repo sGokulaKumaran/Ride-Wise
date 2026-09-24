@@ -690,6 +690,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
                   isAdmin={isAdmin}
                   rideId={isActiveRide ? ride?.id : null}
                   onParticipantsChanged={refreshParticipants}
+                  tc={tc}
                   onRiderClick={(p) => {
                     if (p.lat && p.lng) {
                       window.dispatchEvent(new CustomEvent("rw-recenter", {
@@ -751,23 +752,28 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
 
         {/* ── Step progress indicator (bottom-right) ── */}
         {steps.length > 0 && isActiveRide && (
-          <div style={{
-            position:       "absolute",
-            bottom:         "120px",
-            right:          "16px",
-            zIndex:         9999,
-            background:     "rgba(15,15,26,0.9)",
-            backdropFilter: "blur(12px)",
-            border:         "1px solid rgba(255,255,255,0.1)",
-            borderRadius:   "140px",
+          <div
+            className={tc.mapControl}
+            style={{
+              position:       "absolute",
+              bottom:         "120px",
+              right:          "16px",
+              zIndex:         9999,
+              borderRadius:   "140px",
             padding:        "10px 14px",
             textAlign:      "center",
             minWidth:       "60px",
           }}>
-            <p style={{ color: "#4285F4", fontWeight: 900, fontSize: "16px", margin: 0, lineHeight: 1 }}>
+            <p
+              className={tc.accent}
+              style={{ fontWeight: 900, fontSize: "16px", margin: 0, lineHeight: 1 }}
+            >
               {activeStep + 1}/{steps.length}
             </p>
-            <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "9px", margin: "3px 0 0", textTransform: "uppercase", letterSpacing: "1px" }}>
+            <p
+              className={tc.sub}
+              style={{ fontSize: "9px", margin: "3px 0 0", textTransform: "uppercase", letterSpacing: "1px" }}
+            >
               Steps
             </p>
           </div>

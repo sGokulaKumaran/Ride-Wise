@@ -18,6 +18,7 @@ import { useState } from "react";
 import { getConnectionsFull } from "../../../services/ridersApi";
 import { addGroupRideParticipant } from "../../../services/rideApi";
 import Icon from "../ui/Icon";
+import { useTheme } from "../../hooks/useTheme";
 
 export default function GroupRidersPanel({
   participants = [],
@@ -26,7 +27,10 @@ export default function GroupRidersPanel({
   isAdmin = false,          // true → show the "add rider" affordance
   rideId = null,            // needed to POST new participants
   onParticipantsChanged,    // called after a rider is added (parent re-fetches)
+  tc: providedTc,
 }) {
+  const { tc: userTc } = useTheme(currentUserId);
+  const tc = providedTc || userTc;
   const [expanded, setExpanded] = useState(false);
 
   // ── Add-rider (admin, live ride) state ──
@@ -96,6 +100,7 @@ export default function GroupRidersPanel({
       <button
         onClick={() => setExpanded(true)}
         title="Show group riders"
+        className={tc.mapControl}
         style={{
           position: "absolute",
           bottom: "270px",
@@ -104,14 +109,9 @@ export default function GroupRidersPanel({
           display: "flex",
           alignItems: "center",
           gap: "6px",
-          background: "rgba(15,15,26,0.9)",
-          backdropFilter: "blur(12px)",
-          border: "1.5px solid rgba(139,92,246,0.4)",
           borderRadius: "14px",
           padding: "8px 12px",
           cursor: "pointer",
-          color: "white",
-          boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
           transition: "all 0.2s",
         }}
       >
@@ -120,6 +120,7 @@ export default function GroupRidersPanel({
           {participants.filter(p => p.userId !== currentUserId).slice(0, 3).map((p, i) => (
             <div
               key={p.userId}
+              className={`${tc.divider} border-[1.5px]`}
               style={{
                 width: "22px",
                 height: "22px",
@@ -128,7 +129,6 @@ export default function GroupRidersPanel({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                border: "1.5px solid rgba(15,15,26,0.9)",
                 marginLeft: i > 0 ? "-6px" : "0",
                 fontSize: "10px",
                 fontWeight: 800,
@@ -140,7 +140,7 @@ export default function GroupRidersPanel({
             </div>
           ))}
         </div>
-        <span style={{ fontWeight: 800, fontSize: "12px", color: "#a78bfa" }}>
+        <span className={tc.accent} style={{ fontWeight: 800, fontSize: "12px" }}>
           {otherCount}
         </span>
         <Icon name="chevronDown" size={10} className="opacity-50" />
@@ -150,7 +150,9 @@ export default function GroupRidersPanel({
 
   // ── Expanded: Avatar row panel ──
   return (
-    <div style={{
+    <div
+      className={tc.card}
+      style={{
       position: "absolute",
       bottom: "270px",
       right: "16px",
@@ -158,24 +160,22 @@ export default function GroupRidersPanel({
       display: "flex",
       flexDirection: "column",
       gap: "8px",
-      background: "rgba(15,15,26,0.92)",
-      backdropFilter: "blur(16px)",
-      border: "1.5px solid rgba(139,92,246,0.3)",
       borderRadius: "18px",
       padding: "10px 12px",
-      boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
       animation: "grpExpand 0.2s ease-out both",
       maxWidth: "280px",
     }}>
       {/* Header row with close button */}
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        paddingBottom: "6px",
-        borderBottom: "1px solid rgba(255,255,255,0.06)",
-      }}>
-        <span style={{ fontSize: "11px", fontWeight: 700, color: "rgba(255,255,255,0.5)" }}>
+      <div
+        className={`${tc.divider} flex items-center justify-between`}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingBottom: "6px",
+        }}
+      >
+        <span className={tc.sub} style={{ fontSize: "11px", fontWeight: 700 }}>
           <span className="inline-flex items-center gap-1.5">
             <Icon name="riders" size={12} /> {participants.length} Riders
           </span>
@@ -186,18 +186,14 @@ export default function GroupRidersPanel({
             <button
               onClick={toggleAdd}
               title="Add a friend to this ride"
+              className={showAdd ? tc.btnAccent : tc.btnSecondary}
               style={{
-                background: showAdd
-                  ? "linear-gradient(135deg, #f97316, #ec4899)"
-                  : "linear-gradient(135deg, rgba(249,115,22,0.25), rgba(139,92,246,0.25))",
-                border: "1px solid rgba(249,115,22,0.5)",
                 borderRadius: "8px",
                 padding: "3px 8px",
                 display: "flex",
                 alignItems: "center",
                 gap: "4px",
                 cursor: "pointer",
-                color: showAdd ? "white" : "#fb923c",
                 fontSize: "10px",
                 fontWeight: 800,
               }}
@@ -208,9 +204,8 @@ export default function GroupRidersPanel({
           )}
           <button
             onClick={() => setExpanded(false)}
+            className={tc.btnGhost}
             style={{
-              background: "rgba(255,255,255,0.08)",
-              border: "none",
               borderRadius: "6px",
               width: "22px",
               height: "22px",
@@ -218,7 +213,6 @@ export default function GroupRidersPanel({
               alignItems: "center",
               justifyContent: "center",
               cursor: "pointer",
-              color: "rgba(255,255,255,0.5)",
               fontSize: "10px",
             }}
           >
@@ -253,8 +247,10 @@ export default function GroupRidersPanel({
                 flexShrink: 0,
               }}
             >
-              <div style={{
-                position: "relative",
+              <div
+                className={`border-[1.5px] ${isMe ? "" : tc.divider}`}
+                style={{
+                  position: "relative",
                 width: "34px",
                 height: "34px",
                 borderRadius: "50%",
@@ -263,7 +259,7 @@ export default function GroupRidersPanel({
                 alignItems: "center",
                 justifyContent: "center",
                 boxShadow: "0 2px 6px rgba(0,0,0,0.3)",
-                border: isMe ? "2px solid #22c55e" : "1.5px solid rgba(255,255,255,0.6)",
+                border: isMe ? "2px solid #22c55e" : undefined,
               }}>
                 <span style={{
                   color: "white",
@@ -293,9 +289,10 @@ export default function GroupRidersPanel({
                 )}
               </div>
               
-              <div style={{
-                color: isMe ? "#22c55e" : "rgba(255,255,255,0.7)",
-                fontSize: "9px",
+              <div
+                className={isMe ? tc.ok : tc.sub}
+                style={{
+                  fontSize: "9px",
                 fontWeight: isMe ? 700 : 500,
                 marginTop: "4px",
                 textAlign: "center",
@@ -313,8 +310,9 @@ export default function GroupRidersPanel({
 
       {/* ── Admin: Add friends while live (orange/purple style) ── */}
       {canAddRiders && showAdd && (
-        <div style={{
-          borderTop: "1px solid rgba(255,255,255,0.08)",
+        <div
+          className={`${tc.divider} border-t`}
+          style={{
           paddingTop: "8px",
           display: "flex",
           flexDirection: "column",
@@ -323,16 +321,19 @@ export default function GroupRidersPanel({
           overflowY: "auto",
           scrollbarWidth: "none",
         }}>
-          <p style={{
-            margin: 0, fontSize: "10px", fontWeight: 800,
-            color: "#a78bfa", textTransform: "uppercase", letterSpacing: "0.5px",
-          }}>
+          <p
+            className={tc.accent}
+            style={{
+              margin: 0, fontSize: "10px", fontWeight: 800,
+              textTransform: "uppercase", letterSpacing: "0.5px",
+            }}
+          >
             Add friends to this ride
           </p>
 
           {/* Loading state */}
           {loadingFriends && (
-            <div style={{ color: "rgba(255,255,255,0.5)", fontSize: "11px", padding: "6px 0" }}>
+            <div className={tc.sub} style={{ fontSize: "11px", padding: "6px 0" }}>
               <Icon name="spinner" size={12} className="mr-1.5 inline-block animate-spin" />
               Loading friends...
             </div>
@@ -340,15 +341,15 @@ export default function GroupRidersPanel({
 
           {/* Load error state (with retry) */}
           {!loadingFriends && friendsError && (
-            <div style={{ fontSize: "11px", color: "#fca5a5" }}>
+            <div className={tc.danger} style={{ fontSize: "11px" }}>
               <Icon name="alertTriangle" size={12} className="mr-1.5 inline-block" />
               {friendsError}
               <button
                 onClick={loadFriends}
+                className={tc.btnSecondary}
                 style={{
-                  marginLeft: "8px", background: "rgba(249,115,22,0.2)",
-                  border: "1px solid rgba(249,115,22,0.4)", borderRadius: "6px",
-                  color: "#fb923c", fontSize: "10px", fontWeight: 700,
+                  marginLeft: "8px", borderRadius: "6px",
+                  fontSize: "10px", fontWeight: 700,
                   padding: "2px 8px", cursor: "pointer",
                 }}
               >
@@ -359,7 +360,7 @@ export default function GroupRidersPanel({
 
           {/* Add error state */}
           {addError && (
-            <div style={{ fontSize: "11px", color: "#fca5a5" }}>
+            <div className={tc.danger} style={{ fontSize: "11px" }}>
               <Icon name="alertTriangle" size={12} className="mr-1.5 inline-block" />
               {addError}
             </div>
@@ -367,7 +368,7 @@ export default function GroupRidersPanel({
 
           {/* Empty state */}
           {!loadingFriends && !friendsError && addableFriends.length === 0 && (
-            <p style={{ margin: 0, fontSize: "11px", color: "rgba(255,255,255,0.35)" }}>
+            <p className={tc.sub} style={{ margin: 0, fontSize: "11px" }}>
               All your friends are already riding
             </p>
           )}
@@ -376,10 +377,9 @@ export default function GroupRidersPanel({
           {!loadingFriends && addableFriends.map(friend => (
             <div
               key={friend.id}
+              className={`${tc.surface2} ${tc.divider} border`}
               style={{
                 display: "flex", alignItems: "center", gap: "8px",
-                background: "rgba(139,92,246,0.08)",
-                border: "1px solid rgba(139,92,246,0.2)",
                 borderRadius: "10px", padding: "6px 8px",
               }}
             >
@@ -393,23 +393,24 @@ export default function GroupRidersPanel({
                 {(friend.username || friend.email || "?")[0].toUpperCase()}
               </div>
               {/* Name */}
-              <span style={{
-                flex: 1, minWidth: 0, fontSize: "12px", fontWeight: 700, color: "white",
-                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-              }}>
+              <span
+                className={tc.text}
+                style={{
+                  flex: 1, minWidth: 0, fontSize: "12px", fontWeight: 700,
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                }}
+              >
                 {friend.username || "Rider"}
               </span>
               {/* Add button */}
               <button
                 onClick={() => handleAddFriend(friend)}
                 disabled={addingId === friend.id}
+                className={addingId === friend.id ? tc.btnSoft : tc.btnAccent}
                 style={{
-                  background: addingId === friend.id
-                    ? "rgba(255,255,255,0.1)"
-                    : "linear-gradient(135deg, #f97316, #ec4899)",
-                  border: "none", borderRadius: "8px",
+                  borderRadius: "8px",
                   padding: "4px 10px",
-                  color: "white", fontSize: "10px", fontWeight: 800,
+                  fontSize: "10px", fontWeight: 800,
                   cursor: addingId === friend.id ? "not-allowed" : "pointer",
                   opacity: addingId === friend.id ? 0.7 : 1,
                   flexShrink: 0,
