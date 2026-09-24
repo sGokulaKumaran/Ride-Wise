@@ -1,4 +1,4 @@
-import react from '@vitejs/plugin-react'
+﻿import react from '@vitejs/plugin-react'
 import path from 'path'
 import { defineConfig } from 'vite'
 
@@ -17,7 +17,7 @@ export default defineConfig({
     proxy: {
       // Forward every /api/* call to the Spring Boot backend
       '/api': {
-        target: 'http://localhost:8080',
+        target: 'https://ride-wise-kif0.onrender.com',
         changeOrigin: true,
         secure: false,
       }
