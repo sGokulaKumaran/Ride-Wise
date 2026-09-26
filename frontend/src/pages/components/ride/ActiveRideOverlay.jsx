@@ -99,6 +99,10 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
   const [leaving,         setLeaving]          = useState(false);
   const [showDirections,  setShowDirections]   = useState(false);
   const [miniPosition,    setMiniPosition]     = useState(null);
+  // Measured height of the bottom stats bar. Every floating control
+  // (re-center, speed, steps, riders) is positioned from this instead of
+  // from a hard-coded number, so nothing can ever sit on top of the stats.
+  const [bottomBarH,      setBottomBarH]       = useState(140);
 
   const [participants, setParticipants] = useState([]);
   const [participantLocations, setParticipantLocations] = useState({});
@@ -108,6 +112,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
 
   const stopGpsRef = useRef(null);
   const miniDragRef = useRef({ pointerId: null, offsetX: 0, offsetY: 0, moved: false });
+  const bottomBarRef = useRef(null);   // the stats bar, so its height can be measured
 
   // ── Determine if ride is active (live navigation) or view-only ──
   // Completed/cancelled rides open in view-only mode — no End Ride button,
@@ -130,6 +135,44 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
       );
   const showEndRide   = isActiveRide && (!isGroupRide || isAdmin);
   const showLeaveRide = isActiveRide && !isAdmin && isGroupRide;
+
+  // ====================================================================
+  // BOTTOM-BAR HEIGHT → the anchor for every floating control
+  //
+  // BUG FIXED: the map's re-center button lived at a hard-coded
+  // `bottom: 130px`, which is exactly where the stats bar ends on a
+  // desktop-width window. On a phone the stats row wraps to two lines,
+  // the bar grows taller than 130px, and the re-center button landed on
+  // top of the "Ridden" figure. The same applied to the speed and step
+  // chips on the right.
+  //
+  // Measuring the real height and publishing it as the CSS variable
+  // --rw-bottom-bar-h fixes it for every screen size, and keeps working
+  // when the numbers grow, a group-ride row appears, or the End-Ride
+  // confirmation row expands the bar.
+  // ====================================================================
+  useEffect(() => {
+    const el = bottomBarRef.current;
+    if (!el) return;
+
+    const measure = () => {
+      const h = Math.round(el.getBoundingClientRect().height);
+      if (h > 0) setBottomBarH(h);
+    };
+    measure();
+
+    // Fires whenever the bar's own size changes (text wrapping, confirm row…)
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    if (ro) ro.observe(el);
+
+    window.addEventListener("resize", measure);
+    window.addEventListener("orientationchange", measure);
+    return () => {
+      if (ro) ro.disconnect();
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
+    };
+  }, [minimized, isActiveRide]);
 
   // ====================================================================
   // LIVE DISTANCE TRAVELLED
@@ -347,6 +390,15 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
           .mini-map-btn:active {
             transform: scale(0.97) !important;
           }
+          /* On phones the app's bottom navigation bar (64px) and its raised
+             ride button sit at the very bottom of the screen, so this
+             floating "reopen the map" pill has to start ABOVE them instead
+             of covering the Account tab. A dragged bubble uses left/top
+             instead, which overrides this rule, so manual placement is
+             untouched. */
+          @media (max-width: 1023px) {
+            .mini-map-btn { bottom: 84px !important; }
+          }
         `}</style>
 
         <div
@@ -459,6 +511,10 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
       display:       "flex",
       flexDirection: "column",
       background:    "#000",
+      // Published for every floating control inside this overlay (the map's
+      // re-center button lives in RideMap, the chips live here, the riders
+      // panel lives in GroupRidersPanel) so they all clear the stats bar.
+      "--rw-bottom-bar-h": `${bottomBarH}px`,
     }}>
 
       {/* ============================================================
@@ -726,11 +782,12 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
           </div>
         )}
         
-        {/* ── Speed HUD chip (bottom-left) — only during active rides ── */}
+        {/* ── Speed HUD chip (right, stacked above the stats bar) ── */}
         {isActiveRide && myLocation?.speed != null && myLocation.speed >= 0 && (
           <div style={{
             position:       "absolute",
-            bottom:         "200px",
+            // Anchored to the measured bar height → never covers the stats.
+            bottom:         "calc(var(--rw-bottom-bar-h, 140px) + 70px)",
             right:           "16px",
             zIndex:         9999,
             background:     "rgba(15,15,26,0.9)",
@@ -750,13 +807,13 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
           </div>
         )}
 
-        {/* ── Step progress indicator (bottom-right) ── */}
+        {/* ── Step progress indicator (right, just above the stats bar) ── */}
         {steps.length > 0 && isActiveRide && (
           <div
             className={tc.mapControl}
             style={{
               position:       "absolute",
-              bottom:         "120px",
+              bottom:         "calc(var(--rw-bottom-bar-h, 140px) + 10px)",
               right:          "16px",
               zIndex:         9999,
               borderRadius:   "140px",
@@ -783,13 +840,15 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
       {/* ============================================================
           BOTTOM BAR — live stats + End Ride button
           ============================================================ */}
-      <div style={{
-        position:   "absolute",
-        bottom:     0, left: 0, right: 0,
-        zIndex:     999,
-        background: "linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.8) 60%, transparent 100%)",
-        padding:    "10px 6px 4px",
-      }}>
+      <div
+        ref={bottomBarRef}
+        style={{
+          position:   "absolute",
+          bottom:     0, left: 0, right: 0,
+          zIndex:     999,
+          background: "linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.8) 60%, transparent 100%)",
+          padding:    "10px 6px 4px",
+        }}>
 
         {/* ── Stats row ── */}
         <div style={{

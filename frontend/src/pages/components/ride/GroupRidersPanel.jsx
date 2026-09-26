@@ -103,7 +103,10 @@ export default function GroupRidersPanel({
         className={tc.mapControl}
         style={{
           position: "absolute",
-          bottom: "270px",
+          // Stays above the stats bar whatever its height (see
+          // ActiveRideOverlay's --rw-bottom-bar-h). 270px was the old
+          // hard-coded value, kept here as the fallback.
+          bottom: "calc(var(--rw-bottom-bar-h, 140px) + 140px)",
           right: "16px",
           zIndex: 9999,
           display: "flex",
@@ -154,7 +157,9 @@ export default function GroupRidersPanel({
       className={tc.card}
       style={{
       position: "absolute",
-      bottom: "270px",
+      // Same measured anchor as the collapsed pill above, so expanding the
+      // panel never drops it onto the stats bar.
+      bottom: "calc(var(--rw-bottom-bar-h, 140px) + 140px)",
       right: "16px",
       zIndex: 9999,
       display: "flex",

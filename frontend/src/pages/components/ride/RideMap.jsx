@@ -567,7 +567,14 @@ export default function RideMap({ ride, myLocation, isLive = false, participants
             window.dispatchEvent(new Event("resume-real-gps"));
           }}
           style={{
-            position: "absolute", bottom: "130px", left: "10px", zIndex: 9999,
+            // BUG FIXED: this used to be a hard-coded 130px, which is exactly
+            // where the overlay's stats bar ends at desktop width. On a phone
+            // the stats row wraps and the bar grows taller, so this button
+            // ended up sitting on the "Ridden" figure. It now clears the
+            // measured bar height (--rw-bottom-bar-h, published by
+            // ActiveRideOverlay); the 140px fallback keeps the button in the
+            // same place as before whenever the map is used without it.
+            position: "absolute", bottom: "calc(var(--rw-bottom-bar-h, 140px) + 16px)", left: "10px", zIndex: 9999,
             width: "46px", height: "46px", borderRadius: "13px",
             background: "rgba(255,255,255,0.95)",
             border: "2px solid rgba(66,133,244,0.6)",

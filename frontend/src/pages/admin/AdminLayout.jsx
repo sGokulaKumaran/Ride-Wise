@@ -81,11 +81,11 @@ export default function AdminLayout({ children }) {
       {/* ── Tab Navigation ──────────────────────────────────── */}
       <nav className={`border-b ${tc.divider} ${tc.bar}`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          {/* overflow-x-auto: the three tabs are ~330px wide in total, which
-              overflows a 320–360px phone and used to scroll the WHOLE page
-              sideways. Now only this strip scrolls (it never overflows on
-              tablet/desktop, so nothing changes there). */}
-          <div className="flex gap-1 -mb-px overflow-x-auto">
+          {/* overflow-x-auto + scrollbar-hide: the three tabs are ~330px wide in
+              total, which overflows a 320–360px phone and used to scroll the
+              WHOLE page sideways. Now only this strip scrolls — with no visible
+              scrollbar — and it never overflows on tablet/desktop. */}
+          <div className="flex gap-1 -mb-px overflow-x-auto scrollbar-hide">
             {tabs.map((tab) => {
               const active = isActive(tab.path);
               return (

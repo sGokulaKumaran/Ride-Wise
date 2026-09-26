@@ -162,7 +162,7 @@ export default function TopBar({
 
             {/* Notification dropdown */}
             {showNotifDropdown && (
-              <div className={`absolute top-[46px] right-0 w-80 max-h-[400px] rounded-xl border overflow-hidden z-50 flex flex-col ${tc.card}`}>
+              <div className={`absolute top-[46px] right-0 w-80 max-w-[calc(100vw-32px)] max-h-[400px] rounded-xl border overflow-hidden z-50 flex flex-col ${tc.card}`}>
                 {/* Header */}
                 <div className={`flex items-center justify-between px-4 py-3.5 border-b ${tc.divider}`}>
                   <span className="font-black text-sm">Notifications</span>
