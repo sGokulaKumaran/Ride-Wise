@@ -12,7 +12,7 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
-                .allowedOrigins("http://localhost:5173", "https://ridewise38.netlify.app", "https:ride-wise.pages.dev")
+                .allowedOrigins("http://localhost:5173", "https://ridewise38.netlify.app", "https://ride-wise.pages.dev")
                 .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                 .allowedHeaders("*")
                 .allowCredentials(true);
