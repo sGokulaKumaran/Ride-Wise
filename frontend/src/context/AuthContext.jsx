@@ -53,18 +53,35 @@ export function AuthProvider({ children }) {
   const [loading,          setLoading]          = useState(true);
 
   // ── RESTORE SESSION FROM THE SERVER ON APP LOAD ──
-  // localStorage is only a UI cache. /api/auth/me confirms that the
-  // server-side session cookie is still valid before protected pages render.
+  // If Remember Me was not opted-in, closing the browser / session requires logging in again.
+  // sessionStorage.getItem("ridewise-session-active") indicates whether this tab/browser session is active.
   useEffect(() => {
     let cancelled = false;
 
     const restore = async () => {
+      const isRemembered = localStorage.getItem("ridewise-remember-me") === "true";
+      const isSessionActive = sessionStorage.getItem("ridewise-session-active") === "true";
+
+      // If neither "Remember Me" is enabled nor is this an active browser session, require login.
+      if (!isRemembered && !isSessionActive) {
+        // Clean up any stale auth credentials from localStorage
+        localStorage.removeItem("ridewise-user");
+        localStorage.removeItem("ridewise-authenticated");
+        localStorage.removeItem("ridewise-onboarded");
+        setUser(null);
+        setIsAuthenticated(false);
+        setIsFullyOnboarded(false);
+        setLoading(false);
+        return;
+      }
+
       try {
         const res = await fetch("/api/auth/me", { credentials: "include" });
         if (!res.ok) throw new Error("Not authenticated");
         const serverUser = await res.json();
         if (cancelled) return;
 
+        sessionStorage.setItem("ridewise-session-active", "true");
         localStorage.setItem("ridewise-user", JSON.stringify(serverUser));
         localStorage.setItem("ridewise-authenticated", "true");
         localStorage.setItem("ridewise-onboarded", serverUser.username ? "true" : "false");
@@ -73,6 +90,7 @@ export function AuthProvider({ children }) {
         setIsFullyOnboarded(Boolean(serverUser.username));
       } catch (_) {
         if (cancelled) return;
+        sessionStorage.removeItem("ridewise-session-active");
         localStorage.removeItem("ridewise-user");
         localStorage.removeItem("ridewise-authenticated");
         localStorage.removeItem("ridewise-onboarded");
@@ -104,6 +122,7 @@ export function AuthProvider({ children }) {
     const newUser = await handleResponse(res);
     // newUser is a UserResponse: { id, email, username, mobile, address, lat, lng, createdAt }
 
+    sessionStorage.setItem("ridewise-session-active", "true");
     localStorage.setItem("ridewise-user", JSON.stringify(newUser));
     localStorage.setItem("ridewise-authenticated", "true");
     localStorage.setItem("ridewise-onboarded", "false");
@@ -116,7 +135,7 @@ export function AuthProvider({ children }) {
   };
 
   // ── LOGIN — POST /api/auth/login ──
-  const login = async (email, password) => {
+  const login = async (email, password, rememberMe = false) => {
     if (!email || !password) throw new Error("Email and password are required.");
 
     const res = await fetch("/api/auth/login", {
@@ -127,6 +146,13 @@ export function AuthProvider({ children }) {
     });
 
     const loggedInUser = await handleResponse(res);
+
+    if (rememberMe) {
+      localStorage.setItem("ridewise-remember-me", "true");
+    } else {
+      localStorage.removeItem("ridewise-remember-me");
+    }
+    sessionStorage.setItem("ridewise-session-active", "true");
 
     localStorage.setItem("ridewise-user",          JSON.stringify(loggedInUser));
     localStorage.setItem("ridewise-authenticated", "true");
@@ -181,6 +207,8 @@ export function AuthProvider({ children }) {
     // made the app forget the user's theme/settings every time.
     // ("ridewise-rides-local-<id>" was never written by rideApi — removed.)
     localStorage.removeItem("ridewise-rides-local"); // shared dev ride cache
+    localStorage.removeItem("ridewise-remember-me");
+    sessionStorage.removeItem("ridewise-session-active");
     localStorage.removeItem("ridewise-user");
     localStorage.removeItem("ridewise-authenticated");
     localStorage.removeItem("ridewise-onboarded");

@@ -58,6 +58,7 @@ export default function LoginPage() {
   const [password,          setPassword]          = useState("");
   const [showPassword,      setShowPassword]      = useState(false);
   const [passwordStrength,  setPasswordStrength]  = useState(0);
+  const [rememberMe,        setRememberMe]        = useState(false);
   const [loading,           setLoading]           = useState(false);
   const [error,             setError]             = useState("");
 
@@ -161,7 +162,7 @@ export default function LoginPage() {
     try {
       if (isLogin) {
         // Login → if successful, navigate to home
-        await login(email, password);
+        await login(email, password, rememberMe);
         navigate("/home");
       } else {
         // Sign Up → navigate to onboarding (details page) — NOT /home yet
@@ -411,7 +412,12 @@ export default function LoginPage() {
                 {isLogin && (
                   <div className="flex items-center justify-between text-sm">
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" className="w-4 h-4 accent-[#FF7A1A]" />
+                      <input
+                        type="checkbox"
+                        checked={rememberMe}
+                        onChange={(e) => setRememberMe(e.target.checked)}
+                        className="w-4 h-4 accent-[#FF7A1A]"
+                      />
                       <span className={tc.sub}>Remember me</span>
                     </label>
                     <button type="button" className={`${tc.sub} hover:underline text-xs`}>
