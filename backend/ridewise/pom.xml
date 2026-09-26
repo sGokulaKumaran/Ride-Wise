@@ -49,6 +49,17 @@
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
 
+        <!-- Session store: keeps HTTP sessions in PostgreSQL instead of
+             Tomcat's memory. Without this, every backend restart (Render
+             deploy, or a free-tier spin-down) destroyed all sessions and
+             "Remember me" users were sent back to the login page even
+             though their cookie was still valid. Version is managed by
+             the Spring Boot parent above. -->
+        <dependency>
+            <groupId>org.springframework.session</groupId>
+            <artifactId>spring-session-jdbc</artifactId>
+        </dependency>
+
         <!-- H2: In-memory database for testing only -->
         <dependency>
             <groupId>com.h2database</groupId>

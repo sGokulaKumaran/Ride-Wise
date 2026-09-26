@@ -22,10 +22,12 @@
 // ============================================================
 
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import MobileNav from "./components/layout/MobileNav";
 import Sidebar from "./components/layout/Sidebar";
 import TopBar from "./components/layout/TopBar";
+import Icon from "./components/ui/Icon";
 import { useTheme } from "./hooks/useTheme";
 import { toast } from "react-toastify";
 import { getUserRides } from "../services/rideApi";
@@ -97,6 +99,7 @@ function Field({ label, value, editValue, onChange, editing, type = "text", mult
 export default function Account() {
   const { user, avatarLetter, updateProfile, logout } = useAuth();
   const { theme, setTheme, tc } = useTheme(user?.id);
+  const navigate = useNavigate();
 
   // ── Edit mode state ──────────────────────────────────────────
   const [editing, setEditing] = useState(false);
@@ -279,6 +282,33 @@ export default function Account() {
                 <p className={`text-xs ${tc.sub}`}>{s.label}</p>
               </div>
             ))}
+          </div>
+
+          {/* ── Preferences (mobile only) ─────────────────────── */}
+          {/* The desktop sidebar ends with AccountMenu → "My Profile |
+              Settings | Log out", but that menu is `hidden lg:flex`, so on a
+              phone there was NO route to Settings at all. Account is the
+              mobile gateway to it: one clear row that opens /settings.
+              Desktop keeps its dropdown unchanged (hence lg:hidden). */}
+          <div className={`lg:hidden rounded-2xl border p-2 mb-5 ${tc.card}`}>
+            <button
+              type="button"
+              onClick={() => navigate("/settings")}
+              className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-colors ${tc.cardHover}`}
+            >
+              <span
+                className={`w-10 h-10 rounded-full border flex items-center justify-center shrink-0 ${tc.surface2} ${tc.divider}`}
+              >
+                <Icon name="settings" size={18} />
+              </span>
+              <span className="flex-1 min-w-0">
+                <span className="block text-sm font-bold">Settings</span>
+                <span className={`block text-xs truncate ${tc.sub}`}>
+                  Theme, text size, motion &amp; contrast
+                </span>
+              </span>
+              <Icon name="chevronRight" size={18} className={tc.sub} />
+            </button>
           </div>
 
           {/* ── Profile details card ─────────────────────────── */}

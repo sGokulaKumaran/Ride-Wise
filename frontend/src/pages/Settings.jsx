@@ -20,6 +20,7 @@
 //   You can add a debounced auto-save or an explicit "Save" button.
 // ============================================================
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useTheme, themes } from "./hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
 import Icon from "./components/ui/Icon";
@@ -99,6 +100,7 @@ function SectionHeader({ icon, title, tc }) {
 export default function Settings() {
   const { user } = useAuth();
   const userId   = user?.id;
+  const navigate = useNavigate();
 
   // Pull current theme + setter — scoped to this user
   const { theme, setTheme, tc } = useTheme(userId);
@@ -140,6 +142,20 @@ export default function Settings() {
 
       <main className="lg:ml-64 pt-20 px-4 pb-28 lg:pb-8">
         <div className="max-w-2xl mx-auto">
+          {/* ── Back to Account (mobile only) ────────────────── */}
+          {/* On a phone Settings is opened from the Account tab, so give an
+              explicit way back that does not depend on the bottom bar.
+              Desktop opens Settings from the sidebar dropdown and needs
+              no back link. */}
+          <button
+            type="button"
+            onClick={() => navigate("/account")}
+            className={`lg:hidden mb-4 inline-flex items-center gap-1.5 text-sm font-semibold transition-colors ${tc.sub} hover:underline`}
+          >
+            <Icon name="arrowLeft" size={16} />
+            Back to Account
+          </button>
+
           {/* ── Page header ──────────────────────────────────── */}
           <div className="mb-7">
             <h1 className="text-2xl font-bold mb-1 flex items-center gap-2.5">

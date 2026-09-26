@@ -9,6 +9,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../hooks/useTheme";
 import Icon from "../components/ui/Icon";
 import Button from "../components/ui/Button";
+import MobileNav from "../components/layout/MobileNav";
 
 export default function AdminLayout({ children }) {
   const navigate = useNavigate();
@@ -80,14 +81,18 @@ export default function AdminLayout({ children }) {
       {/* ── Tab Navigation ──────────────────────────────────── */}
       <nav className={`border-b ${tc.divider} ${tc.bar}`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex gap-1 -mb-px">
+          {/* overflow-x-auto: the three tabs are ~330px wide in total, which
+              overflows a 320–360px phone and used to scroll the WHOLE page
+              sideways. Now only this strip scrolls (it never overflows on
+              tablet/desktop, so nothing changes there). */}
+          <div className="flex gap-1 -mb-px overflow-x-auto">
             {tabs.map((tab) => {
               const active = isActive(tab.path);
               return (
                 <button
                   key={tab.path}
                   onClick={() => navigate(tab.path)}
-                  className={`relative flex items-center gap-2 px-4 py-3 text-sm font-semibold transition-colors ${
+                  className={`relative flex items-center gap-2 px-4 py-3 text-sm font-semibold transition-colors whitespace-nowrap shrink-0 ${
                     active ? `${tc.navActive} ${tc.text}` : tc.navIdle
                   }`}
                 >
@@ -104,9 +109,16 @@ export default function AdminLayout({ children }) {
       </nav>
 
       {/* ── Page Content ──────────────────────────────────────── */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      {/* pb-28 on mobile keeps the last row of a table above the bottom
+          navigation bar (which is 64px tall + the elevated ride button). */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-28 lg:pb-6">
         {children}
       </main>
+
+      {/* ── Bottom navigation (mobile) ───────────────────────── */}
+      {/* Same bar as every other page, so an admin can jump to Home,
+          Riders, Account or start a ride without leaving the panel. */}
+      <MobileNav tc={tc} />
     </div>
   );
 }
