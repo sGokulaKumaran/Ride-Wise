@@ -6,6 +6,8 @@ import org.springframework.http.ResponseEntity; // Import ResponseEntity
 import vehicle.ridewise.config.SessionAuthInterceptor;
 import vehicle.ridewise.service.RideService; // Import RideService
 import vehicle.ridewise.service.LocationUpdateService; // Import LocationUpdateService
+import vehicle.ridewise.service.UserLocationService; // Import UserLocationService
+import vehicle.ridewise.dto.LiveLocationResponse; // Import LiveLocationResponse dto
 import vehicle.ridewise.dto.RideRequest; // Import RideRequest dto
 import vehicle.ridewise.dto.RideResponse; // Import RideResponse dto
 import vehicle.ridewise.dto.LocationUpdateRequest; // Import LocationUpdateRequest
@@ -30,17 +32,22 @@ import java.util.Map; // Import Map
 //
 //   POST   /api/rides/{id}/location  → record a GPS position fix
 //   GET    /api/rides/{id}/location  → get full GPS track for a ride
+//   GET    /api/rides/{id}/live-locations → current member positions (group)
 // ============================================================
 @RestController // Mark as REST controller (returns JSON by default)
 @RequestMapping("/api/rides") // All endpoints start with /api/rides
 public class RideController { // Define class
     private final RideService rideService; // Service for ride operations
-    private final LocationUpdateService locationService; // Service for GPS tracking
+    private final LocationUpdateService locationService; // Service for GPS tracking history
+    private final UserLocationService userLocationService; // Service for LIVE latest locations
 
-    // Constructor injection — Spring wires both services automatically
-    public RideController(RideService rideService, LocationUpdateService locationService) { // Constructor
-        this.rideService      = rideService; // Assign ride service
-        this.locationService  = locationService; // Assign location service
+    // Constructor injection — Spring wires all services automatically
+    public RideController(RideService rideService,
+                          LocationUpdateService locationService,
+                          UserLocationService userLocationService) { // Constructor
+        this.rideService         = rideService; // Assign ride service
+        this.locationService     = locationService; // Assign location history service
+        this.userLocationService = userLocationService; // Assign live location service
     } // End constructor
 
     // ── CREATE RIDE ──────────────────────────────────────────
@@ -125,9 +132,27 @@ public class RideController { // Define class
             @RequestBody LocationUpdateRequest req,
             HttpServletRequest request) { // Save location handler
         req.setUserId(SessionAuthInterceptor.requireUserId(request)); // Session identity is authoritative
-        LocationUpdateResponse res = locationService.saveLocation(rideId, req); // Delegate to service
+        LocationUpdateResponse res = locationService.saveLocation(rideId, req); // Save history row
+
+        // ALSO update the single latest-location row and broadcast it to the
+        // group ride. This keeps the REST path (used as a WS fallback) from
+        // producing a second, divergent location system.
+        userLocationService.updateLocation(
+                rideId, req.getUserId(), req.getLat(), req.getLng(), req.getAccuracy());
+
         return ResponseEntity.ok(res); // Return 200 OK with saved row data
     } // End handler
+
+    // ── GET LIVE LOCATIONS FOR A RIDE ────────────────────────
+    // GET /api/rides/{rideId}/live-locations
+    // Returns the CURRENT position of each ride member that has shared one.
+    // Used when the map opens (before WebSocket updates take over).
+    @GetMapping("/{rideId}/live-locations")
+    public ResponseEntity<List<LiveLocationResponse>> getLiveLocations(
+            @PathVariable Long rideId, HttpServletRequest request) {
+        return ResponseEntity.ok(
+                userLocationService.getLiveLocations(rideId, SessionAuthInterceptor.requireUserId(request)));
+    }
 
     // ── GET GPS TRACK FOR A RIDE ─────────────────────────────
     // GET /api/rides/{rideId}/location

@@ -23,6 +23,14 @@ export default defineConfig(({ mode }) => {
           target: env.VITE_API_URL || 'http://localhost:8080',
           changeOrigin: true,
           secure: false,
+        },
+        // Live group-ride location socket — must be proxied with ws:true
+        // so the browser's WebSocket upgrade reaches Spring Boot.
+        '/ws': {
+          target: env.VITE_API_URL || 'http://localhost:8080',
+          changeOrigin: true,
+          secure: false,
+          ws: true,
         }
       }
     }

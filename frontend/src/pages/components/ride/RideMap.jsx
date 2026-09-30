@@ -273,11 +273,10 @@ function MapInternals({ ride, myLocation, isLive, tileLayerRef, activeTileIdx, p
   const riderMarkersRef = useRef({});
 
   // ── Group Rider Markers ──
-  // IMPORTANT: These are draggable demo markers. We ONLY set position on creation.
-  // Once created, the user controls position via drag. We never call setLatLng()
-  // on existing markers — that causes the "rubber-band" snap-back glitch because
-  // React re-renders (from GPS ticks etc.) would push the OLD state position back
-  // to the marker while the user is still dragging.
+  // Real live positions: a member's marker is created on first fix, moved as
+  // new fixes arrive, and removed when they leave or their position goes
+  // stale (ActiveRideOverlay passes lat/lng = null in that case). No fake
+  // coordinates and no drag-to-simulate.
   useEffect(() => {
     if (!map) return;
     
@@ -290,8 +289,10 @@ function MapInternals({ ride, myLocation, isLive, tileLayerRef, activeTileIdx, p
       const key = String(p.userId); // Use string keys consistently
       currentMarkerIds.add(key);
       
-      // Only create NEW markers — never update position of existing ones
-      if (!riderMarkersRef.current[key]) {
+      if (riderMarkersRef.current[key]) {
+        // Existing marker → move it to the newest real position
+        riderMarkersRef.current[key].setLatLng([p.lat, p.lng]);
+      } else {
         const color = p.color || RIDER_COLORS[index % RIDER_COLORS.length];
         const letter = p.avatarLetter || (p.username ? p.username.charAt(0).toUpperCase() : "?");
         const icon = makeRiderIcon(color, letter, p.username || "Rider");
@@ -299,8 +300,7 @@ function MapInternals({ ride, myLocation, isLive, tileLayerRef, activeTileIdx, p
         const marker = L.marker([p.lat, p.lng], {
           icon,
           zIndexOffset: 500,
-          draggable: true,
-          autoPan: false,       // Don't pan map while dragging
+          interactive: true,
         }).addTo(map);
         
         marker.bindPopup(`
@@ -309,14 +309,6 @@ function MapInternals({ ride, myLocation, isLive, tileLayerRef, activeTileIdx, p
             <span style="font-size:11px;color:#666">${p.role === "admin" ? "👑 Admin" : "Rider"}</span>
           </div>
         `);
-        
-        // On dragend, broadcast the new position so ActiveRideOverlay can track it
-        marker.on('dragend', function(event) {
-          const position = event.target.getLatLng();
-          window.dispatchEvent(new CustomEvent("simulate-group-gps", {
-            detail: { userId: p.userId, lat: position.lat, lng: position.lng }
-          }));
-        });
         
         riderMarkersRef.current[key] = marker;
       }

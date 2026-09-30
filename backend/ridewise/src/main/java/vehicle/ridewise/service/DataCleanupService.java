@@ -33,17 +33,20 @@ import java.util.List;
 public class DataCleanupService {
 
     private final LocationUpdateRepository locationUpdateRepository;
+    private final UserLocationRepository userLocationRepository;
     private final NotificationRepository notificationRepository;
     private final RideParticipantRepository rideParticipantRepository;
     private final ConnectionRepository connectionRepository;
     private final RideRepository rideRepository;
 
     public DataCleanupService(LocationUpdateRepository locationUpdateRepository,
+                              UserLocationRepository userLocationRepository,
                               NotificationRepository notificationRepository,
                               RideParticipantRepository rideParticipantRepository,
                               ConnectionRepository connectionRepository,
                               RideRepository rideRepository) {
         this.locationUpdateRepository = locationUpdateRepository;
+        this.userLocationRepository = userLocationRepository;
         this.notificationRepository = notificationRepository;
         this.rideParticipantRepository = rideParticipantRepository;
         this.connectionRepository = connectionRepository;
@@ -68,6 +71,9 @@ public class DataCleanupService {
                 locationUpdateRepository.deleteByRideId(rideId);
                 System.out.println("[RideWise Cleanup] Deleted " + count + " GPS breadcrumbs for ride #" + rideId);
             }
+            // Also drop the LIVE latest-location rows so a finished ride cannot
+            // leak stale markers into anyone's map.
+            userLocationRepository.deleteByRideId(rideId);
         } catch (Exception e) {
             // Don't let cleanup failure break the ride flow
             System.err.println("[RideWise Cleanup] Failed to clean location data for ride #" + rideId + ": " + e.getMessage());
@@ -89,6 +95,7 @@ public class DataCleanupService {
         totalCleaned += cleanupVeryOldNotifications();
         totalCleaned += cleanupOldRouteBlobs();
         totalCleaned += cleanupOrphanedLocationUpdates();
+        totalCleaned += cleanupStaleUserLocations();
 
         long elapsed = System.currentTimeMillis() - startTime;
         System.out.println("[RideWise Cleanup] ═══ Completed in " + elapsed + "ms — " + totalCleaned + " total items cleaned ═══");
@@ -198,6 +205,29 @@ public class DataCleanupService {
         }
     }
 
+    /**
+     * Delete live latest-location rows that have not been refreshed for a
+     * while. This covers a rider who closed the tab/lost signal without
+     * ending the ride — their stale marker must not linger on the map.
+     */
+    @Transactional
+    public int cleanupStaleUserLocations() {
+        try {
+            LocalDateTime cutoff = LocalDateTime.now().minusHours(6);
+            long before = userLocationRepository.count();
+            userLocationRepository.deleteByUpdatedAtBefore(cutoff);
+            long after = userLocationRepository.count();
+            int deleted = (int) Math.max(0, before - after);
+            if (deleted > 0) {
+                System.out.println("[RideWise Cleanup]   ↳ Deleted " + deleted + " stale live locations (> 6 hours old)");
+            }
+            return deleted;
+        } catch (Exception e) {
+            System.err.println("[RideWise Cleanup] Failed to clean stale live locations: " + e.getMessage());
+            return 0;
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // 3. USER CLEANUP: Remove all data for a deleted user
     //    (pre-wired for future admin user deletion feature)
@@ -215,6 +245,7 @@ public class DataCleanupService {
             rideParticipantRepository.deleteByUserId(userId);
             connectionRepository.deleteByUserIdOrConnectedUserId(userId, userId);
             locationUpdateRepository.deleteByUserId(userId);
+            userLocationRepository.deleteByUserId(userId);
             System.out.println("[RideWise Cleanup] Cleaned up all data for user #" + userId);
         } catch (Exception e) {
             System.err.println("[RideWise Cleanup] Failed to clean data for user #" + userId + ": " + e.getMessage());

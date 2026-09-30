@@ -26,6 +26,7 @@ export default function GroupRidersPanel({
   onRiderClick,
   isAdmin = false,          // true → show the "add rider" affordance
   rideId = null,            // needed to POST new participants
+  sharing = false,          // am I currently sharing MY live location?
   onParticipantsChanged,    // called after a rider is added (parent re-fetches)
   tc: providedTc,
 }) {
@@ -238,6 +239,9 @@ export default function GroupRidersPanel({
         {participants.map((p) => {
           const isMe = p.userId === currentUserId;
           const isRiderAdmin = p.role === "admin";
+          // A rider is "unavailable" when they have no fresh live position.
+          // For myself that means I have not started sharing.
+          const unavailable = isMe ? !sharing : p.locationUnavailable;
           
           return (
             <div
@@ -254,6 +258,7 @@ export default function GroupRidersPanel({
             >
               <div
                 className={`border-[1.5px] ${isMe ? "" : tc.divider}`}
+                title={unavailable ? "Location unavailable" : "Live location"}
                 style={{
                   position: "relative",
                 width: "34px",
@@ -265,6 +270,7 @@ export default function GroupRidersPanel({
                 justifyContent: "center",
                 boxShadow: "0 2px 6px rgba(0,0,0,0.3)",
                 border: isMe ? "2px solid #22c55e" : undefined,
+                opacity: unavailable ? 0.5 : 1,
               }}>
                 <span style={{
                   color: "white",
@@ -274,6 +280,18 @@ export default function GroupRidersPanel({
                 }}>
                   {p.avatarLetter || (p.username ? p.username.charAt(0).toUpperCase() : "?")}
                 </span>
+
+                {/* Live-availability dot: green = fresh position, grey = unavailable */}
+                <div style={{
+                  position: "absolute",
+                  bottom: "-1px",
+                  right: "-1px",
+                  width: "10px",
+                  height: "10px",
+                  borderRadius: "50%",
+                  background: unavailable ? "#9ca3af" : "#22c55e",
+                  border: "1.5px solid #0b0b0c",
+                }} />
                 
                 {isRiderAdmin && (
                   <div style={{
@@ -305,8 +323,18 @@ export default function GroupRidersPanel({
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
+                opacity: unavailable ? 0.6 : 1,
               }}>
                 {isMe ? "You" : (p.username || "Rider")}
+              </div>
+              <div style={{
+                fontSize: "7.5px",
+                marginTop: "1px",
+                color: unavailable ? "#9ca3af" : "#22c55e",
+                fontWeight: 700,
+                letterSpacing: "0.2px",
+              }}>
+                {unavailable ? "No GPS" : "Live"}
               </div>
             </div>
           );

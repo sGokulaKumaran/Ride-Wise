@@ -24,6 +24,10 @@ public class LocationUpdateRequest { // Define class
 
     private Long userId; // The user sending the fix
 
+    // GPS accuracy radius in metres (optional). Used by live group tracking
+    // to judge how trustworthy the fix is.
+    private Double accuracy;
+
     // ── Getters and setters ──
 
     public Double getLat() { // Get lat
@@ -56,5 +60,13 @@ public class LocationUpdateRequest { // Define class
 
     public void setUserId(Long userId) {
         this.userId = userId;
+    }
+
+    public Double getAccuracy() {
+        return accuracy;
+    }
+
+    public void setAccuracy(Double accuracy) {
+        this.accuracy = accuracy;
     }
 } // End of class

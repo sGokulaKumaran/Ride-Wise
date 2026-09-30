@@ -39,7 +39,8 @@ import {
   haversineDistance,
   findActiveStep,
 } from "../../../services/routingApi";
-import { updateUserLocation, getGroupRideParticipants, updateParticipantStatus } from "../../../services/rideApi";
+import { updateUserLocation, getGroupRideParticipants, updateParticipantStatus, getLiveRideLocations } from "../../../services/rideApi";
+import { connectRideSocket, sendRideLocation, closeRideSocket } from "../../../services/rideSocket";
 import GroupRidersPanel from "./GroupRidersPanel";
 import Icon from "../ui/Icon";
 import { useAuth } from "../../../context/AuthContext";
@@ -50,6 +51,32 @@ const RIDER_COLORS = [
   "#8b5cf6", "#14b8a6", "#f59e0b", "#ec4899", "#06b6d4",
   "#10b981", "#f43f5e", "#6366f1", "#84cc16", "#e11d48",
 ];
+
+// A rider whose position has not been refreshed within this window is shown
+// as "location unavailable" instead of a stale marker (requirement 9).
+const LOCATION_STALE_MS = 35_000;
+
+// Normalise a server location payload into the shape the map expects.
+// receivedAt is CLIENT time, so staleness never depends on server clock skew.
+function toLocationEntry(loc) {
+  return {
+    lat: loc.lat,
+    lng: loc.lng,
+    accuracy: loc.accuracy ?? null,
+    receivedAt: Date.now(),
+  };
+}
+
+// Merge a list of server locations into the userId-keyed map.
+function mergeLocations(prev, list) {
+  const next = { ...prev };
+  (list || []).forEach((loc) => {
+    if (loc && loc.userId != null && loc.lat != null && loc.lng != null) {
+      next[loc.userId] = toLocationEntry(loc);
+    }
+  });
+  return next;
+}
 
 // ── Parse steps — ride.routeSteps is stored as JSON string in DB ──
 function parseSteps(ride) {
@@ -106,6 +133,12 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
 
   const [participants, setParticipants] = useState([]);
   const [participantLocations, setParticipantLocations] = useState({});
+
+  // ── Live location sharing (group rides) ──
+  // Nothing is tracked until the rider explicitly starts sharing.
+  const [shareLocation, setShareLocation] = useState(false);
+  const [socketStatus,  setSocketStatus]  = useState("idle"); // idle|connected|disconnected|error
+  const [nowTs,         setNowTs]         = useState(0);       // wall-clock tick to age out stale pins
 
   const { user } = useAuth();
   const { tc } = useTheme(user?.id);
@@ -220,17 +253,44 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
     return () => clearInterval(interval);
   }, [isActiveRide, ride?.id, ride?.rideType, refreshParticipants]);
 
+  // ── Load current member locations once when the group map opens ──
+  // (requirement 7: REST snapshot first, live WebSocket updates after).
   useEffect(() => {
-    const handler = (e) => {
-      const { userId, lat, lng } = e.detail;
-      setParticipantLocations(prev => ({
-        ...prev,
-        [userId]: { lat, lng },
-      }));
-    };
-    window.addEventListener("simulate-group-gps", handler);
-    return () => window.removeEventListener("simulate-group-gps", handler);
-  }, []);
+    if (!isGroupRide || !ride?.id) return;
+    let cancelled = false;
+    getLiveRideLocations(ride.id).then(list => {
+      if (!cancelled) setParticipantLocations(prev => mergeLocations(prev, list));
+    });
+    return () => { cancelled = true; };
+  }, [isGroupRide, ride?.id]);
+
+  // ── Live WebSocket subscription for the group ride ──
+  // The socket is opened when the map shows an active group ride and closed
+  // on unmount (ride ended / map closed) — no tracking survives the page.
+  useEffect(() => {
+    if (!isGroupRide || !isActiveRide || !ride?.id) return;
+
+    connectRideSocket(ride.id, {
+      onSnapshot: (list) => setParticipantLocations(prev => mergeLocations(prev, list)),
+      onLocation: (loc) => {
+        if (loc && loc.userId != null && loc.lat != null && loc.lng != null) {
+          setParticipantLocations(prev => ({ ...prev, [loc.userId]: toLocationEntry(loc) }));
+        }
+      },
+      onStatus: (status) => setSocketStatus(status),
+      onError:   (message) => console.warn("[ActiveRideOverlay] location socket:", message),
+    });
+
+    return () => closeRideSocket();
+  }, [isGroupRide, isActiveRide, ride?.id]);
+
+  // ── Age out stale pins: re-render every 5s so a rider whose updates stopped
+  // flips to "location unavailable" instead of freezing on the last point. ──
+  useEffect(() => {
+    if (!isGroupRide) return;
+    const t = setInterval(() => setNowTs(Date.now()), 5000);
+    return () => clearInterval(t);
+  }, [isGroupRide]);
 
   // Parse steps whenever ride changes
   useEffect(() => {
@@ -244,8 +304,11 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
   // START GPS when overlay mounts (only for active rides); STOP on unmount
   // ====================================================================
   useEffect(() => {
-    // Only track GPS for active rides — not for history view
+    // Only track GPS for active rides — not for history view.
+    // GROUP rides additionally require the rider to start sharing first
+    // (requirement 1); solo rides keep their original auto-tracking.
     if (!isActiveRide) return;
+    if (isGroupRide && !shareLocation) return;
 
     const stop = watchLocation(
       (loc) => {
@@ -274,11 +337,17 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
           return next >= prev ? next : prev;
         });
 
-        // ── Persist user position to backend ──
+        // ── Publish position to backend ──
+        // Group rides prefer the authenticated WebSocket; if it is not
+        // connected the REST endpoint is used as a fallback. Both paths go
+        // through the same server-side upsert + broadcast.
         if (ride?.id) {
-          updateUserLocation(ride.id, loc.lat, loc.lng, user?.id).catch(err => {
-            console.warn("[ActiveRideOverlay] location update failed:", err.message);
-          });
+          const deliveredOverSocket = isGroupRide && sendRideLocation(loc, ride.id);
+          if (!deliveredOverSocket) {
+            updateUserLocation(ride.id, loc.lat, loc.lng, user?.id, loc.accuracy).catch(err => {
+              console.warn("[ActiveRideOverlay] location update failed:", err.message);
+            });
+          }
         }
       },
       (err) => setGpsError(err.message)
@@ -286,7 +355,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
 
     stopGpsRef.current = stop;
     return () => stop();
-  }, [isActiveRide]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isActiveRide, isGroupRide, shareLocation, ride?.id, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ====================================================================
   // END RIDE handler (two-click confirm)
@@ -295,9 +364,11 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
     if (!confirmEnd) { setConfirmEnd(true); return; }
     setEnding(true);
     setConfirmEnd(false);
-    // Stop GPS tracking before calling onEnd
+    // Stop GPS tracking + close the location socket before ending
     stopGpsRef.current?.();
     stopGpsRef.current = null;
+    setShareLocation(false);
+    closeRideSocket();
     // Hand the real travelled distance to Home → PATCH /api/rides/{id}/status
     await onEnd({ distanceTraveled });
     setEnding(false);
@@ -318,6 +389,8 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
     // Stop GPS tracking — leaving riders no longer share their location
     stopGpsRef.current?.();
     stopGpsRef.current = null;
+    setShareLocation(false);
+    closeRideSocket();
     try {
       // PATCH /api/rides/{id}/participants/{userId}/status { status: "left", actorUserId }
       await updateParticipantStatus(ride.id, user?.id, "left", user?.id);
@@ -722,12 +795,22 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
           ============================================================ */}
       <div style={{ flex: 1, position: "relative", height: 0, overflow: "hidden" }}>
         {(() => {
-          const participantsWithLocations = participants.map((p, i) => ({
-            ...p,
-            lat: participantLocations[p.userId]?.lat || (ride?.fromLat ? ride.fromLat + (i + 1) * 0.003 : null),
-            lng: participantLocations[p.userId]?.lng || (ride?.fromLng ? ride.fromLng + (i + 1) * 0.003 : null),
-            color: RIDER_COLORS[i % RIDER_COLORS.length],
-          }));
+          // Only REAL, still-fresh server positions become map pins. A rider
+          // with no fix — or one that has gone stale — gets NO fabricated
+          // fallback coordinate (requirement 9).
+          // `nowTs` is a periodic state tick (never Date.now() during render).
+          const participantsWithLocations = participants.map((p, i) => {
+            const loc = participantLocations[p.userId];
+            const fresh = !!loc && (nowTs === 0 || (nowTs - loc.receivedAt) < LOCATION_STALE_MS);
+            return {
+              ...p,
+              lat: fresh ? loc.lat : null,
+              lng: fresh ? loc.lng : null,
+              accuracy: fresh ? loc.accuracy : null,
+              locationUnavailable: !fresh,
+              color: RIDER_COLORS[i % RIDER_COLORS.length],
+            };
+          });
 
           return (
             <>
@@ -745,6 +828,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
                   currentUserId={user?.id}
                   isAdmin={isAdmin}
                   rideId={isActiveRide ? ride?.id : null}
+                  sharing={shareLocation}
                   onParticipantsChanged={refreshParticipants}
                   tc={tc}
                   onRiderClick={(p) => {
@@ -759,6 +843,52 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
             </>
           );
         })()}
+
+        {/* ── Live location sharing toggle (active group rides only) ──
+             Nothing is tracked until the rider turns this on. */}
+        {isGroupRide && isActiveRide && (
+          <button
+            onClick={() => setShareLocation(v => !v)}
+            title={shareLocation
+              ? "Stop sharing your live location with the group"
+              : "Start sharing your live location with the group"}
+            style={{
+              position: "absolute",
+              top: "110px",
+              right: "16px",
+              zIndex: 9999,
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "10px 14px",
+              borderRadius: "999px",
+              cursor: "pointer",
+              fontWeight: 800,
+              fontSize: "12px",
+              color: "white",
+              border: shareLocation
+                ? "1.5px solid rgba(52,211,153,0.7)"
+                : "1.5px solid rgba(255,255,255,0.18)",
+              background: shareLocation
+                ? "rgba(16,185,129,0.28)"
+                : "rgba(15,15,26,0.9)",
+              backdropFilter: "blur(12px)",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.45)",
+            }}
+          >
+            <span style={{
+              width: "9px",
+              height: "9px",
+              borderRadius: "50%",
+              background: shareLocation ? "#34d399" : "#9ca3af",
+              boxShadow: shareLocation ? "0 0 8px #34d399" : "none",
+              flexShrink: 0,
+            }} />
+            {shareLocation
+              ? (socketStatus === "connected" ? "Sharing location" : "Sharing · reconnecting…")
+              : "Share location"}
+          </button>
+        )}
 
         {/* GPS error banner */}
         {gpsError && isActiveRide && (

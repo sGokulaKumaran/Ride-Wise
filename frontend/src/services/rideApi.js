@@ -233,7 +233,7 @@ export async function getRide(rideId) {
 // This is "fire-and-forget" — if backend is unreachable we log and
 // silently skip. GPS dot and route trimming still work client-side.
 // ============================================================
-export async function updateUserLocation(rideId, lat, lng, userId) {
+export async function updateUserLocation(rideId, lat, lng, userId, accuracy) {
 
   try {
     // Build the location update payload with an ISO timestamp
@@ -241,6 +241,7 @@ export async function updateUserLocation(rideId, lat, lng, userId) {
       userId: userId || null,
       lat,                                // decimal degrees (e.g. 13.0827)
       lng,                                // decimal degrees (e.g. 80.2707)
+      ...(Number.isFinite(accuracy) ? { accuracy } : {}), // GPS accuracy (m)
 
       timestamp: new Date().toISOString(), // when this fix was captured
     };
@@ -266,6 +267,25 @@ export async function updateUserLocation(rideId, lat, lng, userId) {
 // ============================================================
 // GROUP RIDE API FUNCTIONS
 // ============================================================
+
+// ============================================================
+// GET CURRENT LIVE LOCATIONS FOR A RIDE
+// GET /api/rides/{rideId}/live-locations
+//
+// Returns the latest known position of each member who has shared one.
+// Used when the map opens, before WebSocket updates take over.
+// Returns [] on any failure so the map simply shows no riders.
+// ============================================================
+export async function getLiveRideLocations(rideId) {
+  try {
+    const res = await fetch(`${BASE}/${rideId}/live-locations`);
+    if (!res.ok) throw new Error(`Get live locations failed: ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    console.warn("[rideApi] getLiveRideLocations failed:", err.message);
+    return [];
+  }
+}
 
 export async function getGroupRideParticipants(rideId) {
   try {
