@@ -32,11 +32,11 @@ L.Icon.Default.mergeOptions({
 // Tile options (same as demo's MapTilesContainer)
 // ---------------------------------------------------------------------------
 const TILE_LAYERS = [
-  { label: "🗺️ Default",   url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", attr: "© OpenStreetMap" },
-  { label: "🚴 Cycle",     url: "https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png", attr: "© CyclOSM" },
-  { label: "🌑 Dark",      url: "https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png", attr: "© Stadia" },
-  { label: "🛰️ Satellite", url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", attr: "© ArcGIS" },
-  { label: "🏔️ Terrain",   url: "https://tiles.stadiamaps.com/tiles/stamen_terrain/{z}/{x}/{y}{r}.png", attr: "© Stadia" },
+  { label: " Default",   url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", attr: "© OpenStreetMap" },
+  { label: " Cycle",     url: "https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png", attr: "© CyclOSM" },
+  { label: " Dark",      url: "https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png", attr: "© Stadia" },
+  { label: " Satellite", url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", attr: "© ArcGIS" },
+  { label: " Terrain",   url: "https://tiles.stadiamaps.com/tiles/stamen_terrain/{z}/{x}/{y}{r}.png", attr: "© Stadia" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -329,7 +329,7 @@ function MapInternals({ ride, myLocation, isLive, tileLayerRef, activeTileIdx, p
               <span style="width:24px;height:24px;border-radius:50%;background:${color};display:inline-flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:11px">${letter}</span>
               <strong style="font-size:13px">${name}</strong>
             </div>
-            <span style="font-size:11px;color:#666;font-weight:600">${p.role === "admin" ? "👑 Ride Admin" : "🏍️ Rider"}</span>
+            <span style="font-size:11px;color:#666;font-weight:600">${p.role === "admin" ? " Ride Admin" : " Rider"}</span>
           </div>
         `);
         
@@ -401,7 +401,7 @@ function MapInternals({ ride, myLocation, isLive, tileLayerRef, activeTileIdx, p
             <strong style="color:#111;font-size:14px">${name}</strong>
           </div>
           <span style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:50px;padding:2px 8px;font-size:11px;color:#166534;font-weight:600">
-            ${ride.rideType === "solo" ? "🏍️ Solo Ride" : "👥 Group Ride"}
+            ${ride.rideType === "solo" ? " Solo Ride" : " Group Ride"}
           </span>
         </div>`);
     }
@@ -466,7 +466,7 @@ function MapInternals({ ride, myLocation, isLive, tileLayerRef, activeTileIdx, p
         interactive: true,
       })
       .addTo(map)
-      .bindPopup("<div style='font-family:system-ui;font-size:13px;font-weight:700'>📍 You are here</div>");
+      .bindPopup("<div style='font-family:system-ui;font-size:13px;font-weight:700'> You are here</div>");
     }
     if (isLive && followRef.current) {
       map.setView(ll, Math.max(map.getZoom(), 16), { animate: true, duration: 0.5 });

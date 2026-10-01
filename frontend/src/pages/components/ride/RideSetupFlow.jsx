@@ -82,8 +82,8 @@ export default function RideSetupFlow({ rideType, userId, participantIds = [], o
     setError("");
     try {
       const loc = await getCurrentLocation(); // prompts browser for GPS permission
-      setFromCoords({ lat: loc.lat, lng: loc.lng, name: "📍 My Current Location" });
-      setFromText("📍 My Current Location");
+      setFromCoords({ lat: loc.lat, lng: loc.lng, name: " My Current Location" });
+      setFromText(" My Current Location");
       // Automatically advance to destination step
       setStep(STEP.DESTINATION);
     } catch {
@@ -488,7 +488,7 @@ export default function RideSetupFlow({ rideType, userId, participantIds = [], o
               alignItems: "center",
               gap: "8px",
             }}>
-              <p style={{ margin: 0, fontWeight: 700 }}>👥 {participantIds.length + 1} riders</p>
+              <p style={{ margin: 0, fontWeight: 700 }}> {participantIds.length + 1} riders</p>
               <p style={{ margin: 0, opacity: 0.5 }}>(including you)</p>
             </div>
           )}

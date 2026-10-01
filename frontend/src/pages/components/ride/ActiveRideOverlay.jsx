@@ -1135,7 +1135,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
           {/* Ride type */}
           <div style={{ flex: 1, textAlign: "center" }}>
             <p style={{ color: "white", fontWeight: 900, fontSize: "22px", margin: 0 }}>
-              {ride.rideType === "solo" ? "🏍️" : `👥 ${participants.length}`}
+              {ride.rideType === "solo" ? "" : ` ${participants.length}`}
             </p>
             <p style={{ color: "rgba(255,255,255,0.45)", fontSize: "10px", margin: 0, textTransform: "uppercase", letterSpacing: "1px" }}>
               {ride.rideType === "solo" ? "solo" : "riders"}
