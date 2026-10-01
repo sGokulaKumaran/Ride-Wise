@@ -424,26 +424,22 @@ function MapInternals({ ride, myLocation, isLive, tileLayerRef, activeTileIdx, p
   }, [map, ride?.destinationLat, ride?.destinationLng]); // eslint-disable-line
 
   // GPS dot (live position)
+  // NOT draggable: the dot always shows the rider's REAL GPS fix. Dragging
+  // it used to fire a fake "simulate-gps" position, which could publish an
+  // invented location to the rider's group (requirement 9).
   useEffect(() => {
     if (!map || !myLocation?.lat) return;
     const ll = [myLocation.lat, myLocation.lng];
        if (gpsDotRef.current) {
       gpsDotRef.current.setLatLng(ll);
     } else {
-      gpsDotRef.current = L.marker(ll, { 
-        icon: GPS_ICON, 
+      gpsDotRef.current = L.marker(ll, {
+        icon: GPS_ICON,
         zIndexOffset: 1000,
-        draggable: true
+        interactive: true,
       })
       .addTo(map)
       .bindPopup("<div style='font-family:system-ui;font-size:13px;font-weight:700'>📍 You are here</div>");
-      //this is after line is used for to drag the pointer in the map
-      gpsDotRef.current.on('dragend', function(event) {
-        const position = event.target.getLatLng();
-        window.dispatchEvent(new CustomEvent("simulate-gps", {
-          detail: { lat: position.lat, lng: position.lng }
-        }));
-      });
     }
     if (isLive && followRef.current) {
       map.setView(ll, Math.max(map.getZoom(), 16), { animate: true, duration: 0.5 });
@@ -555,7 +551,8 @@ export default function RideMap({ ride, myLocation, isLive = false, participants
           className="rw-custom-control"
           title="Re-center on your location"
           onClick={() => {
-            // Tell locationService to turn off simulation and snap back to real GPS!
+            // Ask locationService for a fresh REAL GPS fix and snap the
+            // camera back to it (no simulation involved).
             window.dispatchEvent(new Event("resume-real-gps"));
           }}
           style={{

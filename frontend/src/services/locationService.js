@@ -85,34 +85,26 @@ export function getCurrentLocation() {
 //
 // onUpdate(location) is called at most once every THROTTLE_MS.
 // Returns a stop() function — call it to cancel tracking.
+//
+// There is deliberately NO simulation mode: every location handed to the
+// app comes from the browser's GPS hardware. (The old drag-the-marker
+// "simulate-gps" path was removed so a rider can never publish or see a
+// fabricated position.)
 // ============================================================
 
 const activeListeners = new Set();
-let isSimulating = false;
 
-// 1. Listen for dragging the marker
-window.addEventListener("simulate-gps", (e) => {
-  isSimulating = true;
-  const fakeLocation = {
-    lat: e.detail.lat,
-    lng: e.detail.lng,
-    accuracy: 5,
-    speed: 10,
-    heading: null,
-    timestamp: Date.now()
-  };
-  activeListeners.forEach(onUpdate => onUpdate(fakeLocation));
-});
+// The most recent REAL fix, kept only so the map's re-center button can
+// snap back instantly before the next throttled tick arrives.
+let lastKnownLocation = null;
 
-// 2. Listen for the Re-Center button
+// 1. Listen for the Re-Center button (dispatched by RideMap)
 window.addEventListener("resume-real-gps", () => {
-  isSimulating = false; 
-  
-  // A. Instantly snap to the last known real location (if we have one)
-  if (window.lastRealLocation) {
-    activeListeners.forEach(onUpdate => onUpdate(window.lastRealLocation));
+  // A. Instantly snap to the last real fix we received (if we have one)
+  if (lastKnownLocation) {
+    activeListeners.forEach(onUpdate => onUpdate(lastKnownLocation));
     window.dispatchEvent(new CustomEvent("rw-recenter", {
-      detail: { lat: window.lastRealLocation.lat, lng: window.lastRealLocation.lng }
+      detail: { lat: lastKnownLocation.lat, lng: lastKnownLocation.lng }
     }));
   }
 
@@ -120,15 +112,11 @@ window.addEventListener("resume-real-gps", () => {
   navigator.geolocation.getCurrentPosition(
     (pos) => {
       const freshLoc = posToLocation(pos);
-      window.lastRealLocation = freshLoc; // Save it
-      
-      // Update the map and camera one more time with the fresh coordinate
-      if (!isSimulating) {
-        activeListeners.forEach(onUpdate => onUpdate(freshLoc));
-        window.dispatchEvent(new CustomEvent("rw-recenter", {
-          detail: { lat: freshLoc.lat, lng: freshLoc.lng }
-        }));
-      }
+      lastKnownLocation = freshLoc;
+      activeListeners.forEach(onUpdate => onUpdate(freshLoc));
+      window.dispatchEvent(new CustomEvent("rw-recenter", {
+        detail: { lat: freshLoc.lat, lng: freshLoc.lng }
+      }));
     },
     (err) => console.warn("Forced GPS failed:", err),
     GPS_OPTIONS
@@ -148,21 +136,20 @@ export function watchLocation(onUpdate, onError) {
 
   const watchId = navigator.geolocation.watchPosition(
     (pos) => {
-      // ALWAYS silently save the real hardware GPS in the background
-      window.lastRealLocation = posToLocation(pos);
-
-      if (isSimulating) return;
+      const loc = posToLocation(pos);
+      lastKnownLocation = loc; // keep the newest REAL fix
 
       const now = Date.now();
       if (now - lastEmitTime < THROTTLE_MS) return;
       lastEmitTime = now;
-      onUpdate(window.lastRealLocation);
+      onUpdate(loc);
     },
     (err) => {
-      if (!isSimulating) {
-        console.warn("[locationService] GPS error:", err.message);
-        if (onError) onError(err);
-      }
+      // Permission denied / position unavailable / timeout. Callers show a
+      // banner and the rider is reported as "location unavailable" — no
+      // position is invented.
+      console.warn("[locationService] GPS error:", err.message);
+      if (onError) onError(err);
     },
     GPS_OPTIONS
   );
@@ -170,9 +157,5 @@ export function watchLocation(onUpdate, onError) {
   return () => {
     navigator.geolocation.clearWatch(watchId);
     activeListeners.delete(onUpdate);
-    // Only exit simulation mode when NO listeners remain. Previously any
-    // single component unmounting killed GPS simulation for every other
-    // active listener.
-    if (activeListeners.size === 0) isSimulating = false;
   };
 }

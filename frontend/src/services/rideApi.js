@@ -273,8 +273,13 @@ export async function updateUserLocation(rideId, lat, lng, userId, accuracy) {
 // GET /api/rides/{rideId}/live-locations
 //
 // Returns the latest known position of each member who has shared one.
-// Used when the map opens, before WebSocket updates take over.
-// Returns [] on any failure so the map simply shows no riders.
+// Used when the map opens and as the polling fallback while the
+// WebSocket is not connected.
+//
+// RETURNS:
+//   [...]  → the server's current list (may legitimately be empty)
+//   null   → the request FAILED, so callers must keep what they already
+//            have instead of wiping every rider off the map
 // ============================================================
 export async function getLiveRideLocations(rideId) {
   try {
@@ -283,7 +288,28 @@ export async function getLiveRideLocations(rideId) {
     return await res.json();
   } catch (err) {
     console.warn("[rideApi] getLiveRideLocations failed:", err.message);
-    return [];
+    return null;
+  }
+}
+
+// ============================================================
+// STOP SHARING MY LIVE LOCATION
+// DELETE /api/rides/{rideId}/live-location
+//
+// Removes my single latest-location row and tells the rest of the group
+// to drop my marker. This is the REST twin of the WebSocket
+// {"type":"stop"} message, used whenever the socket is not connected.
+// Never throws — losing the clear only means the marker ages out.
+// ============================================================
+export async function clearLiveLocation(rideId) {
+  if (!rideId) return;
+  try {
+    const res = await fetch(`${BASE}/${rideId}/live-location`, { method: "DELETE" });
+    if (!res.ok) {
+      console.warn(`[rideApi] clearLiveLocation returned HTTP ${res.status}`);
+    }
+  } catch (err) {
+    console.warn("[rideApi] clearLiveLocation skipped (backend unreachable):", err.message);
   }
 }
 

@@ -32,7 +32,8 @@ import java.util.Map; // Import Map
 //
 //   POST   /api/rides/{id}/location  → record a GPS position fix
 //   GET    /api/rides/{id}/location  → get full GPS track for a ride
-//   GET    /api/rides/{id}/live-locations → current member positions (group)
+//   GET    /api/rides/{id}/live-locations   → current member positions (group)
+//   DELETE /api/rides/{id}/live-location    → stop sharing my live position
 // ============================================================
 @RestController // Mark as REST controller (returns JSON by default)
 @RequestMapping("/api/rides") // All endpoints start with /api/rides
@@ -152,6 +153,20 @@ public class RideController { // Define class
             @PathVariable Long rideId, HttpServletRequest request) {
         return ResponseEntity.ok(
                 userLocationService.getLiveLocations(rideId, SessionAuthInterceptor.requireUserId(request)));
+    }
+
+    // ── STOP SHARING MY LIVE LOCATION ────────────────────────
+    // DELETE /api/rides/{rideId}/live-location
+    //
+    // Called when the rider turns location sharing OFF (or the map closes).
+    // Removes the caller's single latest-location row and tells the rest of
+    // the group to drop that marker immediately. This is the REST twin of
+    // the WebSocket {"type":"stop"} message, used when the socket is not
+    // connected — both paths run the same UserLocationService method.
+    @DeleteMapping("/{rideId}/live-location")
+    public ResponseEntity<Void> clearLiveLocation(@PathVariable Long rideId, HttpServletRequest request) {
+        userLocationService.clearLocation(rideId, SessionAuthInterceptor.requireUserId(request));
+        return ResponseEntity.noContent().build(); // 204
     }
 
     // ── GET GPS TRACK FOR A RIDE ─────────────────────────────

@@ -25,11 +25,13 @@ import java.util.Map;
 //   client → { "type": "subscribe",   "rideId": 12 }
 //   client → { "type": "unsubscribe" }
 //   client → { "type": "location", "rideId": 12, "lat": .., "lng": .., "accuracy": .. }
+//   client → { "type": "stop",     "rideId": 12 }   (rider stopped sharing)
 //
 //   server → { "type": "connected",  "userId": .. }
 //   server → { "type": "subscribed", "rideId": .. }
 //   server → { "type": "snapshot",   "rideId": .., "locations": [ ... ] }
 //   server → { "type": "location",   "location": { ... } }
+//   server → { "type": "location-cleared", "rideId": .., "userId": .. }
 //   server → { "type": "error",      "message": ".." }
 //
 // SECURITY: the sender's id always comes from the handshake session, never
@@ -82,6 +84,7 @@ public class RideLocationSocketHandler extends TextWebSocketHandler {
             case "subscribe" -> handleSubscribe(session, userId, msg);
             case "unsubscribe" -> broadcaster.unsubscribe(session);
             case "location" -> handleLocation(session, userId, msg);
+            case "stop" -> handleStop(session, userId, msg);
             default -> send(session, Map.of("type", "error", "message", "Unknown message type"));
         }
     }
@@ -123,6 +126,20 @@ public class RideLocationSocketHandler extends TextWebSocketHandler {
             send(session, Map.of("type", "error", "message", e.getMessage()));
         } catch (Exception e) {
             send(session, Map.of("type", "error", "message", "Failed to store location"));
+        }
+    }
+
+    // ── Stop sharing (requirement 10): delete my latest row and let the
+    // group remove my marker right away. rideId is optional — when the
+    // client omits it we fall back to the ride this socket subscribed to.
+    private void handleStop(WebSocketSession session, Long userId, UserLocationMessage msg) {
+        Long rideId = msg.getRideId() != null ? msg.getRideId() : broadcaster.rideOf(session);
+        try {
+            userLocationService.clearLocation(rideId, userId);
+        } catch (ApiException e) {
+            send(session, Map.of("type", "error", "message", e.getMessage()));
+        } catch (Exception e) {
+            send(session, Map.of("type", "error", "message", "Failed to clear location"));
         }
     }
 

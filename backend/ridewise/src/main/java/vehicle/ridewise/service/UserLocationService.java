@@ -97,6 +97,42 @@ public class UserLocationService {
     }
 
     // ============================================================
+    // STOP SHARING — the rider turned location sharing OFF.
+    //
+    // Deletes the rider's single latest-location row so no ghost marker
+    // survives, then tells the rest of the group to drop that marker
+    // immediately instead of waiting for the staleness timeout.
+    //
+    // Only the rider's OWN row is ever touched, and only when it belongs
+    // to this ride. Membership is checked, but NOT active-ness: a rider
+    // who just left the ride must still be able to remove their position.
+    // ============================================================
+    public void clearLocation(Long rideId, Long userId) {
+        if (userId == null) {
+            throw ApiException.badRequest("Authenticated user is required");
+        }
+        if (rideId == null) return; // nothing to clear
+
+        Ride ride = rideRepository.findById(rideId).orElse(null);
+        if (ride == null) return; // ride already gone → nothing to broadcast
+
+        // Live positions only exist for group rides (see updateLocation).
+        if (!"group".equals(ride.getRideType())) return;
+
+        assertRideAccess(ride, userId, false);
+
+        UserLocation row = userLocationRepository.findByUserId(userId).orElse(null);
+        if (row != null && rideId.equals(row.getRideId())) {
+            userLocationRepository.delete(row);
+            // ── Tell only THIS ride's members to remove the marker ──
+            broadcaster.broadcast(rideId, Map.of(
+                    "type", "location-cleared",
+                    "rideId", rideId,
+                    "userId", userId));
+        }
+    }
+
+    // ============================================================
     // GET LIVE LOCATIONS — every current position for a ride.
     // Used when the map opens, before WebSocket updates take over.
     // Any member (or the owner) may read; outsiders are rejected.

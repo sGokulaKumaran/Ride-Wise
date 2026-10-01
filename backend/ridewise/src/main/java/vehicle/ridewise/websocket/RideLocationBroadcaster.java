@@ -60,6 +60,11 @@ public class RideLocationBroadcaster {
         }
     }
 
+    /** Which ride a session is currently subscribed to (null when none). */
+    public Long rideOf(WebSocketSession session) {
+        return sessionRide.get(session.getId());
+    }
+
     /** Number of members currently watching a ride (used for diagnostics). */
     public int subscriberCount(Long rideId) {
         Set<WebSocketSession> set = rideSubscribers.get(rideId);

@@ -184,6 +184,73 @@ class RideLocationSocketTests {
         }
     }
 
+    // ── Stopping sharing deletes the stored position and tells the group ──
+    @Test
+    void stopSharingClearsOwnLocationAndNotifiesGroup() throws Exception {
+        String adminCookie = login(adminId);
+        String memberCookie = login(memberId);
+        rideId = createGroupRide(adminCookie, List.of(memberId));
+
+        TestHandler adminHandler = new TestHandler();
+        WebSocketSession adminWs = connect(adminCookie, adminHandler);
+        WebSocketSession memberWs = connect(memberCookie, new TestHandler());
+        try {
+            adminWs.sendMessage(new TextMessage(json(Map.of("type", "subscribe", "rideId", rideId))));
+            memberWs.sendMessage(new TextMessage(json(Map.of("type", "subscribe", "rideId", rideId))));
+            assertNotNull(adminHandler.await("subscribed", 5000), "admin subscribe ack");
+
+            // The member publishes a position → the admin sees it.
+            memberWs.sendMessage(new TextMessage(json(Map.of(
+                    "type", "location", "rideId", rideId, "lat", 13.5, "lng", 80.5))));
+            JsonNode seen = adminHandler.await("location", 5000);
+            assertNotNull(seen, "admin should receive the member's live position");
+            assertEquals(memberId, seen.get("location").get("userId").asLong());
+            assertTrue(userLocationRepository.findByUserId(memberId).isPresent(),
+                    "the latest-location row must exist while sharing");
+
+            // The member stops sharing.
+            memberWs.sendMessage(new TextMessage(json(Map.of("type", "stop", "rideId", rideId))));
+
+            JsonNode cleared = adminHandler.await("location-cleared", 5000);
+            assertNotNull(cleared, "the group must be told to remove that marker");
+            assertEquals(memberId, cleared.get("userId").asLong());
+            assertTrue(userLocationRepository.findByUserId(memberId).isEmpty(),
+                    "stopping sharing must delete the stored position (no ghost marker)");
+        } finally {
+            closeQuietly(memberWs);
+            closeQuietly(adminWs);
+        }
+    }
+
+    // ── REST twin of "stop": DELETE /api/rides/{id}/live-location ──
+    @Test
+    void restClearRemovesOnlyMyOwnPosition() throws Exception {
+        String adminCookie = login(adminId);
+        String memberCookie = login(memberId);
+        String outsiderCookie = login(outsiderId);
+        rideId = createGroupRide(adminCookie, List.of(memberId));
+
+        // Both members publish a position.
+        ResponseEntity<String> adminPost = postLocation(adminCookie, 13.111, 80.222);
+        assertEquals(200, adminPost.getStatusCode().value());
+        ResponseEntity<String> memberPost = postLocation(memberCookie, 13.333, 80.444);
+        assertEquals(200, memberPost.getStatusCode().value());
+
+        // A non-member may not clear anything.
+        ResponseEntity<String> outsiderDelete = deleteLiveLocation(outsiderCookie);
+        assertEquals(403, outsiderDelete.getStatusCode().value(), "outsiders must be rejected");
+        assertTrue(userLocationRepository.findByUserId(adminId).isPresent(),
+                "the admin's position must survive an outsider's attempt");
+
+        // The member clears theirs.
+        ResponseEntity<String> memberDelete = deleteLiveLocation(memberCookie);
+        assertEquals(204, memberDelete.getStatusCode().value());
+        assertTrue(userLocationRepository.findByUserId(memberId).isEmpty(),
+                "the member's own position must be deleted");
+        assertTrue(userLocationRepository.findByUserId(adminId).isPresent(),
+                "clearing must never touch another rider's position");
+    }
+
     // ── No session cookie → the handshake is refused ──
     @Test
     void anonymousHandshakeRejected() {
@@ -254,6 +321,28 @@ class RideLocationSocketTests {
         headers.add("Cookie", cookie);
         return rest.exchange("/api/rides/" + rideId + "/live-locations",
                 HttpMethod.GET, new HttpEntity<>(headers), String.class);
+    }
+
+    /** POST /api/rides/{id}/location — the REST twin of the socket "location" message. */
+    private ResponseEntity<String> postLocation(String cookie, double lat, double lng) throws Exception {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.add("Cookie", cookie);
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("lat", lat);
+        body.put("lng", lng);
+
+        return rest.exchange("/api/rides/" + rideId + "/location",
+                HttpMethod.POST, new HttpEntity<>(json(body), headers), String.class);
+    }
+
+    /** DELETE /api/rides/{id}/live-location — "I stopped sharing my position". */
+    private ResponseEntity<String> deleteLiveLocation(String cookie) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.add("Cookie", cookie);
+        return rest.exchange("/api/rides/" + rideId + "/live-location",
+                HttpMethod.DELETE, new HttpEntity<>(headers), String.class);
     }
 
     private WebSocketSession connect(String cookie, TestHandler handler) throws Exception {

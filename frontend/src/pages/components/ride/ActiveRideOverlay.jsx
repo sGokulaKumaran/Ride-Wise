@@ -39,8 +39,8 @@ import {
   haversineDistance,
   findActiveStep,
 } from "../../../services/routingApi";
-import { updateUserLocation, getGroupRideParticipants, updateParticipantStatus, getLiveRideLocations } from "../../../services/rideApi";
-import { connectRideSocket, sendRideLocation, closeRideSocket } from "../../../services/rideSocket";
+import { updateUserLocation, getGroupRideParticipants, updateParticipantStatus, getLiveRideLocations, clearLiveLocation } from "../../../services/rideApi";
+import { connectRideSocket, sendRideLocation, sendRideStop, closeRideSocket } from "../../../services/rideSocket";
 import GroupRidersPanel from "./GroupRidersPanel";
 import Icon from "../ui/Icon";
 import { useAuth } from "../../../context/AuthContext";
@@ -67,9 +67,14 @@ function toLocationEntry(loc) {
   };
 }
 
-// Merge a list of server locations into the userId-keyed map.
-function mergeLocations(prev, list) {
-  const next = { ...prev };
+// Rebuild the userId-keyed location map from a full server snapshot.
+//
+// REPLACE (not merge) on purpose: the backend returns exactly one row per
+// rider that is currently sharing, so anyone missing from the list has
+// stopped sharing / left and their marker must disappear. A stale entry
+// kept around would leave a ghost rider on the map.
+function replaceLocations(list) {
+  const next = {};
   (list || []).forEach((loc) => {
     if (loc && loc.userId != null && loc.lat != null && loc.lng != null) {
       next[loc.userId] = toLocationEntry(loc);
@@ -146,6 +151,10 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
   const stopGpsRef = useRef(null);
   const miniDragRef = useRef({ pointerId: null, offsetX: 0, offsetY: 0, moved: false });
   const bottomBarRef = useRef(null);   // the stats bar, so its height can be measured
+  // Mirrors `shareLocation` so the unmount cleanup (which would otherwise
+  // close over a stale render) still knows whether I was really sharing.
+  const shareLocationRef = useRef(false);
+  useEffect(() => { shareLocationRef.current = shareLocation; }, [shareLocation]);
 
   // ── Determine if ride is active (live navigation) or view-only ──
   // Completed/cancelled rides open in view-only mode — no End Ride button,
@@ -168,6 +177,33 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
       );
   const showEndRide   = isActiveRide && (!isGroupRide || isAdmin);
   const showLeaveRide = isActiveRide && !isAdmin && isGroupRide;
+
+  // ============================================================
+  // STOP SHARING — remove my live position from the group
+  //
+  // Both legs run on purpose and are idempotent on the server (the second
+  // one finds no row and does nothing):
+  //   • the WebSocket message is instant while the socket is up
+  //   • the REST call always works, even after the socket is closed
+  // ============================================================
+  const stopSharingNow = useCallback((rideId) => {
+    if (!rideId) return;
+    sendRideStop(rideId);
+    clearLiveLocation(rideId);
+  }, []);
+
+  // Leaving the map (X button, page change, ride ended) means this rider
+  // stopped tracking, so their position must not linger on other maps
+  // (requirement 9/10). The ride itself may still be active for everyone else.
+  useEffect(() => {
+    const rideId = ride?.id;
+    const group = ride?.rideType === "group";
+    return () => {
+      if (group && rideId && shareLocationRef.current) {
+        clearLiveLocation(rideId); // REST only — the socket is closing anyway
+      }
+    };
+  }, [ride?.id, ride?.rideType]);
 
   // ====================================================================
   // BOTTOM-BAR HEIGHT → the anchor for every floating control
@@ -228,8 +264,8 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
   // GET /api/rides/{id}/participants returns ACTIVE riders only, so
   // re-fetching automatically drops riders who left (their markers
   // disappear) and picks up riders the admin adds mid-ride.
-  // Demo-dragged marker positions live in `participantLocations` (keyed
-  // by userId) and are merged in at render time, so they survive polls.
+  // Each rider's live position lives in `participantLocations` (keyed by
+  // userId) and is merged in at render time.
   // ====================================================================
   const refreshParticipants = useCallback(() => {
     if (ride?.rideType === "group" && ride?.id) {
@@ -253,16 +289,44 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
     return () => clearInterval(interval);
   }, [isActiveRide, ride?.id, ride?.rideType, refreshParticipants]);
 
+  // ── Fetch the current member positions (REST) ──
+  // Returns the server list, or null when the request failed (so callers
+  // keep the riders they already have instead of wiping the map).
+  const fetchLiveLocations = useCallback(() => {
+    if (!isGroupRide || !ride?.id) return Promise.resolve(null);
+    return getLiveRideLocations(ride.id);
+  }, [isGroupRide, ride]);
+
+  // Apply a snapshot: rebuild the location map from the server list.
+  const applyLiveLocations = useCallback((list) => {
+    if (!list) return;                 // request failed → keep what we have
+    setParticipantLocations(replaceLocations(list));
+  }, []);
+
   // ── Load current member locations once when the group map opens ──
   // (requirement 7: REST snapshot first, live WebSocket updates after).
   useEffect(() => {
-    if (!isGroupRide || !ride?.id) return;
     let cancelled = false;
-    getLiveRideLocations(ride.id).then(list => {
-      if (!cancelled) setParticipantLocations(prev => mergeLocations(prev, list));
+    fetchLiveLocations().then(list => {
+      if (!cancelled) applyLiveLocations(list);
     });
     return () => { cancelled = true; };
-  }, [isGroupRide, ride?.id]);
+  }, [fetchLiveLocations, applyLiveLocations]);
+
+  // ── POLLING FALLBACK (only while the WebSocket is not connected) ──
+  // The socket is the real-time path, but it can be blocked by a network,
+  // a proxy or a deployment that has not picked up /ws yet. When that
+  // happens the same REST endpoint keeps the group up to date (5s), and
+  // the moment the socket reports "connected" this interval is torn down.
+  useEffect(() => {
+    if (!isGroupRide || !isActiveRide || !ride?.id) return;
+    if (socketStatus === "connected") return;
+
+    const t = setInterval(() => {
+      fetchLiveLocations().then(applyLiveLocations);
+    }, 5000);
+    return () => clearInterval(t);
+  }, [isGroupRide, isActiveRide, ride?.id, socketStatus, fetchLiveLocations, applyLiveLocations]);
 
   // ── Live WebSocket subscription for the group ride ──
   // The socket is opened when the map shows an active group ride and closed
@@ -271,11 +335,20 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
     if (!isGroupRide || !isActiveRide || !ride?.id) return;
 
     connectRideSocket(ride.id, {
-      onSnapshot: (list) => setParticipantLocations(prev => mergeLocations(prev, list)),
+      onSnapshot: (list) => setParticipantLocations(replaceLocations(list)),
       onLocation: (loc) => {
         if (loc && loc.userId != null && loc.lat != null && loc.lng != null) {
           setParticipantLocations(prev => ({ ...prev, [loc.userId]: toLocationEntry(loc) }));
         }
+      },
+      onLocationCleared: (userId) => {
+        // A rider stopped sharing → remove their marker right now.
+        setParticipantLocations(prev => {
+          if (!(userId in prev)) return prev;
+          const next = { ...prev };
+          delete next[userId];
+          return next;
+        });
       },
       onStatus: (status) => setSocketStatus(status),
       onError:   (message) => console.warn("[ActiveRideOverlay] location socket:", message),
@@ -358,6 +431,20 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
   }, [isActiveRide, isGroupRide, shareLocation, ride?.id, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ====================================================================
+  // START / STOP SHARING (live location toggle)
+  // Nothing is tracked until the rider turns this on; turning it off
+  // removes the stored position so the group sees "no GPS" immediately.
+  // ====================================================================
+  const handleToggleSharing = () => {
+    const next = !shareLocation;
+    setShareLocation(next);
+    if (!next) {
+      stopSharingNow(ride?.id);
+      setGpsError(null);
+    }
+  };
+
+  // ====================================================================
   // END RIDE handler (two-click confirm)
   // ====================================================================
   const handleEndRide = async () => {
@@ -368,6 +455,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
     stopGpsRef.current?.();
     stopGpsRef.current = null;
     setShareLocation(false);
+    stopSharingNow(ride?.id);   // my position is deleted; group markers update now
     closeRideSocket();
     // Hand the real travelled distance to Home → PATCH /api/rides/{id}/status
     await onEnd({ distanceTraveled });
@@ -390,6 +478,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
     stopGpsRef.current?.();
     stopGpsRef.current = null;
     setShareLocation(false);
+    stopSharingNow(ride?.id);
     closeRideSocket();
     try {
       // PATCH /api/rides/{id}/participants/{userId}/status { status: "left", actorUserId }
@@ -848,7 +937,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
              Nothing is tracked until the rider turns this on. */}
         {isGroupRide && isActiveRide && (
           <button
-            onClick={() => setShareLocation(v => !v)}
+            onClick={handleToggleSharing}
             title={shareLocation
               ? "Stop sharing your live location with the group"
               : "Start sharing your live location with the group"}

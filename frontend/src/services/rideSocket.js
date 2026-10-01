@@ -4,15 +4,29 @@
 // One socket, one ride at a time. Talks to the Spring Boot endpoint
 // /ws/rides (raw JSON WebSocket, no STOMP dependency).
 //
-// AUTH: the browser sends the JSESSIONID cookie automatically during the
-// handshake, so the backend can resolve the logged-in user. No token is
-// handled here.
+// AUTH: the browser sends the session cookie (SESSION) automatically during
+// the handshake, so the backend can resolve the logged-in user. No token is
+// handled here. That is also why the socket connects to the PAGE'S OWN
+// ORIGIN by default — a first-party cookie is always sent, while a
+// cross-site one would be blocked by SameSite.
+//
+// WHERE THE SOCKET POINTS:
+//   • dev        → ws://localhost:5173/ws/rides  → vite.config.js proxies
+//                  /ws (ws:true) to Spring Boot on :8080
+//   • production → wss://<site-domain>/ws/rides  → the Cloudflare Pages
+//                  function in functions/ws/[[path]].js forwards the
+//                  upgrade to the Render backend, so the cookie stays
+//                  first-party
+//   • override   → set VITE_WS_URL (e.g. wss://ride-wise-kif0.onrender.com)
+//                  at build time to talk to the backend host directly
 //
 // FLOW:
 //   connectRideSocket(rideId) → opens socket → sends { type: "subscribe" }
 //   server replies  { type: "snapshot", locations: [...] }   (current)
 //   then             { type: "location", location: {...} }    (live)
 //   sendRideLocation({ lat, lng, accuracy }) pushes my position
+//   sendRideStop(rideId) tells the group I stopped sharing
+//                    → server replies { type: "location-cleared", userId }
 //   closeRideSocket() stops reconnecting and closes the socket
 //
 // Connection is dropped whenever the ride ends / tracking stops, and
@@ -20,6 +34,10 @@
 // ============================================================
 
 const WS_PATH = "/ws/rides";
+
+// Optional absolute override. Vite replaces import.meta.env.VITE_WS_URL at
+// build time; an empty/undefined value falls back to the page's own origin.
+const CONFIGURED_WS_URL = (import.meta.env.VITE_WS_URL || "").trim();
 
 let socket = null;
 let currentRideId = null;
@@ -29,8 +47,13 @@ let backoffMs = 1000;
 let closedByUs = false;
 
 function wsUrl() {
-  const secure = window.location.protocol === "https:";
-  return `${secure ? "wss:" : "ws:"}//${window.location.host}${WS_PATH}`;
+  const base = CONFIGURED_WS_URL
+    ? CONFIGURED_WS_URL
+    : `${window.location.protocol}//${window.location.host}`;
+
+  // http(s)://host → ws(s)://host, and drop any trailing slash
+  const wsBase = base.replace(/^http/i, "ws").replace(/\/+$/, "");
+  return `${wsBase}${WS_PATH}`;
 }
 
 function notifyStatus(status) {
@@ -64,6 +87,11 @@ function open() {
         break;
       case "location":
         if (msg.location) handlers.onLocation?.(msg.location);
+        break;
+      case "location-cleared":
+        // A rider stopped sharing — drop their marker immediately instead
+        // of waiting for the staleness window (requirement 8/9).
+        if (msg.userId != null) handlers.onLocationCleared?.(msg.userId);
         break;
       case "error":
         handlers.onError?.(msg.message || "Location sharing error");
@@ -145,6 +173,17 @@ export function sendRideLocation(loc, rideId) {
 
 export function isRideSocketOpen() {
   return !!socket && socket.readyState === WebSocket.OPEN;
+}
+
+// ============================================================
+// sendRideStop — tell the backend I stopped sharing my location.
+// Returns true when it went out over the socket; callers fall back to
+// DELETE /api/rides/{rideId}/live-location when it returns false.
+// ============================================================
+export function sendRideStop(rideId) {
+  const targetRide = rideId ?? currentRideId;
+  if (targetRide == null) return false;
+  return sendJson({ type: "stop", rideId: targetRide });
 }
 
 // ============================================================

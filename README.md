@@ -108,7 +108,7 @@ Think of it as a **universal ride management system**: instead of building separ
 ### 👥 Group Rides
 - **Ride participants** with roles (`admin`, `member`) and statuses (`active`, `pending`, `declined`, `left`)
 - Group riders panel to invite friends and manage participants
-- Groundwork laid for multi-user ride tracking
+- **Live rider locations** — opt-in per rider, real GPS only, shared with the group over an authenticated WebSocket
 
 ---
 
@@ -289,7 +289,59 @@ npm run dev
 
 App runs at: `http://localhost:5173`
 
-> **Both processes must be running.** The Vite dev server proxies `/api/*` to `localhost:8080`.
+> **Both processes must be running.** The Vite dev server proxies `/api/*` **and**
+> `/ws/*` to `localhost:8080` (`/ws` with `ws: true`, so the ride socket's
+> WebSocket upgrade reaches Spring Boot).
+
+### 5. Environment variables
+
+| Variable | Used by | Default | Notes |
+|---|---|---|---|
+| `DATABASE_URL` | backend | `jdbc:postgresql://localhost:5432/ridewise` | **Not set locally** → the local database is used. Set on Render → the cloud database is used. |
+| `DB_USERNAME` / `DB_PASSWORD` | backend | `postgres` / local password | Only needed if the credentials are not part of `DATABASE_URL` |
+| `VITE_API_URL` | frontend | `http://localhost:8080` | Dev proxy target. Leave unset locally; point it at the backend host to test against a deployed backend |
+| `VITE_WS_URL` | frontend | *(page's own origin)* | Only set this to talk to a backend on a different domain (e.g. `wss://ride-wise-kif0.onrender.com`) |
+| `ridewise.websocket.allowed-origins` | backend | Cloudflare Pages + localhost + Netlify | Comma-separated browser origins allowed to open `/ws/rides` |
+
+### 6. Test the live group-ride location with two devices
+
+1. Start PostgreSQL, then the backend (`mvnw.cmd spring-boot:run`) and the
+   frontend (`npm run dev`).
+2. **Device A** — `http://localhost:5173` → sign up/log in → *Riders* → connect to
+   Rider B → start a **Group** ride (pick origin/destination) → *Start Ride*.
+3. **Device B** — sign in as Rider B (a second browser, or a normal + private
+   window so the two sessions do not share a cookie) → open the same group ride
+   → the riders panel shows A.
+4. On **both** devices press **Share location** and allow the browser's
+   location permission. Each marker must now appear on the other device's map
+   and move on every GPS fix (throttled to 1.5 s).
+5. Press **Share location** again on device A → A's marker disappears on B
+   immediately, and A shows *No GPS* in the riders panel.
+6. Deny the location permission (or turn it off in the browser) → the red GPS
+   banner appears and **no marker is ever faked**; other riders show that rider
+   as *No GPS*.
+7. Close the map, end the ride, or leave the ride → `watchPosition` is
+   cancelled, the socket closes, and the stored position is deleted. Nothing
+   is tracked after the tab is closed.
+
+### 7. Production notes (Render + Cloudflare Pages)
+
+- The frontend is static and served by Cloudflare Pages; `functions/api/[[path]].js`
+  proxies REST calls and `functions/ws/[[path]].js` proxies the live socket to
+  the Render backend, so the browser always stays on its own origin and the
+  first-party session cookie keeps working.
+- **A `502 Bad Gateway` is a backend-availability problem, not a bug in the
+  frontend.** Check in this order:
+  1. Open `https://<your-backend>/api/auth/me` in a browser. A JSON
+     `401 {"message":"Authentication required"}` means the app is **up** (a
+     502 there means Render is asleep/restarting — the free tier sleeps after
+     ~15 idle minutes, so add a cron/monitor that pings this URL).
+  2. Render → **Events**: the newest deploy must be *Live*. A failed build
+     keeps the previous image, so features added in the last commit will be
+     missing even though the site still works.
+  3. `GET /ws/rides` on the backend must **not** return `404` — a 404 means the
+     deployed build predates this feature. (`200`/`403` are fine: Spring just
+     refuses the upgrade for a request that is not a signed-in browser.)
 
 ---
 
@@ -317,6 +369,27 @@ App runs at: `http://localhost:5173`
 | `DELETE` | `/api/rides/{rideId}` | Delete a ride |
 | `POST` | `/api/rides/{rideId}/location` | Submit GPS location update |
 | `GET` | `/api/rides/{rideId}/location` | Get GPS track for ride |
+| `GET` | `/api/rides/{rideId}/live-locations` | Current position of every member sharing a live location |
+| `DELETE` | `/api/rides/{rideId}/live-location` | Stop sharing my live position (removes my marker) |
+| `GET` | `/api/rides/{rideId}/participants` | Active participants of a group ride |
+
+### Live location socket — `/ws/rides`
+
+Authenticated with the same session cookie as the REST API. One socket
+per ride; the server re-verifies group membership on **every** message and
+broadcasts only to the members of that ride.
+
+| Direction | Message |
+|---|---|
+| client → server | `{ "type": "subscribe", "rideId": 12 }` |
+| client → server | `{ "type": "location", "rideId": 12, "lat": 13.08, "lng": 80.27, "accuracy": 8 }` |
+| client → server | `{ "type": "stop", "rideId": 12 }` — rider stopped sharing |
+| client → server | `{ "type": "unsubscribe" }` |
+| server → client | `{ "type": "connected", "userId": .. }` / `{ "type": "subscribed", "rideId": .. }` |
+| server → client | `{ "type": "snapshot", "rideId": .., "locations": [ ... ] }` — sent on subscribe (map open) |
+| server → client | `{ "type": "location", "location": { userId, lat, lng, accuracy, updatedAt } }` |
+| server → client | `{ "type": "location-cleared", "rideId": .., "userId": .. }` |
+| server → client | `{ "type": "error", "message": ".." }` |
 
 ### Riders — `/api/riders`
 
@@ -381,6 +454,12 @@ App runs at: `http://localhost:5173`
 └──────────────────┘
 ```
 
+> **Live group-ride positions — `user_locations`**
+> `id · user_id (UNIQUE) · ride_id · lat · lng · accuracy · updated_at`
+> One row per user, **updated in place** on every accepted GPS fix (never a row
+> per tick), which is what makes live tracking cheap. The per-tick ride history
+> is a different table (`location_updates`).
+
 ---
 
 ## 🧠 Key Design Decisions
@@ -393,6 +472,9 @@ App runs at: `http://localhost:5173`
 | **Vite proxy** | Frontend calls `/api/*` with relative paths — no CORS issues in development |
 | **Offline fallback** | Rides are cached to `localStorage` when backend is unreachable |
 | **Throttled GPS** | Browser GPS can fire every 100ms; the app throttles to once per 1.5s to save battery |
+| **Latest-position table** | `user_locations` holds one row per user and is updated in place, so live tracking never floods the database |
+| **Raw WebSocket (no STOMP)** | One `/ws/rides` endpoint, no extra client dependency; the handshake reuses the existing session cookie, so there is a single auth mechanism |
+| **Same-origin socket** | The browser connects to its own origin and a Cloudflare Pages function forwards the upgrade to the backend — a first-party cookie is always sent, unlike a cross-site socket |
 | **No Lombok** | Removed for Java 21+ compatibility — all getters/setters are hand-written |
 
 ---
