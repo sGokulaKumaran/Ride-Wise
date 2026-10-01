@@ -120,7 +120,7 @@ export default function TopBar({
         </div>
 
         {/* ── Right: action icons ───────────────────────────── */}
-        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 overflow-hidden">
+        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
 
           {/* Mobile search button */}
           <IconButton
