@@ -27,12 +27,13 @@ import java.util.Arrays;
 public class WebSocketConfig implements WebSocketConfigurer {
 
     /**
-     * Browser origins allowed to open the ride socket. Overridable through
-     * application.properties / an environment variable:
-     *   ridewise.websocket.allowed-origins=https://a.com,https://b.com
-     * so a new frontend domain never requires a code change.
+     * Browser origins allowed to open the ride socket — written as ORIGIN
+     * PATTERNS, so wildcards are allowed:
+     *   ridewise.websocket.allowed-origins=https://a.com,https://*.trycloudflare.com
+     * A new frontend or tunnel domain therefore never requires a code change.
+     * Exact origins (no wildcard) work exactly as before.
      */
-    @Value("${ridewise.websocket.allowed-origins:https://ride-wise.pages.dev,http://localhost:5173,https://ridewise38.netlify.app}")
+    @Value("${ridewise.websocket.allowed-origins:https://ride-wise.pages.dev,http://localhost:5173,https://ridewise38.netlify.app,https://*.trycloudflare.com,https://*.ngrok-free.app,https://*.ngrok.app}")
     private String allowedOrigins;
 
     private final RideLocationSocketHandler rideLocationSocketHandler;
@@ -50,6 +51,10 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
         registry.addHandler(rideLocationSocketHandler, "/ws/rides")
                 .addInterceptors(new SessionHandshakeInterceptor())
-                .setAllowedOrigins(origins);
+                // setAllowedOriginPatterns (not setAllowedOrigins): only the
+                // pattern variant accepts wildcards, and it is what makes a
+                // random tunnel URL such as https://xxx.trycloudflare.com pass
+                // the handshake instead of being rejected with 403.
+                .setAllowedOriginPatterns(origins);
     }
 } // End of class

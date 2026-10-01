@@ -12,7 +12,17 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
-                .allowedOrigins("https://ride-wise.pages.dev", "http://localhost:5173", "https://ridewise38.netlify.app")
+                // Origin PATTERNS (not exact origins) so a wildcard tunnel
+                // domain such as https://*.trycloudflare.com is accepted and a
+                // brand-new URL never needs editing. The pattern form is also
+                // what allows wildcards together with allowCredentials(true).
+                .allowedOriginPatterns(
+                        "https://ride-wise.pages.dev",
+                        "http://localhost:5173",
+                        "https://ridewise38.netlify.app",
+                        "https://*.trycloudflare.com",
+                        "https://*.ngrok-free.app",
+                        "https://*.ngrok.app")
                 .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                 .allowedHeaders("*")
                 .allowCredentials(true);
