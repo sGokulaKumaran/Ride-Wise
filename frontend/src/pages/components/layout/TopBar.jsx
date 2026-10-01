@@ -71,6 +71,7 @@ export default function TopBar({
   return (
     <header
       className={`fixed top-0 left-0 lg:left-64 right-0 z-30 border-b ${tc.divider} ${tc.bar} h-16`}
+      style={{ paddingTop: "env(safe-area-inset-top)" }}
     >
       <div className="flex items-center justify-between h-full px-4 md:px-6 gap-4">
 
@@ -119,7 +120,7 @@ export default function TopBar({
         </div>
 
         {/* ── Right: action icons ───────────────────────────── */}
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 overflow-hidden">
 
           {/* Mobile search button */}
           <IconButton
@@ -160,9 +161,31 @@ export default function TopBar({
               )}
             </button>
 
-            {/* Notification dropdown */}
+            {/* Notification dropdown — responsive positioning:
+                • Mobile (<640px): fixed full-width sheet below the header
+                • Desktop: absolute dropdown anchored to the bell button */}
             {showNotifDropdown && (
-              <div className={`absolute top-[46px] right-0 w-80 max-w-[calc(100vw-32px)] max-h-[400px] rounded-xl border overflow-hidden z-50 flex flex-col ${tc.card}`}>
+              <>
+                {/* Mobile backdrop overlay (tap to close) */}
+                <div
+                  className="sm:hidden fixed inset-0 z-40"
+                  onClick={() => setShowNotifDropdown(false)}
+                />
+                <div
+                  data-notif-dropdown="true"
+                  className={[
+                    // Shared styles
+                    "rounded-xl border overflow-hidden z-50 flex flex-col shadow-2xl",
+                    tc.card,
+                    // Mobile: fixed, full-width below the header
+                    "fixed left-3 right-3 top-[68px]",
+                    "max-h-[calc(100vh-84px)]",
+                    // Desktop: absolute, anchored to bell button, narrower
+                    "sm:fixed sm:left-auto sm:right-4 sm:top-[68px] sm:w-80 sm:max-h-[400px]",
+                    // Large desktop: back to absolute positioning relative to bell
+                    "lg:absolute lg:left-auto lg:right-0 lg:top-[46px]",
+                  ].join(" ")}
+                >
                 {/* Header */}
                 <div className={`flex items-center justify-between px-4 py-3.5 border-b ${tc.divider}`}>
                   <span className="font-black text-sm">Notifications</span>
@@ -231,7 +254,8 @@ export default function TopBar({
                     ))
                   )}
                 </div>
-              </div>
+                </div>
+              </>
             )}
           </div>
 

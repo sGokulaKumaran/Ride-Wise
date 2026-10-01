@@ -3,11 +3,20 @@
 @tailwind utilities; /* Utility classes (flex, p-4, etc.) */
 
 * { box-sizing: border-box; }   /* Include padding in width calculations */
-html { scroll-behavior: smooth; } /* Smooth anchor scrolling */
+html {
+  scroll-behavior: smooth;       /* Smooth anchor scrolling */
+  overflow-x: hidden;            /* Prevent horizontal scroll on all devices */
+  /* Safe-area insets for notched / rounded-corner phones (iPhone X+, Samsung Galaxy S21+).
+     viewport-fit=cover in index.html enables these values. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+}
 body {                            /* Default font + smooth text rendering */
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;            /* Belt-and-suspenders: prevent body horizontal scroll too */
+  width: 100%;                   /* Ensure body doesn't exceed viewport */
+  max-width: 100vw;              /* Hard cap for Samsung Internet quirks */
 }
 
 .scrollbar-hide {                    /* Hide scrollbars but keep scrolling */
