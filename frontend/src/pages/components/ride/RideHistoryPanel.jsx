@@ -23,10 +23,13 @@ import Icon from "../ui/Icon";
 import { formatDistance, formatDuration } from "../../../services/routingApi";
 
 // ---- Status → colour mapping ----
+// The tint (background/border) is functional and works on every theme; the
+// TEXT colour comes from the theme tokens via `tone`, so a completed ride is
+// readable ink on a light card instead of a fixed grey.
 const STATUS_STYLE = {
-  active:    { bg: "#22c55e22", border: "#22c55e44", text: "#22c55e" },
-  completed: { bg: "#6b728022", border: "#6b728044", text: "#9ca3af" },
-  cancelled: { bg: "#ef444422", border: "#ef444444", text: "#ef4444" },
+  active:    { bg: "rgba(34,197,94,0.13)",  border: "rgba(34,197,94,0.28)",  tone: "ok" },
+  completed: { bg: null,                    border: null,                     tone: "sub" },
+  cancelled: { bg: "rgba(239,68,68,0.13)",  border: "rgba(239,68,68,0.28)",  tone: "danger" },
 };
 
 export default function RideHistoryPanel({ rides, onOpenRide, onDeleteRide, onClose, tc }) {
@@ -167,12 +170,16 @@ export default function RideHistoryPanel({ rides, onOpenRide, onDeleteRide, onCl
                         </p>
                       </div>
                       {/* Status badge */}
-                      <span style={{
-                        padding: "3px 10px", borderRadius: "50px",
-                        background: statusStyle.bg, border: `1px solid ${statusStyle.border}`,
-                        color: statusStyle.text, fontSize: "10px", fontWeight: 700,
-                        textTransform: "uppercase", letterSpacing: "0.5px", flexShrink: 0,
-                      }}>
+                      <span
+                        className={`${tc[statusStyle.tone] || tc.sub} ${statusStyle.bg ? "" : tc.surface2}`}
+                        style={{
+                          padding: "3px 10px", borderRadius: "50px",
+                          background: statusStyle.bg || undefined,
+                          border: statusStyle.border ? `1px solid ${statusStyle.border}` : undefined,
+                          fontSize: "10px", fontWeight: 700,
+                          textTransform: "uppercase", letterSpacing: "0.5px", flexShrink: 0,
+                        }}
+                      >
                         {ride.status}
                       </span>
                     </div>
@@ -185,7 +192,7 @@ export default function RideHistoryPanel({ rides, onOpenRide, onDeleteRide, onCl
                       {ride.actualDistanceMeters > 0 && (
                         <>
                           <span title="Distance actually ridden">
-                            <i className="fa fa-location-arrow" style={{ marginRight: "4px", color: "#34d399" }} />
+                            <i className={`fa fa-location-arrow ${tc.ok}`} style={{ marginRight: "4px" }} />
                             {formatDistance(ride.actualDistanceMeters)} ridden
                           </span>
                           <span>·</span>
@@ -193,7 +200,7 @@ export default function RideHistoryPanel({ rides, onOpenRide, onDeleteRide, onCl
                       )}
                       {ride.distanceMeters && (
                         <>
-                          <span title="Planned route length"><i className="fa fa-route" style={{ marginRight: "4px", color: "#f97316" }} />{formatDistance(ride.distanceMeters)}</span>
+                          <span title="Planned route length"><i className={`fa fa-route ${tc.accent}`} style={{ marginRight: "4px" }} />{formatDistance(ride.distanceMeters)}</span>
                           <span>·</span>
                         </>
                       )}

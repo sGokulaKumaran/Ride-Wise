@@ -282,7 +282,7 @@ export default function GroupRidersPanel({
                 </span>
 
                 {/* Live-availability dot: green = fresh position, grey = unavailable */}
-                <div style={{
+                <div className={`border-[1.5px] ${tc.avatarRing}`} style={{
                   position: "absolute",
                   bottom: "-1px",
                   right: "-1px",
@@ -290,23 +290,23 @@ export default function GroupRidersPanel({
                   height: "10px",
                   borderRadius: "50%",
                   background: unavailable ? "#9ca3af" : "#22c55e",
-                  border: "1.5px solid #0b0b0c",
                 }} />
                 
                 {isRiderAdmin && (
-                  <div style={{
-                    position: "absolute",
-                    top: "-6px",
-                    right: "-4px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    width: "13px",
-                    height: "13px",
-                    borderRadius: "50%",
-                    background: "#0b0b0c",
-                    color: "#f5f5f5",
-                  }}>
+                  <div
+                    className={`${tc.inkTile}`}
+                    style={{
+                      position: "absolute",
+                      top: "-6px",
+                      right: "-4px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: "13px",
+                      height: "13px",
+                      borderRadius: "50%",
+                    }}
+                  >
                     <Icon name="shield" size={9} />
                   </div>
                 )}

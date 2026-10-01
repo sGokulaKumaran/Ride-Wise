@@ -157,6 +157,10 @@ export default function Home() {
   // ── DERIVED: separate active vs. past rides for the home page ──
   const liveRides = rides.filter(r => r.status === "active");
 
+  // Ended rides only. "Recent Rides" must not repeat a ride that is already
+  // listed under LIVE RIDES — the same card appeared twice on the page.
+  const pastRides = rides.filter(r => r.status !== "active");
+
   // ── STATS ────────────────────────────────────────────────────
   // Computed from actual ride history instead of hardcoded values
   // Distance actually ridden (falls back to the planned route length for
@@ -175,10 +179,10 @@ export default function Home() {
   }).length;
 
   const stats = [
-    { value: String(rides.length),                   label: "Total Rides",    icon: "fa-motorcycle", color: "#f97316" },
-    { value: totalKm > 0 ? `${totalKm.toFixed(0)} km` : "0 km", label: "Distance Ridden", icon: "fa-route",      color: "#60a5fa" },
-    { value: String(completedCount),                  label: "Completed",      icon: "fa-flag-checkered", color: "#34d399" },
-    { value: String(monthRides),                      label: "This Month",     icon: "fa-calendar-check", color: "#a78bfa" },
+    { value: String(rides.length),                   label: "Total Rides" },
+    { value: totalKm > 0 ? `${totalKm.toFixed(0)} km` : "0 km", label: "Distance Ridden" },
+    { value: String(completedCount),                  label: "Completed" },
+    { value: String(monthRides),                      label: "This Month" },
   ];
 
   // ── EVENT HANDLERS ───────────────────────────────────────────
@@ -397,7 +401,7 @@ export default function Home() {
           {/* ═══════════════════════════════════════════════
               RECENT RIDES SECTION — last 3 rides with quick actions
           ═══════════════════════════════════════════════ */}
-          {(rides.length > 0 || loading) && (
+          {(pastRides.length > 0 || loading) && (
             <div className="mb-8" style={{ animation: "slideUp 0.85s ease-out both" }}>
               <div className="flex items-center justify-between mb-3">
                 <h2 className="font-black text-sm tracking-wide uppercase opacity-70">Recent Rides</h2>
@@ -422,13 +426,12 @@ export default function Home() {
               ) : (
                 <div className="space-y-2">
                   {/* Show only the most recent 3 rides */}
-                  {rides.slice(0, 3).map(ride => (
+                  {pastRides.slice(0, 3).map(ride => (
                     <RideCard
                       key={ride.id}
                       ride={ride}
                       onOpen={() => handleOpenRide(ride)}
                       tc={tc}
-                      isLive={ride.status === "active"}
                     />
                   ))}
                 </div>
@@ -453,7 +456,7 @@ export default function Home() {
               className={`mb-8 rounded-2xl border p-8 text-center ${tc.card}`}
               style={{ animation: "slideUp 0.85s ease-out both" }}
             >
-              <i className="fa fa-route text-4xl mb-3 block" style={{ color: "rgba(255,255,255,0.2)" }} />
+              <i className={`fa fa-route text-4xl mb-3 block ${tc.sub}`} style={{ opacity: 0.45 }} />
               <p className="font-bold opacity-50 mb-1">No rides yet</p>
               <p className={`text-xs ${tc.sub}`}>Press "Start a Ride" above to begin your first adventure.</p>
             </div>
@@ -463,10 +466,7 @@ export default function Home() {
               TIP OF THE DAY
           ═══════════════════════════════════════════════ */}
           <div style={{ animation: "slideUp 0.95s ease-out both" }}>
-            <div
-              className={`rounded-2xl border p-5 flex items-start gap-4 ${tc.card}`}
-              style={{ background: "linear-gradient(135deg, rgba(249,115,22,0.05) 0%, rgba(236,72,153,0.03) 100%)" }}
-            >
+            <div className={`rounded-2xl border p-5 flex items-start gap-4 ${tc.card}`}>
               
               <div>
                 <p className="font-black text-sm mb-1">Tip of the Day</p>
@@ -577,18 +577,18 @@ function RideCard({ ride, onOpen, tc, isLive }) {
       {/* Right: status + open icon */}
       <div className="flex items-center gap-2 shrink-0">
         {ride.rideType === "group" && (
-          <span style={{
-            background: "rgba(139,92,246,0.15)",
-            border: "1px solid rgba(139,92,246,0.3)",
-            borderRadius: "50px",
-            padding: "2px 8px",
-            fontSize: "10px",
-            fontWeight: 700,
-            color: "#a78bfa",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "4px",
-          }}>
+          <span
+            className={`border ${tc.groupBadge}`}
+            style={{
+              borderRadius: "50px",
+              padding: "2px 8px",
+              fontSize: "10px",
+              fontWeight: 700,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "4px",
+            }}
+          >
             Group
           </span>
         )}
@@ -596,11 +596,13 @@ function RideCard({ ride, onOpen, tc, isLive }) {
           <div style={{ display: "flex", alignItems: "center", marginLeft: "4px" }}>
             {ride.participants.slice(0, 3).map((p, i) => (
               <div
-                key={i}
+                key={p.userId ?? `rider-${i}`}
+                // Ring comes from the theme (= the surface this sits on), so a
+                // stacked avatar never shows a black ring on a light card.
+                className={`border-2 ${tc.avatarRing}`}
                 style={{
                   width: "20px", height: "20px", borderRadius: "50%",
                   background: "linear-gradient(135deg, #f97316, #ec4899)",
-                  border: "2px solid rgba(15,15,26,1)",
                   marginLeft: i > 0 ? "-8px" : "0",
                   display: "flex", alignItems: "center", justifyContent: "center",
                   fontSize: "9px", fontWeight: "bold", color: "white",
@@ -611,14 +613,17 @@ function RideCard({ ride, onOpen, tc, isLive }) {
               </div>
             ))}
             {ride.participants.length > 3 && (
-              <div style={{
-                width: "20px", height: "20px", borderRadius: "50%",
-                background: "rgba(255,255,255,0.1)",
-                border: "2px solid rgba(15,15,26,1)",
-                marginLeft: "-8px",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: "8px", color: "white", zIndex: 0
-              }}>
+              <div
+                // The "+N" circle is theme-aware ink on a subtle wash, so the
+                // number stays readable on BOTH a dark and a light card.
+                className={`border-2 ${tc.avatarMore}`}
+                style={{
+                  width: "20px", height: "20px", borderRadius: "50%",
+                  marginLeft: "-8px",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: "8px", fontWeight: 700, zIndex: 0
+                }}
+              >
                 +{ride.participants.length - 3}
               </div>
             )}

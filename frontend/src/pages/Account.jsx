@@ -211,7 +211,7 @@ export default function Account() {
           <div className="px-4 -mt-16 mb-6 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
             <div className="flex flex-col md:flex-row md:items-end gap-4">
               {/* Large avatar circle */}
-              <div className="w-28 h-28 md:w-32 md:h-32 rounded-3xl bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center font-black text-white text-5xl ring-4 ring-black/50 shadow-2xl">
+              <div className={`w-28 h-28 md:w-32 md:h-32 rounded-3xl bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center font-black text-white text-5xl ring-4 shadow-2xl ${tc.isLight ? "ring-black/10" : "ring-white/15"}`}>
                 {avatarLetter}
               </div>
 

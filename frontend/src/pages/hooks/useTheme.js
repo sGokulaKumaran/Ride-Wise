@@ -58,6 +58,16 @@ export const themes = {
 
     mapControl: "bg-[#141416]/95 text-[#F4F4F5] border-[#26262B] shadow-sm",
 
+    // ── Shared chrome: ride cards, stacked rider avatars, small tiles ──
+    // These exist so no component has to hardcode a colour that only works
+    // in one theme (a dark ring on a light card, a white "+2" on a white
+    // background, a black tile on a black page…).
+    hairline:   "bg-[#26262B]",                        // 1px divider line (not a border)
+    inkTile:    "bg-[#F4F4F5] text-[#0B0B0C]",         // chunky icon tile — ink inverts with theme
+    avatarRing: "border-[#141416]",                    // ring colour = the card it sits on
+    avatarMore: "bg-white/10 text-[#F4F4F5] border-[#141416]",  // the "+N" overflow circle
+    groupBadge: "bg-[#8B5CF6]/15 border-[#8B5CF6]/30 text-[#A78BFA]", // "Group" pill
+
     glow: "rgba(255,255,255,0.06)",                        // mouse glow (login)
     particle: "bg-white",                                  // floating dots (login)
 
@@ -109,6 +119,13 @@ export const themes = {
 
     mapControl: "bg-white/95 text-[#111113] border-[#E4E4E7] shadow-sm",
 
+    // ── Shared chrome (see the Dark theme for what each token is for) ──
+    hairline:   "bg-[#E4E4E7]",
+    inkTile:    "bg-[#111113] text-white",
+    avatarRing: "border-white",
+    avatarMore: "bg-black/[0.06] text-[#111113] border-white",
+    groupBadge: "bg-[#8B5CF6]/10 border-[#8B5CF6]/25 text-[#6D28D9]",
+
     glow: "rgba(0,0,0,0.05)",
     particle: "bg-black/40",
 
@@ -159,6 +176,13 @@ export const themes = {
 
     mapControl: "bg-white/95 text-[#241C15] border-[#EADFD2] shadow-sm",
 
+    // ── Shared chrome (see the Dark theme for what each token is for) ──
+    hairline:   "bg-[#EADFD2]",
+    inkTile:    "bg-[#2A211A] text-[#FDF8F3]",
+    avatarRing: "border-white",
+    avatarMore: "bg-[#2A211A]/[0.08] text-[#241C15] border-white",
+    groupBadge: "bg-[#8B5CF6]/10 border-[#8B5CF6]/25 text-[#6D28D9]",
+
     glow: "rgba(180,120,60,0.10)",
     particle: "bg-[#B4500A]/50",
 
@@ -208,6 +232,13 @@ export const themes = {
     chipSelected: "bg-[#E7E9F5] text-[#0A0B14] border-[#E7E9F5]",
 
     mapControl: "bg-[#131627]/95 text-[#E7E9F5] border-[#252A45] shadow-sm",
+
+    // ── Shared chrome (see the Dark theme for what each token is for) ──
+    hairline:   "bg-[#252A45]",
+    inkTile:    "bg-[#E7E9F5] text-[#0A0B14]",
+    avatarRing: "border-[#131627]",
+    avatarMore: "bg-white/10 text-[#E7E9F5] border-[#131627]",
+    groupBadge: "bg-[#8B5CF6]/15 border-[#8B5CF6]/30 text-[#B4A0FF]",
 
     glow: "rgba(120,140,255,0.10)",
     particle: "bg-[#9AA0C0]",

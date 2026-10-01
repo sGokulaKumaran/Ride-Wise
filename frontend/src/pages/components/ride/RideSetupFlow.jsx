@@ -82,8 +82,8 @@ export default function RideSetupFlow({ rideType, userId, participantIds = [], o
     setError("");
     try {
       const loc = await getCurrentLocation(); // prompts browser for GPS permission
-      setFromCoords({ lat: loc.lat, lng: loc.lng, name: " My Current Location" });
-      setFromText(" My Current Location");
+      setFromCoords({ lat: loc.lat, lng: loc.lng, name: "My Current Location" });
+      setFromText("My Current Location");
       // Automatically advance to destination step
       setStep(STEP.DESTINATION);
     } catch {
@@ -183,6 +183,12 @@ export default function RideSetupFlow({ rideType, userId, participantIds = [], o
   // ====================================================================
   const handleStartRide = async () => {
     setError("");
+    // Defensive guard: the button only renders on step 3, but never build a
+    // ride from a half-finished wizard state (routeData would be null).
+    if (!fromCoords || !destCoords || !routeData) {
+      setError("Please calculate the route first.");
+      return;
+    }
     setLoading(true);
     try {
       const dest = destCoords;
@@ -217,7 +223,8 @@ export default function RideSetupFlow({ rideType, userId, participantIds = [], o
         savedRide.routeCoordinates = JSON.stringify(routeData.coordinates);
       }
       if (!savedRide.routeSteps) {
-        savedRide.routeSteps = routeData.steps || [];
+        // Same shape the backend column uses elsewhere: a JSON string.
+        savedRide.routeSteps = JSON.stringify(routeData.steps || []);
       }
 
       // Tell the parent (Home.jsx) to open the full-screen map for this ride
@@ -240,11 +247,14 @@ export default function RideSetupFlow({ rideType, userId, participantIds = [], o
         {[1, 2, 3].map(n => (
           <div
             key={n}
+            // Upcoming segments use the themed hairline colour instead of a
+            // white wash, which vanished on the Light / Warm themes.
+            className={step >= n ? "" : tc.hairline}
             style={{
               flex: 1, height: "3px", borderRadius: "2px",
               background: step >= n
-                ? "linear-gradient(90deg, #f97316, #ec4899)"   // completed/current = orange
-                : "rgba(255,255,255,0.1)",                      // upcoming = faint
+                ? "linear-gradient(90deg, #f97316, #ec4899)"   // completed/current = accent
+                : undefined,                                    // upcoming = themed hairline
               transition: "background 0.3s",
             }}
           />
@@ -295,11 +305,11 @@ export default function RideSetupFlow({ rideType, userId, participantIds = [], o
             {loading && <i className="fa fa-spinner fa-spin" style={{ marginLeft: "auto", color: "#22c55e" }} />}
           </button>
 
-          {/* Divider */}
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", color: "rgba(255,255,255,0.3)", fontSize: "12px" }}>
-            <div style={{ flex: 1, height: "1px", background: "rgba(255,255,255,0.1)" }} />
+          {/* Divider — themed ink + hairline so it stays visible on light themes */}
+          <div className={`flex items-center gap-[10px] text-[12px] ${tc.sub}`}>
+            <div className={`flex-1 h-px ${tc.hairline}`} />
             or type a location
-            <div style={{ flex: 1, height: "1px", background: "rgba(255,255,255,0.1)" }} />
+            <div className={`flex-1 h-px ${tc.hairline}`} />
           </div>
 
           {/* Text input for FROM — live OSM geocoder */}
@@ -326,12 +336,15 @@ export default function RideSetupFlow({ rideType, userId, participantIds = [], o
                 <button
                   key={p}
                   onClick={() => pickFrom(p)}
+                  // Idle state comes from the theme's chip tokens; the accent
+                  // (orange) is kept only for the selected chip.
+                  className={`rounded-full border ${fromText === p ? tc.accent : tc.chipIdle}`}
                   style={{
-                    padding: "6px 12px", borderRadius: "50px",
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    background: fromText === p ? "rgba(249,115,22,0.15)" : "rgba(255,255,255,0.04)",
-                    borderColor: fromText === p ? "rgba(249,115,22,0.4)" : "rgba(255,255,255,0.12)",
-                    color: "inherit", fontSize: "12px", cursor: "pointer", fontWeight: 600,
+                    padding: "6px 12px",
+                    ...(fromText === p
+                      ? { background: "rgba(249,115,22,0.15)", borderColor: "rgba(249,115,22,0.45)" }
+                      : {}),
+                    fontSize: "12px", cursor: "pointer", fontWeight: 600,
                   }}
                 >
                   {p.split(",")[0]}
@@ -348,7 +361,7 @@ export default function RideSetupFlow({ rideType, userId, participantIds = [], o
             disabled={loading || !fromText.trim()}
           />
 
-          <CancelButton onClick={onCancel} />
+          <CancelButton onClick={onCancel} tc={tc} />
         </div>
       )}
 
@@ -398,12 +411,13 @@ export default function RideSetupFlow({ rideType, userId, participantIds = [], o
                 <button
                   key={p}
                   onClick={() => pickDest(p)}
+                  className={`rounded-full border ${destText === p ? tc.accent : tc.chipIdle}`}
                   style={{
-                    padding: "6px 12px", borderRadius: "50px",
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    background: destText === p ? "rgba(249,115,22,0.15)" : "rgba(255,255,255,0.04)",
-                    borderColor: destText === p ? "rgba(249,115,22,0.4)" : "rgba(255,255,255,0.12)",
-                    color: "inherit", fontSize: "12px", cursor: "pointer", fontWeight: 600,
+                    padding: "6px 12px",
+                    ...(destText === p
+                      ? { background: "rgba(249,115,22,0.15)", borderColor: "rgba(249,115,22,0.45)" }
+                      : {}),
+                    fontSize: "12px", cursor: "pointer", fontWeight: 600,
                   }}
                 >
                   {p.split(",")[0]}
@@ -416,10 +430,9 @@ export default function RideSetupFlow({ rideType, userId, participantIds = [], o
           <div style={{ display: "flex", gap: "8px" }}>
             <button
               onClick={() => { setStep(STEP.FROM); setError(""); }}
+              className={`border ${tc.btnSecondary}`}
               style={{
                 padding: "14px 20px", borderRadius: "14px",
-                border: "1px solid rgba(255,255,255,0.12)",
-                background: "rgba(255,255,255,0.05)", color: "inherit",
                 cursor: "pointer", fontSize: "14px", fontWeight: 600,
               }}
             >
@@ -447,7 +460,10 @@ export default function RideSetupFlow({ rideType, userId, participantIds = [], o
           </p>
 
           {/* Mini map preview */}
-          <div style={{ height: "240px", borderRadius: "16px", overflow: "hidden", border: "1px solid rgba(255,255,255,0.1)", position: "relative" }}>
+          <div
+            className={`border ${tc.divider}`}
+            style={{ height: "240px", borderRadius: "16px", overflow: "hidden", position: "relative" }}
+          >
             <RideMap ride={previewRide} isLive={false} />
           </div>
 
@@ -457,54 +473,48 @@ export default function RideSetupFlow({ rideType, userId, participantIds = [], o
             gap: "6px",
           }}>
             {[
-              { label: "Distance", value: formatDistance(routeData?.distance), color: "#f97316" },
-              { label: "Duration", value: formatDuration(routeData?.duration), color: "#fff" },
-              { label: "Turns",    value: String(routeData?.steps?.length || 0), color: "#60a5fa" },
-              { label: "Type",     value: rideType,                              color: "#34d399" },
-            ].map(({ label, value, color }) => (
+              // Colour comes from the active theme: accent for the headline
+              // figure, ink for the neutral ones, ok-tone for the ride type.
+              { label: "Distance", value: formatDistance(routeData?.distance),  cls: tc.accent },
+              { label: "Duration", value: formatDuration(routeData?.duration),   cls: tc.text },
+              { label: "Turns",    value: String(routeData?.steps?.length || 0), cls: tc.text },
+              { label: "Type",     value: rideType,                              cls: tc.ok },
+            ].map(({ label, value, cls }) => (
               <div
                 key={label}
-                style={{
-                  padding: "10px 8px", borderRadius: "12px",
-                  background: "rgba(255,255,255,0.04)",
-                  border: "1px solid rgba(255,255,255,0.08)",
-                  textAlign: "center",
-                }}
+                className={`border rounded-xl ${tc.record}`}
+                style={{ padding: "10px 8px", textAlign: "center" }}
               >
-                <p style={{ color, fontWeight: 900, fontSize: "14px", margin: 0, textTransform: "capitalize" }}>{value}</p>
-                <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "9px", margin: 0, textTransform: "uppercase", letterSpacing: "1px", marginTop: "2px" }}>{label}</p>
+                <p className={`${cls} font-black`} style={{ fontSize: "14px", margin: 0, textTransform: "capitalize" }}>{value}</p>
+                <p className={tc.sub} style={{ fontSize: "9px", margin: 0, textTransform: "uppercase", letterSpacing: "1px", marginTop: "2px" }}>{label}</p>
               </div>
             ))}
           </div>
 
           {/* Group Ride Info */}
           {participantIds.length > 0 && (
-            <div style={{
-              padding: "12px 16px", borderRadius: "12px",
-              background: "rgba(255,255,255,0.03)",
-              border: "1px solid rgba(255,255,255,0.06)",
-              fontSize: "12px",
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-            }}>
+            <div
+              className={`border rounded-xl ${tc.record} flex items-center gap-2 text-[12px]`}
+              style={{ padding: "12px 16px" }}
+            >
               <p style={{ margin: 0, fontWeight: 700 }}> {participantIds.length + 1} riders</p>
-              <p style={{ margin: 0, opacity: 0.5 }}>(including you)</p>
+              <p className={tc.sub} style={{ margin: 0 }}>(including you)</p>
             </div>
           )}
 
           {/* From → To summary */}
-          <div style={{
-            padding: "12px 16px", borderRadius: "12px",
-            background: "rgba(255,255,255,0.03)",
-            border: "1px solid rgba(255,255,255,0.06)",
-            fontSize: "12px",
-          }}>
+          <div
+            className={`border rounded-xl ${tc.record} text-[12px]`}
+            style={{ padding: "12px 16px" }}
+          >
             <p style={{ margin: 0 }}>
               <i className="fa fa-circle" style={{ color: "#22c55e", fontSize: "8px", marginRight: "8px" }} />
               {(fromCoords?.name || fromText).split(",")[0]}
             </p>
-            <div style={{ margin: "4px 0 4px 4px", borderLeft: "2px dashed rgba(255,255,255,0.1)", height: "10px" }} />
+            <div
+              className={tc.divider}
+              style={{ margin: "4px 0 4px 4px", borderLeftWidth: "2px", borderLeftStyle: "dashed", height: "10px" }}
+            />
             <p style={{ margin: 0 }}>
               <i className="fa fa-circle" style={{ color: "#ef4444", fontSize: "8px", marginRight: "8px" }} />
               {(destCoords?.name || destText).split(",")[0]}
@@ -513,22 +523,16 @@ export default function RideSetupFlow({ rideType, userId, participantIds = [], o
 
           {/* First-step directions preview (first 4 steps) */}
           {routeData?.steps?.length > 0 && (
-            <div style={{
-              borderRadius: "12px",
-              border: "1px solid rgba(255,255,255,0.07)",
-              overflow: "hidden",
-            }}>
+            <div
+              className={`border rounded-xl overflow-hidden ${tc.divider}`}
+            >
               {/* Header */}
-              <div style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                padding: "10px 14px",
-                background: "rgba(66,133,244,0.08)",
-                borderBottom: "1px solid rgba(255,255,255,0.06)",
-              }}>
+              <div
+                className={`flex items-center gap-2 px-[14px] py-[10px] border-b ${tc.divider}`}
+                style={{ background: "rgba(66,133,244,0.08)" }}
+              >
                 <i className="fa fa-list" style={{ color: "#4285F4", fontSize: "12px" }} />
-                <span style={{ color: "rgba(255,255,255,0.7)", fontSize: "11px", fontWeight: 700 }}>
+                <span className={`${tc.text} text-[11px] font-bold`}>
                   Turn-by-turn preview
                 </span>
                 <span style={{
@@ -548,57 +552,38 @@ export default function RideSetupFlow({ rideType, userId, participantIds = [], o
               {routeData.steps.slice(0, 4).map((step, i) => (
                 <div
                   key={i}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "10px",
-                    padding: "9px 14px",
-                    borderBottom: i < 3 && i < routeData.steps.length - 1
-                      ? "1px solid rgba(255,255,255,0.04)"
-                      : "none",
-                    background: i === 0 ? "rgba(255,255,255,0.03)" : "transparent",
-                  }}
+                  className={`flex items-center gap-[10px] px-[14px] py-[9px] ${i === 0 ? tc.record : ""} ${
+                    i < 3 && i < routeData.steps.length - 1 ? `border-b ${tc.divider}` : ""
+                  }`}
                 >
-                  <div style={{
-                    width: "28px",
-                    height: "28px",
-                    borderRadius: "8px",
-                    background: i === 0
-                      ? "rgba(66,133,244,0.2)"
-                      : "rgba(255,255,255,0.05)",
-                    border: `1px solid ${i === 0 ? "rgba(66,133,244,0.35)" : "rgba(255,255,255,0.08)"}`,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
-                  }}>
+                  <div
+                    className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border ${
+                      i === 0 ? "" : `${tc.surface2} ${tc.divider}`
+                    }`}
+                    style={i === 0 ? { background: "rgba(66,133,244,0.2)", borderColor: "rgba(66,133,244,0.35)" } : undefined}
+                  >
                     <i
-                      className={`fa ${step.icon}`}
-                      style={{
-                        color:    i === 0 ? "#4285F4" : "rgba(255,255,255,0.4)",
-                        fontSize: "11px",
-                      }}
+                      className={`fa ${step.icon} ${i === 0 ? "" : tc.sub} text-[11px]`}
+                      style={i === 0 ? { color: "#4285F4" } : undefined}
                     />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{
-                      color: i === 0 ? "white" : "rgba(255,255,255,0.55)",
-                      fontSize: "11px",
-                      fontWeight: i === 0 ? 700 : 400,
-                      margin: 0,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}>
+                    <p
+                      className={i === 0 ? tc.text : tc.sub}
+                      style={{
+                        fontSize: "11px",
+                        fontWeight: i === 0 ? 700 : 400,
+                        margin: 0,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
                       {step.instruction}
                     </p>
                   </div>
                   {step.distance > 0 && (
-                    <span style={{
-                      color: "rgba(255,255,255,0.3)",
-                      fontSize: "10px",
-                      flexShrink: 0,
-                    }}>
+                    <span className={`${tc.sub} text-[10px] shrink-0`}>
                       {formatDistance(step.distance)}
                     </span>
                   )}
@@ -607,13 +592,7 @@ export default function RideSetupFlow({ rideType, userId, participantIds = [], o
 
               {/* "... and N more" if steps > 4 */}
               {routeData.steps.length > 4 && (
-                <div style={{
-                  padding: "8px 14px",
-                  color: "rgba(255,255,255,0.3)",
-                  fontSize: "10px",
-                  textAlign: "center",
-                  background: "rgba(255,255,255,0.02)",
-                }}>
+                <div className={`text-center text-[10px] ${tc.sub} ${tc.record}`} style={{ padding: "8px 14px" }}>
                   + {routeData.steps.length - 4} more steps (shown during navigation)
                 </div>
               )}
@@ -627,10 +606,9 @@ export default function RideSetupFlow({ rideType, userId, participantIds = [], o
           <div style={{ display: "flex", gap: "8px" }}>
             <button
               onClick={() => { setStep(STEP.DESTINATION); setError(""); }}
+              className={`border ${tc.btnSecondary}`}
               style={{
                 padding: "14px 20px", borderRadius: "14px",
-                border: "1px solid rgba(255,255,255,0.12)",
-                background: "rgba(255,255,255,0.05)", color: "inherit",
                 cursor: "pointer", fontSize: "14px", fontWeight: 600,
               }}
             >
@@ -689,14 +667,14 @@ function ActionButton({ label, icon, onClick, disabled, style = {} }) {
 }
 
 // Cancel link
-function CancelButton({ onClick }) {
+function CancelButton({ onClick, tc }) {
   return (
     <button
       onClick={onClick}
+      className={`${tc.sub} w-full text-[13px]`}
       style={{
-        width: "100%", padding: "10px",
+        padding: "10px",
         background: "transparent", border: "none",
-        color: "rgba(255,255,255,0.4)", fontSize: "13px",
         cursor: "pointer",
       }}
     >

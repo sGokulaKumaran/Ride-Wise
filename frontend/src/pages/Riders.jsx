@@ -249,8 +249,8 @@ export default function Riders() {
                 view === "add" ? "ring-2 ring-orange-500 " + tc.card : tc.card + " " + tc.cardHover
               }`}
             >
-              <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-3 bg-neutral-900 text-white text-xl">
-                <Icon name="userPlus" size={20} className="text-white" />
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-3 ${tc.inkTile}`}>
+                <Icon name="userPlus" size={20} />
               </div>
               <p className="font-black text-base">Add Rider</p>
               <p className={`text-xs ${tc.sub} mt-1`}>Search by username</p>
@@ -262,8 +262,8 @@ export default function Riders() {
                 view === "remove" ? "ring-2 ring-orange-500 " + tc.card : tc.card + " " + tc.cardHover
               }`}
             >
-              <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-3 bg-neutral-900 text-white text-xl">
-                <Icon name="userMinus" size={20} className="text-white" />
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-3 ${tc.inkTile}`}>
+                <Icon name="userMinus" size={20} />
               </div>
               <p className="font-black text-base">Remove Rider</p>
               <p className={`text-xs ${tc.sub} mt-1`}>Unfollow from your list</p>
@@ -282,8 +282,8 @@ export default function Riders() {
                 view === "near" ? "ring-2 ring-orange-500 " + tc.card : tc.card + " " + tc.cardHover
               }`}
             >
-              <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-3 bg-neutral-900 text-white text-xl">
-                <Icon name="pin" size={20} className="text-white" />
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-3 ${tc.inkTile}`}>
+                <Icon name="pin" size={20} />
               </div>
               <p className="font-black text-base">Near Riders</p>
               <p className={`text-xs ${tc.sub} mt-1`}>Find riders within 50 km</p>
