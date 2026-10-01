@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from "react";
 import { MapContainer, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import "leaflet-rotate"; // enables map rotation (two-finger twist, shift+drag)
 // NOTE: leaflet-routing-machine intentionally removed.
 // We draw polylines directly from stored OSRM coordinates (DynamicRouteLine)
 // so we don't need the routing-machine library at all.
@@ -108,12 +109,14 @@ if (typeof document !== "undefined" && !document.getElementById("rw-leaflet-css"
     @keyframes rw-pulse { 0%{transform:scale(0.85);opacity:0.9} 60%{transform:scale(2.6);opacity:0} 100%{transform:scale(0.85);opacity:0} }
     @keyframes rw-rider-pulse { 0%{box-shadow:0 0 0 0 rgba(255,255,255,0.4)} 70%{box-shadow:0 0 0 10px rgba(255,255,255,0)} 100%{box-shadow:0 0 0 0 rgba(255,255,255,0)} }
     .leaflet-container { width:100%; height:100%; }
-    /* Hide Leaflet controls at the top */
+    /* Hide Leaflet controls at the top (zoom buttons, default rotate compass) */
     .leaflet-top { display: none !important; }
     /* Push Leaflet controls up so they don't hide under the bottom panel */
     .leaflet-bottom { bottom: 120px !important; }
     /* Make sure our custom overlay controls are always clickable and on top */
     .rw-custom-control { z-index: 9999 !important; pointer-events: auto !important; }
+    /* Compass needle transition */
+    .rw-compass-needle { transition: transform 0.25s ease-out; }
   `;
   document.head.appendChild(s);
 }
@@ -478,12 +481,70 @@ function MapInternals({ ride, myLocation, isLive, tileLayerRef, activeTileIdx, p
 }
 
 // ===========================================================================
-// RideMap — exported component (same props as before, no parent changes)
+// MapBehavior — enforces Google Maps-like constraints from inside the map
+//
+//   • Listens to `rotate` events from leaflet-rotate and reports the
+//     current bearing (degrees) to the parent via onBearingChange().
+//   • Re-applies maxBounds after rotation so the map can't drift past
+//     the world boundary when the user spins it.
 // ===========================================================================
+function MapBehavior({ onBearingChange }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!map) return;
+
+    const handleRotate = () => {
+      // leaflet-rotate stores bearing in map.options.bearing or map.getBearing()
+      const b = typeof map.getBearing === "function" ? map.getBearing() : 0;
+      onBearingChange(Math.round(b * 10) / 10); // round to 1 decimal
+    };
+
+    // Compass button dispatches this event to reset bearing from outside
+    const handleResetBearing = () => {
+      if (typeof map.setBearing === "function") {
+        map.setBearing(0);
+      }
+    };
+
+    // leaflet-rotate fires "rotate" on every bearing change
+    map.on("rotate", handleRotate);
+    window.addEventListener("rw-reset-bearing", handleResetBearing);
+    // Also fire once on load in case there's a stored bearing
+    handleRotate();
+
+    return () => {
+      map.off("rotate", handleRotate);
+      window.removeEventListener("rw-reset-bearing", handleResetBearing);
+    };
+  }, [map, onBearingChange]);
+
+  return null;
+}
+
+// ===========================================================================
+// RideMap — exported component (same props as before, no parent changes)
+//
+// Google Maps-like behavior:
+//   • minZoom 3  / maxZoom 19 — prevents zooming to planet or pixel level
+//   • maxBounds  — hard world boundary, no infinite horizontal scroll
+//   • rotate     — two-finger twist on touch, Shift+drag on desktop
+//   • compass    — shows current bearing, click to snap back to north
+// ===========================================================================
+
+// World boundary — prevent panning past the edges of the real world.
+// The slight overshoot (±2° lat, ±Infinity lng is NOT used) keeps the
+// map from snapping awkwardly when a route is near the antimeridian.
+const WORLD_BOUNDS = L.latLngBounds(
+  L.latLng(-85, -180),
+  L.latLng(85, 180),
+);
+
 export default function RideMap({ ride, myLocation, isLive = false, participants = [], currentUserId = null }) {
   const tileLayerRef  = useRef(null);
   const [showTiles,   setShowTiles]  = useState(false);
   const [activeTile,  setActiveTile] = useState(0);
+  const [bearing,     setBearing]    = useState(0); // current map rotation in degrees
 
   const from = ride?.fromLat        ? { lat: ride.fromLat,        lng: ride.fromLng }        : null;
   const center = from ? [from.lat, from.lng] : [13.0827, 80.2707];
@@ -504,15 +565,31 @@ export default function RideMap({ ride, myLocation, isLive = false, participants
         center={center}
         zoom={12}
         scrollWheelZoom
+        /* ── Zoom limits (Google Maps-like) ── */
+        minZoom={3}
+        maxZoom={19}
+        /* ── World boundary — no infinite scroll ── */
+        maxBounds={WORLD_BOUNDS}
+        maxBoundsViscosity={1.0}  /* hard wall — map springs back immediately */
+        /* ── Rotation (leaflet-rotate plugin) ── */
+        rotate={true}
+        touchRotate={true}       /* two-finger twist on mobile */
+        shiftKeyRotate={true}    /* Shift+drag on desktop */
+        rotateControl={false}    /* we render our own compass */
+        bearing={0}
         style={{ width: "100%", height: "100%" }}
       >
         <TileLayer
           url={TILE_LAYERS[0].url}
           attribution={TILE_LAYERS[0].attr}
+          noWrap={true}  /* prevents tile repetition at the edges */
         />
 
         {/* Dynamic Route line — automatically trims based on myLocation */}
         <DynamicRouteLine ride={ride} myLocation={myLocation} isLive={isLive} />
+
+        {/* Track bearing changes from the map and push to parent state */}
+        <MapBehavior onBearingChange={setBearing} />
 
         {/* Markers + GPS dot + tile ref capture */}
         <MapInternals
@@ -572,24 +649,50 @@ export default function RideMap({ ride, myLocation, isLive = false, participants
         )}
       </div>
 
-         {/* ── Re-center button (live rides only) ── */}
+      {/* ── Compass button — only visible when the map is rotated ── */}
+      {bearing !== 0 && (
+        <button
+          className="rw-custom-control"
+          title={`Map rotated ${Math.abs(Math.round(bearing))}° — click to reset to north`}
+          onClick={() => {
+            // Reset bearing to 0 (north-up). We dispatch a custom event that
+            // MapBehavior picks up, since we can't call useMap() from here.
+            window.dispatchEvent(new CustomEvent("rw-reset-bearing"));
+          }}
+          style={{
+            position: "absolute", top: "158px", left: "10px", zIndex: 9999,
+            width: "40px", height: "40px", borderRadius: "8px",
+            background: "rgba(255,255,255,0.95)",
+            border: "2px solid rgba(200,200,200,0.6)",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
+            cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 0,
+          }}
+        >
+          {/* SVG compass needle — rotates opposite to map bearing */}
+          <svg
+            className="rw-compass-needle"
+            width="22" height="22" viewBox="0 0 24 24"
+            style={{ transform: `rotate(${-bearing}deg)` }}
+          >
+            {/* North pointer (red) */}
+            <polygon points="12,2 15,12 12,10 9,12" fill="#ef4444" />
+            {/* South pointer (grey) */}
+            <polygon points="12,22 15,12 12,14 9,12" fill="#9ca3af" />
+          </svg>
+        </button>
+      )}
+
+       {/* ── Re-center button (live rides only) ── */}
       {isLive && myLocation?.lat && (
         <button
           className="rw-custom-control"
           title="Re-center on your location"
           onClick={() => {
-            // Ask locationService for a fresh REAL GPS fix and snap the
-            // camera back to it (no simulation involved).
             window.dispatchEvent(new Event("resume-real-gps"));
           }}
           style={{
-            // BUG FIXED: this used to be a hard-coded 130px, which is exactly
-            // where the overlay's stats bar ends at desktop width. On a phone
-            // the stats row wraps and the bar grows taller, so this button
-            // ended up sitting on the "Ridden" figure. It now clears the
-            // measured bar height (--rw-bottom-bar-h, published by
-            // ActiveRideOverlay); the 140px fallback keeps the button in the
-            // same place as before whenever the map is used without it.
             position: "absolute", bottom: "calc(var(--rw-bottom-bar-h, 140px) + 16px)", left: "10px", zIndex: 9999,
             width: "46px", height: "46px", borderRadius: "13px",
             background: "rgba(255,255,255,0.95)",

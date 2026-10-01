@@ -1,4 +1,4 @@
-﻿import react from '@vitejs/plugin-react'
+import react from '@vitejs/plugin-react'
 import path from 'path'
 import { defineConfig, loadEnv } from 'vite'
 
@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
 
     optimizeDeps: {
-      include: ['leaflet', 'leaflet-routing-machine'],
+      include: ['leaflet', 'leaflet-routing-machine', 'leaflet-rotate'],
     },
 
     resolve: {

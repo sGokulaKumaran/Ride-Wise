@@ -13,6 +13,7 @@
     "@react-leaflet/core": "^3.0.0",
     "leaflet": "^1.9.4",
     "leaflet-geosearch": "^4.4.0",
+    "leaflet-rotate": "^0.2.8",
     "leaflet-routing-machine": "^3.2.12",
     "maplibre-gl": "^6.7.0",
     "react": "^19.2.8",
