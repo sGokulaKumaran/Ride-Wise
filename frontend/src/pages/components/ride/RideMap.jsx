@@ -275,27 +275,47 @@ function MapInternals({ ride, myLocation, isLive, tileLayerRef, activeTileIdx, p
   // ── Group Rider Markers ──
   // Real live positions: a member's marker is created on first fix, moved as
   // new fixes arrive, and removed when they leave or their position goes
-  // stale (ActiveRideOverlay passes lat/lng = null in that case). No fake
-  // coordinates and no drag-to-simulate.
+  // stale (ActiveRideOverlay passes lat/lng = null in that case).
+  //
+  // Each marker is keyed by `userId`. When a rider's appearance changes
+  // (color, username) the old marker is destroyed and a fresh one is placed,
+  // so the icon always matches the panel.
+  const riderMetaRef = useRef({}); // userId → { color, username } last used
+
   useEffect(() => {
     if (!map) return;
     
     const currentMarkerIds = new Set();
     
     participants.forEach((p, index) => {
+      // Skip self — the blue GPS dot already shows my position
       if (p.userId === currentUserId) return;
+      // No coordinates → rider is stale/unavailable, skip (marker will be removed below)
       if (!p.lat || !p.lng) return;
       
-      const key = String(p.userId); // Use string keys consistently
+      const key = String(p.userId);
       currentMarkerIds.add(key);
+
+      const color = p.color || RIDER_COLORS[index % RIDER_COLORS.length];
+      const letter = p.avatarLetter || (p.username ? p.username.charAt(0).toUpperCase() : "?");
+      const name = p.username || "Rider";
+
+      // Check if the marker's visual identity changed (color or name)
+      const prevMeta = riderMetaRef.current[key];
+      const metaChanged = prevMeta && (prevMeta.color !== color || prevMeta.name !== name);
+
+      // If appearance changed, destroy the old marker so a fresh icon is created
+      if (metaChanged && riderMarkersRef.current[key]) {
+        riderMarkersRef.current[key].remove();
+        delete riderMarkersRef.current[key];
+      }
       
       if (riderMarkersRef.current[key]) {
-        // Existing marker → move it to the newest real position
+        // Existing marker — smoothly move it to the newest position
         riderMarkersRef.current[key].setLatLng([p.lat, p.lng]);
       } else {
-        const color = p.color || RIDER_COLORS[index % RIDER_COLORS.length];
-        const letter = p.avatarLetter || (p.username ? p.username.charAt(0).toUpperCase() : "?");
-        const icon = makeRiderIcon(color, letter, p.username || "Rider");
+        // New marker — create with the rider's icon and popup
+        const icon = makeRiderIcon(color, letter, name);
         
         const marker = L.marker([p.lat, p.lng], {
           icon,
@@ -304,21 +324,28 @@ function MapInternals({ ride, myLocation, isLive, tileLayerRef, activeTileIdx, p
         }).addTo(map);
         
         marker.bindPopup(`
-          <div style="font-family:system-ui;text-align:center">
-            <strong>${p.username || "Rider"}</strong><br/>
-            <span style="font-size:11px;color:#666">${p.role === "admin" ? "👑 Admin" : "Rider"}</span>
+          <div style="font-family:system-ui;text-align:center;padding:2px 0">
+            <div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:4px">
+              <span style="width:24px;height:24px;border-radius:50%;background:${color};display:inline-flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:11px">${letter}</span>
+              <strong style="font-size:13px">${name}</strong>
+            </div>
+            <span style="font-size:11px;color:#666;font-weight:600">${p.role === "admin" ? "👑 Ride Admin" : "🏍️ Rider"}</span>
           </div>
         `);
         
         riderMarkersRef.current[key] = marker;
       }
+
+      // Record the visual identity for the next render cycle
+      riderMetaRef.current[key] = { color, name };
     });
     
-    // Remove markers for participants no longer in the list
+    // Remove markers for participants no longer in the list (left / went stale)
     Object.keys(riderMarkersRef.current).forEach(key => {
       if (!currentMarkerIds.has(key)) {
         riderMarkersRef.current[key].remove();
         delete riderMarkersRef.current[key];
+        delete riderMetaRef.current[key];
       }
     });
     

@@ -178,6 +178,17 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
   const showEndRide   = isActiveRide && (!isGroupRide || isAdmin);
   const showLeaveRide = isActiveRide && !isAdmin && isGroupRide;
 
+  // ====================================================================
+  // AUTO-SHARE for the admin/creator: their GPS starts immediately when
+  // the group ride overlay opens. There is no opt-in toggle for the admin
+  // — the group needs to see the creator's position from the start.
+  // ====================================================================
+  useEffect(() => {
+    if (isGroupRide && isActiveRide && isAdmin && !shareLocation) {
+      setShareLocation(true);
+    }
+  }, [isGroupRide, isActiveRide, isAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ============================================================
   // STOP SHARING — remove my live position from the group
   //
@@ -375,13 +386,17 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
 
   // ====================================================================
   // START GPS when overlay mounts (only for active rides); STOP on unmount
+  //
+  // GPS tracking ALWAYS starts for active rides — even group rides where
+  // the rider hasn't opted in to sharing yet. This ensures every rider
+  // sees their OWN blue dot on the map for navigation purposes.
+  //
+  // SENDING to the server (WebSocket or REST) only happens when
+  // shareLocation is true, so non-sharing riders remain invisible to
+  // the rest of the group.
   // ====================================================================
   useEffect(() => {
-    // Only track GPS for active rides — not for history view.
-    // GROUP rides additionally require the rider to start sharing first
-    // (requirement 1); solo rides keep their original auto-tracking.
     if (!isActiveRide) return;
-    if (isGroupRide && !shareLocation) return;
 
     const stop = watchLocation(
       (loc) => {
@@ -411,10 +426,10 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
         });
 
         // ── Publish position to backend ──
-        // Group rides prefer the authenticated WebSocket; if it is not
-        // connected the REST endpoint is used as a fallback. Both paths go
-        // through the same server-side upsert + broadcast.
-        if (ride?.id) {
+        // Only SEND to the server when shareLocation is active.
+        // This keeps the rider's own blue dot alive for navigation
+        // while making sure non-sharing riders stay invisible to others.
+        if (ride?.id && shareLocationRef.current) {
           const deliveredOverSocket = isGroupRide && sendRideLocation(loc, ride.id);
           if (!deliveredOverSocket) {
             updateUserLocation(ride.id, loc.lat, loc.lng, user?.id, loc.accuracy).catch(err => {
@@ -428,7 +443,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
 
     stopGpsRef.current = stop;
     return () => stop();
-  }, [isActiveRide, isGroupRide, shareLocation, ride?.id, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isActiveRide, isGroupRide, ride?.id, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ====================================================================
   // START / STOP SHARING (live location toggle)
@@ -935,7 +950,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
 
         {/* ── Live location sharing toggle (active group rides only) ──
              Nothing is tracked until the rider turns this on. */}
-        {isGroupRide && isActiveRide && (
+        {isGroupRide && isActiveRide && !isAdmin && (
           <button
             onClick={handleToggleSharing}
             title={shareLocation
