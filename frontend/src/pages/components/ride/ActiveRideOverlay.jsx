@@ -997,31 +997,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
           </button>
         )}
 
-        {/* GPS error banner — sits ABOVE the map (Leaflet panes use z-index
-            200-700, so the old value of 20 hid this banner behind the tiles).
-            maxWidth + normal wrapping keep long messages inside a phone. */}
-        {gpsError && isActiveRide && (
-          <div style={{
-            position:       "absolute",
-            top:            "160px",
-            left:           "50%",
-            transform:      "translateX(-50%)",
-            maxWidth:       "calc(100vw - 32px)",
-            textAlign:      "center",
-            background:     "rgba(239,68,68,0.92)",
-            color:          "white",
-            padding:        "8px 16px",
-            borderRadius:   "10px",
-            fontSize:       "12px",
-            backdropFilter: "blur(8px)",
-            whiteSpace:     "normal",
-            zIndex:         1000,
-            boxShadow:      "0 4px 16px rgba(239,68,68,0.4)",
-          }}>
-            <i className="fa fa-triangle-exclamation" style={{ marginRight: "6px" }} />
-            GPS: {gpsError}
-          </div>
-        )}
+
         
         {/* ── Speed HUD chip (right, stacked above the stats bar) ── */}
         {isActiveRide && myLocation?.speed != null && myLocation.speed >= 0 && (
@@ -1077,6 +1053,32 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
           </div>
         )}
       </div>
+
+      {/* ── GPS error banner — OUTSIDE the map's stacking context so it
+           always paints above the Leaflet tile/overlay panes. ── */}
+      {gpsError && isActiveRide && (
+        <div style={{
+          position:       "fixed",
+          top:            "160px",
+          left:           "50%",
+          transform:      "translateX(-50%)",
+          maxWidth:       "calc(100vw - 32px)",
+          textAlign:      "center",
+          background:     "rgba(239,68,68,0.92)",
+          color:          "white",
+          padding:        "8px 16px",
+          borderRadius:   "10px",
+          fontSize:       "12px",
+          backdropFilter: "blur(8px)",
+          whiteSpace:     "normal",
+          zIndex:         10001,
+          boxShadow:      "0 4px 16px rgba(239,68,68,0.4)",
+          pointerEvents:  "none",
+        }}>
+          <i className="fa fa-triangle-exclamation" style={{ marginRight: "6px" }} />
+          GPS: {gpsError}
+        </div>
+      )}
 
       {/* ============================================================
           BOTTOM BAR — live stats + End Ride button

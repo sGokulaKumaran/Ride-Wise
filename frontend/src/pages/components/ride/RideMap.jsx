@@ -117,7 +117,7 @@ const GPS_ICON = L.divIcon({
 // the route line is guaranteed to sit exactly on the roads. Panning, pinch
 // zoom, double-tap zoom and drag all keep working.
 // ===========================================================================
-const ENABLE_MAP_ROTATION = true;
+const ENABLE_MAP_ROTATION = false;
 
 // Inject animation CSS
 if (typeof document !== "undefined" && !document.getElementById("rw-leaflet-css")) {
@@ -126,17 +126,36 @@ if (typeof document !== "undefined" && !document.getElementById("rw-leaflet-css"
   s.textContent = `
     @keyframes rw-pulse { 0%{transform:scale(0.85);opacity:0.9} 60%{transform:scale(2.6);opacity:0} 100%{transform:scale(0.85);opacity:0} }
     @keyframes rw-rider-pulse { 0%{box-shadow:0 0 0 0 rgba(255,255,255,0.4)} 70%{box-shadow:0 0 0 10px rgba(255,255,255,0)} 100%{box-shadow:0 0 0 0 rgba(255,255,255,0)} }
-    .leaflet-container { width:100%; height:100%; }
+    .leaflet-container { width:100%; height:100%; -webkit-tap-highlight-color: transparent; }
     /* Hide Leaflet controls at the top (zoom buttons, default rotate compass) */
     .leaflet-top { display: none !important; }
-    /* Push Leaflet controls (attribution) up so they clear the stats bar.
-       Uses the height the overlay measured, so it stays right on every
-       screen size instead of a hard-coded 120px. */
+    /* Push Leaflet controls (attribution) up so they clear the stats bar. */
     .leaflet-bottom { bottom: calc(var(--rw-bottom-bar-h, 140px) + 8px) !important; }
     /* Make sure our custom overlay controls are always clickable and on top */
     .rw-custom-control { z-index: 9999 !important; pointer-events: auto !important; }
     /* Compass needle transition */
     .rw-compass-needle { transition: transform 0.25s ease-out; }
+    /* ── Tile rendering artifact fixes ── */
+    .leaflet-tile-container img.leaflet-tile {
+      mix-blend-mode: plus-lighter;
+    }
+    .leaflet-fade-anim .leaflet-tile {
+      will-change: opacity;
+    }
+    /* ── GPU compositing for smoother mobile transforms ── */
+    .leaflet-map-pane,
+    .leaflet-tile-pane,
+    .leaflet-overlay-pane {
+      will-change: transform;
+    }
+    /* ── Canvas renderer: keep crisp on retina displays ── */
+    .leaflet-canvas-container canvas {
+      image-rendering: -webkit-optimize-contrast;
+    }
+    /* ── Prevent touch delay / tap highlight on mobile ── */
+    .leaflet-container * {
+      -webkit-tap-highlight-color: transparent;
+    }
   `;
   document.head.appendChild(s);
 }
@@ -623,62 +642,161 @@ function MapBehavior({ onBearingChange }) {
   // ====================================================================
   // VECTOR RE-SYNC — keeps the route line glued to the map
   //
-  // leaflet-rotate has an OPEN upstream bug (issue #43: "Rotate mobile device
-  // path don't follow"): while a rotate/zoom gesture is running, Leaflet's SVG
-  // renderer skips its own update (the `_animatingZoom` guard in SVG._update),
-  // so vector layers — our route polyline and its white outline — lag behind
-  // or drift off the roads, while markers stay correct. The plugin's own code
-  // even carries a FIXME about vectors drifting when the map is zoomed while
-  // animating (issue #57).
-  //
-  // Forcing the renderer to refresh itself — exactly the workaround the plugin
-  // suggests — puts every vector layer back on the roads immediately, instead
-  // of waiting for the next `moveend`.
+  // leaflet-rotate has an OPEN upstream bug (issue #43): during gestures,
+  // Leaflet's renderer skips updates (_animatingZoom guard), so vectors
+  // drift. We use TWO strategies:
+  //   A) Event-based: fire on rotate/zoomend/moveend/resize
+  //   B) RAF-based: during ACTIVE touch/pointer gestures, run a
+  //      requestAnimationFrame loop that forces renderer._update()
+  //      every frame, keeping vectors aligned in real-time.
   // ====================================================================
   useEffect(() => {
     if (!map) return;
 
     const realignVectors = () => {
-      const renderer = map._renderer;             // the map's default SVG renderer
+      // Force the map's default renderer (Canvas or SVG) to re-sync
+      const renderer = map._renderer;
       if (renderer && typeof renderer._update === "function") {
-        try { renderer._update(); }               // no-op when nothing drifts
-        catch (err) { console.warn("[MapBehavior] vector re-sync skipped:", err?.message); }
+        try { renderer._update(); }
+        catch (err) { /* silent — no-op when nothing drifts */ }
       }
     };
 
-    map.on("rotate",  realignVectors);  // fires on every frame of a twist
+    // ── A) Event-based re-sync (fires on gesture completion) ──
+    map.on("rotate",  realignVectors);
     map.on("zoomend", realignVectors);
     map.on("moveend", realignVectors);
     map.on("resize",  realignVectors);
+
+    // ── B) RAF-based mid-gesture re-sync (fires every frame) ──
+    let rafId = null;
+    let gestureActive = 0; // counter, not boolean (multi-touch)
+
+    const rafLoop = () => {
+      realignVectors();
+      if (gestureActive > 0) {
+        rafId = requestAnimationFrame(rafLoop);
+      } else {
+        rafId = null;
+      }
+    };
+
+    const startGestureSync = () => {
+      gestureActive++;
+      if (!rafId) {
+        rafId = requestAnimationFrame(rafLoop);
+      }
+    };
+
+    const stopGestureSync = () => {
+      gestureActive = Math.max(0, gestureActive - 1);
+      if (gestureActive === 0) {
+        // One final re-sync after the gesture ends
+        realignVectors();
+      }
+    };
+
+    const container = map.getContainer();
+    container.addEventListener("touchstart",  startGestureSync, { passive: true });
+    container.addEventListener("touchend",    stopGestureSync,  { passive: true });
+    container.addEventListener("touchcancel", stopGestureSync,  { passive: true });
+    container.addEventListener("pointerdown", startGestureSync, { passive: true });
+    container.addEventListener("pointerup",   stopGestureSync,  { passive: true });
+    container.addEventListener("pointercancel",stopGestureSync,  { passive: true });
 
     return () => {
       map.off("rotate",  realignVectors);
       map.off("zoomend", realignVectors);
       map.off("moveend", realignVectors);
       map.off("resize",  realignVectors);
+      container.removeEventListener("touchstart",   startGestureSync);
+      container.removeEventListener("touchend",     stopGestureSync);
+      container.removeEventListener("touchcancel",  stopGestureSync);
+      container.removeEventListener("pointerdown",  startGestureSync);
+      container.removeEventListener("pointerup",    stopGestureSync);
+      container.removeEventListener("pointercancel",stopGestureSync);
+      if (rafId) cancelAnimationFrame(rafId);
     };
   }, [map]);
 
+  // ====================================================================
+  // MIDDLE-CLICK ROTATION — Google Earth-style desktop control
+  //
+  // Hold middle mouse button and drag horizontally to rotate the map.
+  // Sensitivity: 0.5° per pixel of horizontal mouse movement.
+  // Only activates when ENABLE_MAP_ROTATION is true.
+  // ====================================================================
+  useEffect(() => {
+    if (!map || !ENABLE_MAP_ROTATION) return;
+    if (typeof map.setBearing !== "function") return;
+
+    let isRotating = false;
+    let startX = 0;
+    let startBearing = 0;
+
+    const onMouseDown = (e) => {
+      if (e.button !== 1) return; // middle click only
+      e.preventDefault();
+      e.stopPropagation();
+      isRotating = true;
+      startX = e.clientX;
+      startBearing = typeof map.getBearing === "function" ? map.getBearing() : 0;
+      map.getContainer().style.cursor = "grabbing";
+    };
+
+    const onMouseMove = (e) => {
+      if (!isRotating) return;
+      e.preventDefault();
+      const dx = e.clientX - startX;
+      const newBearing = startBearing + dx * 0.5;
+      map.setBearing(newBearing);
+    };
+
+    const onMouseUp = (e) => {
+      if (!isRotating) return;
+      if (e.button !== 1) return;
+      isRotating = false;
+      map.getContainer().style.cursor = "";
+    };
+
+    // Prevent the default middle-click auto-scroll behavior
+    const preventAutoScroll = (e) => {
+      if (e.button === 1) e.preventDefault();
+    };
+
+    const container = map.getContainer();
+    container.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    container.addEventListener("auxclick", preventAutoScroll);
+
+    return () => {
+      container.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+      container.removeEventListener("auxclick", preventAutoScroll);
+    };
+  }, [map]);
+
+  // ====================================================================
+  // BEARING TRACKING — report rotation to parent + compass reset
+  // ====================================================================
   useEffect(() => {
     if (!map) return;
 
     const handleRotate = () => {
-      // leaflet-rotate stores bearing in map.options.bearing or map.getBearing()
       const b = typeof map.getBearing === "function" ? map.getBearing() : 0;
-      onBearingChange(Math.round(b * 10) / 10); // round to 1 decimal
+      onBearingChange(Math.round(b * 10) / 10);
     };
 
-    // Compass button dispatches this event to reset bearing from outside
     const handleResetBearing = () => {
       if (typeof map.setBearing === "function") {
         map.setBearing(0);
       }
     };
 
-    // leaflet-rotate fires "rotate" on every bearing change
     map.on("rotate", handleRotate);
     window.addEventListener("rw-reset-bearing", handleResetBearing);
-    // Also fire once on load in case there's a stored bearing
     handleRotate();
 
     return () => {
@@ -736,9 +854,14 @@ export default function RideMap({ ride, myLocation, isLive = false, participants
         /* ── Zoom limits (Google Maps-like) ── */
         minZoom={3}
         maxZoom={19}
+        /* ── Integer zoom snapping — prevents fractional zoom tile artifacts ── */
+        zoomSnap={1}
+        zoomDelta={1}
         /* ── World boundary — no infinite scroll ── */
         maxBounds={WORLD_BOUNDS}
         maxBoundsViscosity={1.0}  /* hard wall — map springs back immediately */
+        /* ── Canvas renderer — GPU-accelerated, no SVG drift on mobile ── */
+        renderer={L.canvas({ padding: 0.5 })}
         /* ── Rotation (leaflet-rotate plugin) ──
               Individual switches mirror ENABLE_MAP_ROTATION so the whole
               feature can be turned off from one place (see the constant at
@@ -748,12 +871,22 @@ export default function RideMap({ ride, myLocation, isLive = false, participants
         shiftKeyRotate={ENABLE_MAP_ROTATION} /* Shift+wheel on desktop */
         rotateControl={false}    /* we render our own compass */
         bearing={0}
+        /* ── Mobile gesture tuning (Google Maps-like feel) ── */
+        inertiaDeceleration={2000}
+        inertiaMaxSpeed={1500}
+        bounceAtZoomLimits={false}
+        tap={true}
+        tapTolerance={15}
+        wheelPxPerZoomLevel={120}
         style={{ width: "100%", height: "100%" }}
       >
         <TileLayer
           url={TILE_LAYERS[0].url}
           attribution={TILE_LAYERS[0].attr}
-          noWrap={true}  /* prevents tile repetition at the edges */
+          noWrap={true}           /* prevents tile repetition at the edges */
+          detectRetina={true}     /* high-res tiles on retina displays */
+          updateWhenZooming={false} /* don't reload tiles mid-zoom animation */
+          keepBuffer={4}          /* keep 4 rows of off-screen tiles loaded */
         />
 
         {/* Dynamic Route line — automatically trims based on myLocation */}
