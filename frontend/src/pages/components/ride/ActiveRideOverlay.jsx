@@ -935,9 +935,12 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
                   sharing={shareLocation}
                   onParticipantsChanged={refreshParticipants}
                   tc={tc}
+                  // "Show me this rider": pan there once, never arm follow mode.
+                  // (It used to dispatch rw-recenter, which re-armed follow and
+                  // made the map chase the rider's own position afterwards.)
                   onRiderClick={(p) => {
                     if (p.lat && p.lng) {
-                      window.dispatchEvent(new CustomEvent("rw-recenter", {
+                      window.dispatchEvent(new CustomEvent("rw-pan-to", {
                         detail: { lat: p.lat, lng: p.lng }
                       }));
                     }
@@ -994,21 +997,25 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
           </button>
         )}
 
-        {/* GPS error banner */}
+        {/* GPS error banner — sits ABOVE the map (Leaflet panes use z-index
+            200-700, so the old value of 20 hid this banner behind the tiles).
+            maxWidth + normal wrapping keep long messages inside a phone. */}
         {gpsError && isActiveRide && (
           <div style={{
             position:       "absolute",
             top:            "160px",
             left:           "50%",
             transform:      "translateX(-50%)",
+            maxWidth:       "calc(100vw - 32px)",
+            textAlign:      "center",
             background:     "rgba(239,68,68,0.92)",
             color:          "white",
             padding:        "8px 16px",
             borderRadius:   "10px",
             fontSize:       "12px",
             backdropFilter: "blur(8px)",
-            whiteSpace:     "nowrap",
-            zIndex:         20,
+            whiteSpace:     "normal",
+            zIndex:         1000,
             boxShadow:      "0 4px 16px rgba(239,68,68,0.4)",
           }}>
             <i className="fa fa-triangle-exclamation" style={{ marginRight: "6px" }} />

@@ -101,6 +101,24 @@ const GPS_ICON = L.divIcon({
   popupAnchor: [0, -28],
 });
 
+// ===========================================================================
+// MAP ROTATION SWITCH
+//
+// Rotation (two-finger twist on touch, Shift+wheel on desktop) comes from the
+// `leaflet-rotate` plugin. It has an OPEN upstream bug — issue #43, "Rotate
+// mobile device path don't follow" — where vector layers (our route line and
+// its white outline) lag behind / drift off the roads while a rotate or zoom
+// gesture is in progress, while markers stay perfectly correct. The re-sync in
+// MapBehavior below counteracts it (it refreshes the vector renderer whenever
+// the map rotates / zooms / moves).
+//
+// If the route line ever looks misaligned again, set this to `false`: rotation
+// is switched off everywhere (no twist, no Shift+wheel, nothing to desync) and
+// the route line is guaranteed to sit exactly on the roads. Panning, pinch
+// zoom, double-tap zoom and drag all keep working.
+// ===========================================================================
+const ENABLE_MAP_ROTATION = true;
+
 // Inject animation CSS
 if (typeof document !== "undefined" && !document.getElementById("rw-leaflet-css")) {
   const s = document.createElement("style");
@@ -111,8 +129,10 @@ if (typeof document !== "undefined" && !document.getElementById("rw-leaflet-css"
     .leaflet-container { width:100%; height:100%; }
     /* Hide Leaflet controls at the top (zoom buttons, default rotate compass) */
     .leaflet-top { display: none !important; }
-    /* Push Leaflet controls up so they don't hide under the bottom panel */
-    .leaflet-bottom { bottom: 120px !important; }
+    /* Push Leaflet controls (attribution) up so they clear the stats bar.
+       Uses the height the overlay measured, so it stays right on every
+       screen size instead of a hard-coded 120px. */
+    .leaflet-bottom { bottom: calc(var(--rw-bottom-bar-h, 140px) + 8px) !important; }
     /* Make sure our custom overlay controls are always clickable and on top */
     .rw-custom-control { z-index: 9999 !important; pointer-events: auto !important; }
     /* Compass needle transition */
@@ -120,6 +140,13 @@ if (typeof document !== "undefined" && !document.getElementById("rw-leaflet-css"
   `;
   document.head.appendChild(s);
 }
+
+// ── Camera-follow tuning (see the GPS dot effect below) ──────────────
+// Ignore GPS jitter: only pan when the rider actually moved, or when the map
+// has drifted far enough that they would walk off screen.
+const FOLLOW_MIN_MOVE_M  = 5;    // metres of real movement before re-centring
+const FOLLOW_MAX_DRIFT_PX = 45;  // px the rider may drift from the centre
+const FOLLOW_ZOOM        = 16;   // zoom applied once, when following starts
 
 // ===========================================================================
 // DynamicRouteLine — Smart route drawing:
@@ -272,7 +299,12 @@ function MapInternals({ ride, myLocation, isLive, tileLayerRef, activeTileIdx, p
   const markerARef = useRef(null);
   const markerBRef = useRef(null);
   const gpsDotRef  = useRef(null);
+  // Camera-follow state. `followRef` = "keep the map centred on me?".
+  // It starts ON (navigation mode) and is switched OFF by the rider the moment
+  // they touch the map, and back ON only when they press the re-center button.
   const followRef  = useRef(true);
+  const lastFollowPosRef = useRef(null);   // last position we centred on
+  const didInitialZoomRef = useRef(false); // one-time navigation zoom per ride
   const riderMarkersRef = useRef({});
 
   // ── Group Rider Markers ──
@@ -368,25 +400,95 @@ function MapInternals({ ride, myLocation, isLive, tileLayerRef, activeTileIdx, p
     map.eachLayer(l => { if (l instanceof L.TileLayer) tileLayerRef.current = l; });
   }, [map, activeTileIdx]); // re-check when tile changes
 
-  // Stop camera follow on drag
+  // ====================================================================
+  // FOLLOW MODE — released by the rider, re-armed only by the re-center button
+  //
+  // BUG FIXED ("rubber band"): the map used to snap back to the rider
+  // forever, even while the rider tried to pan away.
+  //   • follow was ONLY switched off by a `dragstart` event;
+  //   • but Leaflet silently refuses to start a drag while the map pane
+  //     carries the `leaflet-zoom-anim` class (see Draggable._onDown), and
+  //     our old follow code forced a zoom animation on every GPS tick — so
+  //     drags kept being dropped, `dragstart` never fired, and follow was
+  //     never released;
+  //   • a drag that began on the GPS dot (an interactive marker) also never
+  //     reached Leaflet's drag handler.
+  //
+  // Listening to the RAW pointer/wheel events on the map container fixes all
+  // of that: the very first touch, scroll or double-tap releases follow,
+  // no matter what Leaflet decides to do with that gesture.
+  //
+  // Listeners sit on `map.getContainer()` — NOT on the outer wrapper — so our
+  // own on-map buttons (re-center, map style, compass) never release follow.
+  // ====================================================================
   useEffect(() => {
     if (!map) return;
-    const stop = () => { followRef.current = false; };
-    map.on("dragstart", stop);
-    return () => map.off("dragstart", stop);
+    const container = map.getContainer();
+    const release = () => {
+      followRef.current = false;
+      lastFollowPosRef.current = null;
+    };
+
+    container.addEventListener("pointerdown", release, { passive: true });
+    container.addEventListener("touchstart",  release, { passive: true });
+    container.addEventListener("wheel",       release, { passive: true });
+    container.addEventListener("dblclick",    release);
+    map.on("dragstart", release);            // second safety net
+
+    return () => {
+      container.removeEventListener("pointerdown", release);
+      container.removeEventListener("touchstart",  release);
+      container.removeEventListener("wheel",       release);
+      container.removeEventListener("dblclick",    release);
+      map.off("dragstart", release);
+    };
   }, [map]);
 
-  // Listen for the custom "re-center" event
+  // ====================================================================
+  // CAMERA REQUESTS — three different intents, three different events
+  //
+  //   rw-follow-me → the rider PRESSED the re-center button:
+  //                  switch follow back ON and snap to their position.
+  //   rw-pan-to    → someone tapped a rider in the group panel:
+  //                  look at that rider ONCE, follow stays as it is.
+  //   rw-recenter  → a position update arrived (cached fix / fresh hardware
+  //                  fix / restored position). This one must NEVER re-arm
+  //                  follow by itself, which is what used to yank the map
+  //                  back to the rider seconds AFTER they had panned away
+  //                  (`getCurrentPosition` can answer up to 15s later).
+  // ====================================================================
   useEffect(() => {
     if (!map) return;
-    const handleRecenter = (e) => {
-      const { lat, lng } = e.detail;
-      followRef.current = true; // Re-enable follow mode
-      map.setView([lat, lng], Math.max(map.getZoom(), 16), { animate: true, duration: 0.5 });
+
+    const panToPoint = (lat, lng) =>
+      map.setView([lat, lng], map.getZoom(), { animate: true, duration: 0.5 });
+
+    const handleFollowMe = () => {
+      followRef.current = true;          // explicit rider request
+      lastFollowPosRef.current = null;
+      if (myLocation?.lat) panToPoint(myLocation.lat, myLocation.lng);
     };
-    window.addEventListener("rw-recenter", handleRecenter);
-    return () => window.removeEventListener("rw-recenter", handleRecenter);
-  }, [map]);
+
+    const handlePanTo = (e) => {
+      const { lat, lng } = e.detail || {};
+      if (typeof lat === "number" && typeof lng === "number") panToPoint(lat, lng);
+    };
+
+    const handleRecenter = (e) => {
+      if (!followRef.current) return;    // rider is exploring → hands off
+      const { lat, lng } = e.detail || {};
+      if (typeof lat === "number" && typeof lng === "number") panToPoint(lat, lng);
+    };
+
+    window.addEventListener("rw-follow-me", handleFollowMe);
+    window.addEventListener("rw-pan-to",    handlePanTo);
+    window.addEventListener("rw-recenter",  handleRecenter);
+    return () => {
+      window.removeEventListener("rw-follow-me", handleFollowMe);
+      window.removeEventListener("rw-pan-to",    handlePanTo);
+      window.removeEventListener("rw-recenter",  handleRecenter);
+    };
+  }, [map, myLocation?.lat, myLocation?.lng]);
 
   // A marker (start)
   useEffect(() => {
@@ -471,9 +573,36 @@ function MapInternals({ ride, myLocation, isLive, tileLayerRef, activeTileIdx, p
       .addTo(map)
       .bindPopup("<div style='font-family:system-ui;font-size:13px;font-weight:700'> You are here</div>");
     }
-    if (isLive && followRef.current) {
-      map.setView(ll, Math.max(map.getZoom(), 16), { animate: true, duration: 0.5 });
+    // ── Camera follow (only while the rider has not taken the map) ──
+    // See the FOLLOW MODE block above for the full "rubber band" story.
+    //   • one navigation zoom (FOLLOW_ZOOM) when follow starts, so the map
+    //     still opens at street level — the rider's own zoom is never
+    //     overridden afterwards;
+    //   • pan-only animation: same zoom => Leaflet takes the pan path and the
+    //     map pane never gets `leaflet-zoom-anim`, the class that silently
+    //     blocks dragging;
+    //   • GPS jitter is ignored — pan only after real movement, or once the
+    //     rider has drifted too far from the centre of the screen.
+    if (!isLive || !followRef.current) return;
+
+    const driftPx = map.getSize().divideBy(2)
+      .distanceTo(map.latLngToContainerPoint(ll));   // rotation-aware
+    const movedM = lastFollowPosRef.current
+      ? getDistance(lastFollowPosRef.current[0], lastFollowPosRef.current[1], ll[0], ll[1])
+      : Infinity;
+
+    if (!didInitialZoomRef.current) {
+      didInitialZoomRef.current = true;
+      lastFollowPosRef.current = ll;
+      map.setView(ll, Math.max(map.getZoom(), FOLLOW_ZOOM), { animate: true, duration: 0.6 });
+      return;
     }
+
+    if (movedM >= FOLLOW_MIN_MOVE_M || driftPx > FOLLOW_MAX_DRIFT_PX) {
+      lastFollowPosRef.current = ll;
+      map.setView(ll, map.getZoom(), { animate: true, duration: 0.4 });
+    }
+
     return () => { gpsDotRef.current?.remove(); gpsDotRef.current = null; };
   }, [map, myLocation?.lat, myLocation?.lng, isLive]); // eslint-disable-line
 
@@ -490,6 +619,45 @@ function MapInternals({ ride, myLocation, isLive, tileLayerRef, activeTileIdx, p
 // ===========================================================================
 function MapBehavior({ onBearingChange }) {
   const map = useMap();
+
+  // ====================================================================
+  // VECTOR RE-SYNC — keeps the route line glued to the map
+  //
+  // leaflet-rotate has an OPEN upstream bug (issue #43: "Rotate mobile device
+  // path don't follow"): while a rotate/zoom gesture is running, Leaflet's SVG
+  // renderer skips its own update (the `_animatingZoom` guard in SVG._update),
+  // so vector layers — our route polyline and its white outline — lag behind
+  // or drift off the roads, while markers stay correct. The plugin's own code
+  // even carries a FIXME about vectors drifting when the map is zoomed while
+  // animating (issue #57).
+  //
+  // Forcing the renderer to refresh itself — exactly the workaround the plugin
+  // suggests — puts every vector layer back on the roads immediately, instead
+  // of waiting for the next `moveend`.
+  // ====================================================================
+  useEffect(() => {
+    if (!map) return;
+
+    const realignVectors = () => {
+      const renderer = map._renderer;             // the map's default SVG renderer
+      if (renderer && typeof renderer._update === "function") {
+        try { renderer._update(); }               // no-op when nothing drifts
+        catch (err) { console.warn("[MapBehavior] vector re-sync skipped:", err?.message); }
+      }
+    };
+
+    map.on("rotate",  realignVectors);  // fires on every frame of a twist
+    map.on("zoomend", realignVectors);
+    map.on("moveend", realignVectors);
+    map.on("resize",  realignVectors);
+
+    return () => {
+      map.off("rotate",  realignVectors);
+      map.off("zoomend", realignVectors);
+      map.off("moveend", realignVectors);
+      map.off("resize",  realignVectors);
+    };
+  }, [map]);
 
   useEffect(() => {
     if (!map) return;
@@ -571,10 +739,13 @@ export default function RideMap({ ride, myLocation, isLive = false, participants
         /* ── World boundary — no infinite scroll ── */
         maxBounds={WORLD_BOUNDS}
         maxBoundsViscosity={1.0}  /* hard wall — map springs back immediately */
-        /* ── Rotation (leaflet-rotate plugin) ── */
-        rotate={true}
-        touchRotate={true}       /* two-finger twist on mobile */
-        shiftKeyRotate={true}    /* Shift+drag on desktop */
+        /* ── Rotation (leaflet-rotate plugin) ──
+              Individual switches mirror ENABLE_MAP_ROTATION so the whole
+              feature can be turned off from one place (see the constant at
+              the top of this file + the vector re-sync in MapBehavior). */
+        rotate={ENABLE_MAP_ROTATION}
+        touchRotate={ENABLE_MAP_ROTATION}   /* two-finger twist on mobile */
+        shiftKeyRotate={ENABLE_MAP_ROTATION} /* Shift+wheel on desktop */
         rotateControl={false}    /* we render our own compass */
         bearing={0}
         style={{ width: "100%", height: "100%" }}
@@ -690,6 +861,12 @@ export default function RideMap({ ride, myLocation, isLive = false, participants
           className="rw-custom-control"
           title="Re-center on your location"
           onClick={() => {
+            // Re-arm camera-follow and snap instantly (rw-follow-me), THEN ask
+            // the hardware for a fresh fix (resume-real-gps → rw-recenter).
+            // The fresh fix can no longer drag the camera back if the rider
+            // touched the map in the meantime — rw-recenter only moves the
+            // camera while follow is still switched on.
+            window.dispatchEvent(new Event("rw-follow-me"));
             window.dispatchEvent(new Event("resume-real-gps"));
           }}
           style={{
