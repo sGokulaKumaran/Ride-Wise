@@ -31,14 +31,35 @@ L.Icon.Default.mergeOptions({
 });
 
 // ---------------------------------------------------------------------------
-// Tile options (same as demo's MapTilesContainer)
+// Tile options
+//
+// maxNativeZoom is the HIGHEST zoom the provider actually publishes tiles
+// for; maxZoom is how far the LAYER is allowed to be driven.
+//
+// WHY THIS MATTERS — "the last zoom level goes blank/grey":
+//   1. TileLayer's built-in default maxZoom is 18, and detectRetina drops it
+//      further (to 17). MapContainer, however, allows the map to reach 19.
+//      In GridLayer._setView(), a tileZoom above the layer's maxZoom sets
+//      tileZoom = undefined, and with tileZoom undefined Leaflet requests NO
+//      tiles at all — so the deepest zoom level(s) painted an empty pane.
+//      The layer's maxZoom is therefore always set to match the map's.
+//
+//   2. detectRetina makes Leaflet request tiles at (zoom + 1), i.e. z20 here,
+//      which no provider below publishes. Every one of those requests 404s.
+//      It stays OFF so the tile URL always matches a level that exists.
+//
+//   3. maxNativeZoom tells Leaflet where each source genuinely stops, so past
+//      that it upscales the deepest real tile instead of requesting a
+//      zoom level that doesn't exist.
 // ---------------------------------------------------------------------------
+const MAP_MAX_ZOOM = 19;
+
 const TILE_LAYERS = [
-  { label: " Default",   url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", attr: "© OpenStreetMap" },
-  { label: " Cycle",     url: "https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png", attr: "© CyclOSM" },
-  { label: " Dark",      url: "https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png", attr: "© Stadia" },
-  { label: " Satellite", url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", attr: "© ArcGIS" },
-  { label: " Terrain",   url: "https://tiles.stadiamaps.com/tiles/stamen_terrain/{z}/{x}/{y}{r}.png", attr: "© Stadia" },
+  { label: " Default",   url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", attr: "© OpenStreetMap", maxNativeZoom: 19 },
+  { label: " Cycle",     url: "https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png", attr: "© CyclOSM", maxNativeZoom: 18 },
+  { label: " Dark",      url: "https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png", attr: "© Stadia", maxNativeZoom: 20 },
+  { label: " Satellite", url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", attr: "© ArcGIS", maxNativeZoom: 19 },
+  { label: " Terrain",   url: "https://tiles.stadiamaps.com/tiles/stamen_terrain/{z}/{x}/{y}{r}.png", attr: "© Stadia", maxNativeZoom: 20 },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1001,7 +1022,13 @@ export default function RideMap({ ride, myLocation, isLive = false, participants
     setActiveTile(i);
     setShowTiles(false);
     if (tileLayerRef.current) {
-      tileLayerRef.current.setUrl(TILE_LAYERS[i].url);
+      const layer = TILE_LAYERS[i];
+      const tl = tileLayerRef.current;
+      // maxNativeZoom is per-provider — carry it across with the URL, then
+      // redraw so Leaflet re-clamps the tile zoom to the new source's limit.
+      tl.options.maxNativeZoom = layer.maxNativeZoom;
+      tl.setUrl(layer.url);
+      tl.redraw();
     }
   };
 
@@ -1013,9 +1040,11 @@ export default function RideMap({ ride, myLocation, isLive = false, participants
         center={center}
         zoom={12}
         scrollWheelZoom
-        /* ── Zoom limits (Google Maps-like) ── */
+        /* ── Zoom limits (Google Maps-like) ──
+           MAP_MAX_ZOOM is shared with the TileLayer below, so the deepest zoom
+           the map allows is always one the tiles can actually paint. */
         minZoom={3}
-        maxZoom={19}
+        maxZoom={MAP_MAX_ZOOM}
         /* ── Integer zoom snapping — prevents fractional zoom tile artifacts ── */
         zoomSnap={1}
         zoomDelta={1}
@@ -1046,9 +1075,18 @@ export default function RideMap({ ride, myLocation, isLive = false, participants
           url={TILE_LAYERS[0].url}
           attribution={TILE_LAYERS[0].attr}
           noWrap={true}           /* prevents tile repetition at the edges */
-          detectRetina={true}     /* high-res tiles on retina displays */
+          /* detectRetina OFF on purpose — see the TILE_LAYERS comment. It asks
+             for (zoom + 1) tiles, which none of these providers publish. */
           updateWhenZooming={false} /* don't reload tiles mid-zoom animation */
           keepBuffer={4}          /* keep 4 rows of off-screen tiles loaded */
+          /* maxZoom MUST match the map's maxZoom. Leaflet's TileLayer default
+             is 18 (17 with detectRetina) while the map allows 19; anything past
+             the layer limit makes GridLayer request zero tiles, which is what
+             blanked the deepest zoom level. */
+          maxZoom={MAP_MAX_ZOOM}
+          /* Where this provider genuinely stops publishing. Beyond it Leaflet
+             upscales the deepest real tile instead of 404ing. */
+          maxNativeZoom={TILE_LAYERS[0].maxNativeZoom}
         />
 
         {/* Dynamic Route line — trims based on myLocation; draws purple rejoin when off-route */}

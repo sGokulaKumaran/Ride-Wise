@@ -312,12 +312,20 @@ export default function RideSetupFlow({ rideType, userId, participantIds = [], o
             <div className={`flex-1 h-px ${tc.hairline}`} />
           </div>
 
-          {/* Text input for FROM — live OSM geocoder */}
+          {/* Text input for FROM — live OSM geocoder
+
+              `onChange` is REQUIRED: LocationSearchInput is a controlled field
+              (it is given `value`), so without a change handler React keeps
+              re-rendering the old `fromText` and every keystroke is thrown
+              away — the box looks broken and accepts no typing. Clearing
+              fromCoords on edit keeps the newly typed text authoritative, so a
+              geocode from earlier text can never be reused. */}
           <LocationSearchInput
             icon="fa-map-marker-alt"
             iconColor="#22c55e"
             placeholder="Search any city, area, landmark..."
             value={fromText}
+            onChange={(text) => { setFromText(text); setFromCoords(null); }}
             onSelect={(result) => {
               setFromText(result.label);
               setFromCoords({ lat: result.lat, lng: result.lng, name: result.label });
