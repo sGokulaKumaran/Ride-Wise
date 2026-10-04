@@ -14,6 +14,7 @@ import { MapContainer, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet-rotate"; // enables map rotation (two-finger twist, shift+drag)
+import { parseRouteSteps } from "../../../services/routingApi";
 // NOTE: leaflet-routing-machine intentionally removed.
 // We draw polylines directly from stored OSRM coordinates (DynamicRouteLine)
 // so we don't need the routing-machine library at all.
@@ -200,12 +201,24 @@ function drawPolyline(map, routeRef, coords) {
   routeRef.current = L.layerGroup([outline, inline]).addTo(map);
 }
 
-function DynamicRouteLine({ ride, myLocation, isLive }) {
+// Draw (or redraw) a two-layer polyline (white outline + purple dashed fill)
+// Used for off-route "rejoin" lines that guide a rider back to the main route.
+function drawRejoinPolyline(map, ref, coords, color = "#8b5cf6") {
+  if (ref.current) { map.removeLayer(ref.current); }
+  if (!coords || coords.length < 2) return;
+  const outline = L.polyline(coords, { color: "#ffffff", weight: 16, opacity: 0.7 });
+  const inline  = L.polyline(coords, { color, weight: 8, opacity: 0.9, dashArray: "12 8" });
+  ref.current = L.layerGroup([outline, inline]).addTo(map);
+}
+
+function DynamicRouteLine({ ride, myLocation, isLive, onRouteStatus }) {
   const map = useMap();
 
   // Refs — we use refs (not state) to avoid re-render loops
-  const routeRef              = useRef(null); // current drawn layer group
-  const reroutedRef           = useRef(null); // cached off-route OSRM coords
+  const routeRef              = useRef(null); // blue main route layer group
+  const rejoinRef             = useRef(null); // purple rejoin layer group
+  const reroutedRef           = useRef(null); // cached off-route OSRM rejoin coords
+  const rejoinStepsRef        = useRef(null); // cached rejoin turn-by-turn steps
   const lastReroutePos        = useRef(null); // GPS position of last OSRM call
   const isFetchingRef         = useRef(false);// guard against concurrent fetches
 
@@ -225,9 +238,12 @@ function DynamicRouteLine({ ride, myLocation, isLive }) {
       return;
     }
 
-    // ── 2. Non-live / no GPS → draw full saved route ──────────────────────
+    // ── 2. Non-live / no GPS → draw full saved route, clear any rejoin ───
     if (!isLive || !myLocation?.lat) {
       drawPolyline(map, routeRef, savedCoords);
+      if (rejoinRef.current) { map.removeLayer(rejoinRef.current); rejoinRef.current = null; }
+      rejoinStepsRef.current = null;
+      if (onRouteStatus) onRouteStatus({ isOffRoute: false, rejoinSteps: null, rejoinDistance: null });
       return;
     }
 
@@ -239,76 +255,222 @@ function DynamicRouteLine({ ride, myLocation, isLive }) {
       if (d < minDist) { minDist = d; closestIndex = i; }
     }
 
-    // ── 4. ON-ROUTE: trim the saved polyline ──────────────────────────────
+    // ── 4. ON-ROUTE: trim the saved polyline behind GPS, clear purple ─────
     if (minDist <= OFF_ROUTE_THRESHOLD_M) {
       // Clear any cached reroute — we're back on the original path
       reroutedRef.current    = null;
       lastReroutePos.current = null;
+      rejoinStepsRef.current = null;
 
-      // Slice off everything behind us; add exact GPS as first point for smooth connection
+      // Remove purple rejoin line
+      if (rejoinRef.current) { map.removeLayer(rejoinRef.current); rejoinRef.current = null; }
+
+      // Slice off everything behind us; add exact GPS as first point
       const trimmed = [
         [myLocation.lat, myLocation.lng],
         ...savedCoords.slice(closestIndex),
       ];
       drawPolyline(map, routeRef, trimmed);
+      if (onRouteStatus) onRouteStatus({ isOffRoute: false, rejoinSteps: null, rejoinDistance: null });
       return;
     }
 
-    // ── 5. OFF-ROUTE: use cached reroute while fetching ───────────────────
+    // ── 5. OFF-ROUTE: draw remaining main route as blue ───────────────────
+    const remainingBlue = savedCoords.slice(closestIndex);
+    drawPolyline(map, routeRef, remainingBlue);
+
+    // ── 6. OFF-ROUTE: draw cached rejoin (purple) while fetching new one ──
     if (reroutedRef.current) {
-      // We already have a rerouted path — draw it immediately so map isn't blank
-      drawPolyline(map, routeRef, reroutedRef.current);
+      drawRejoinPolyline(map, rejoinRef, reroutedRef.current);
     }
 
-    // ── 6. OFF-ROUTE: debounce — only call OSRM if moved enough ──────────
+    // Report off-route status with cached steps (or null if first time)
+    if (onRouteStatus) onRouteStatus({ isOffRoute: true, rejoinSteps: rejoinStepsRef.current, rejoinDistance: minDist });
+
+    // ── 7. OFF-ROUTE: debounce — only call OSRM if moved enough ──────────
     const lastPos = lastReroutePos.current;
     const movedSinceLastReroute = !lastPos
       || getDistance(myLocation.lat, myLocation.lng, lastPos.lat, lastPos.lng) > REROUTE_DEBOUNCE_M;
 
     if (!movedSinceLastReroute || isFetchingRef.current) return;
 
-    // ── 7. OFF-ROUTE: fetch fresh road route from OSRM ───────────────────
+    // ── 8. OFF-ROUTE: fetch road route from GPS → nearest main route point ─
     isFetchingRef.current  = true;
     lastReroutePos.current = { lat: myLocation.lat, lng: myLocation.lng };
 
-    const destLat = ride.destinationLat;
-    const destLng = ride.destinationLng;
-    const url     = `${OSRM_BASE}/${myLocation.lng},${myLocation.lat};${destLng},${destLat}?overview=full&geometries=geojson`;
+    const joinLat = savedCoords[closestIndex][0];
+    const joinLng = savedCoords[closestIndex][1];
+    const url = `${OSRM_BASE}/${myLocation.lng},${myLocation.lat};${joinLng},${joinLat}?overview=full&geometries=geojson&steps=true`;
 
     fetch(url)
       .then(r => r.json())
       .then(data => {
         if (data.code === "Ok" && data.routes?.[0]) {
+          const route = data.routes[0];
           // Flip [lng,lat] → [lat,lng] for Leaflet
-          const newCoords = data.routes[0].geometry.coordinates.map(pt => [pt[1], pt[0]]);
+          const newCoords = route.geometry.coordinates.map(pt => [pt[1], pt[0]]);
           reroutedRef.current = newCoords;
-          drawPolyline(map, routeRef, newCoords);
+          drawRejoinPolyline(map, rejoinRef, newCoords);
+
+          // Parse rejoin turn-by-turn steps for the navigation bar
+          const rawSteps = route.legs?.flatMap(leg => leg.steps || []) || [];
+          const parsed = parseRouteSteps(rawSteps);
+          // Override the last step's instruction to say "rejoin" instead of "arrive"
+          if (parsed.length > 0) {
+            const last = parsed[parsed.length - 1];
+            if (last.maneuverType === "arrive") {
+              last.instruction = "Rejoin the main route";
+            }
+          }
+          rejoinStepsRef.current = parsed;
+          if (onRouteStatus) onRouteStatus({ isOffRoute: true, rejoinSteps: parsed, rejoinDistance: route.distance || minDist });
         }
       })
       .catch(err => {
-        console.warn("[DynamicRouteLine] Reroute fetch failed:", err.message);
-        // Fallback: draw straight remaining segment so map isn't blank
+        console.warn("[DynamicRouteLine] Rejoin route fetch failed:", err.message);
+        // Fallback: draw straight purple line from GPS → nearest main route point
         const fallback = [
           [myLocation.lat, myLocation.lng],
-          ...savedCoords.slice(closestIndex),
+          savedCoords[closestIndex],
         ];
-        drawPolyline(map, routeRef, fallback);
+        drawRejoinPolyline(map, rejoinRef, fallback);
+        if (onRouteStatus) onRouteStatus({ isOffRoute: true, rejoinSteps: null, rejoinDistance: minDist });
       })
       .finally(() => { isFetchingRef.current = false; });
 
-  }, [map, ride?.routeCoordinates, ride?.destinationLat, ride?.destinationLng, isLive, myLocation?.lat, myLocation?.lng]);
+  }, [map, ride?.routeCoordinates, ride?.destinationLat, ride?.destinationLng, isLive, myLocation?.lat, myLocation?.lng, onRouteStatus]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (routeRef.current) { map?.removeLayer(routeRef.current); }
+      if (rejoinRef.current) { map?.removeLayer(rejoinRef.current); }
     };
   }, [map]);
 
   return null;
 }
 
+// ===========================================================================
+// RiderRejoinLines — Purple dashed lines for off-route GROUP RIDERS
+//
+// For each participant (not self) whose GPS is >300m from the main route,
+// fetches an OSRM road route from their position to the nearest point on
+// the main route and draws it as a purple dashed polyline.
+// The line disappears when the rider gets back on route.
+// ===========================================================================
+function RiderRejoinLines({ participants, currentUserId, routeCoordinates }) {
+  const map = useMap();
+  const linesRef    = useRef({});  // userId → L.layerGroup
+  const lastPosRef  = useRef({});  // userId → { lat, lng } of last OSRM call
+  const fetchingRef = useRef({});  // userId → boolean
 
+  useEffect(() => {
+    if (!map || !routeCoordinates || !participants?.length) return;
+
+    // Parse saved route coords
+    let savedCoords;
+    try {
+      const raw = typeof routeCoordinates === "string"
+        ? JSON.parse(routeCoordinates) : routeCoordinates;
+      savedCoords = raw.map(pt => [pt[1], pt[0]]); // flip to [lat, lng]
+    } catch { return; }
+
+    const activeIds = new Set();
+
+    // Stagger OSRM fetches to avoid rate-limiting
+    let fetchDelay = 0;
+
+    participants.forEach(p => {
+      // Skip self — DynamicRouteLine handles the current user's rejoin line
+      if (String(p.userId) === String(currentUserId)) return;
+      // No GPS fix → skip (no line to draw)
+      if (!p.lat || !p.lng) return;
+
+      const key = String(p.userId);
+      activeIds.add(key);
+
+      // Find distance to nearest main route point
+      let minDist = Infinity;
+      let closestIdx = 0;
+      for (let i = 0; i < savedCoords.length; i++) {
+        const d = getDistance(p.lat, p.lng, savedCoords[i][0], savedCoords[i][1]);
+        if (d < minDist) { minDist = d; closestIdx = i; }
+      }
+
+      // ON-ROUTE: remove any existing purple line for this rider
+      if (minDist <= OFF_ROUTE_THRESHOLD_M) {
+        if (linesRef.current[key]) {
+          map.removeLayer(linesRef.current[key]);
+          delete linesRef.current[key];
+          delete lastPosRef.current[key];
+        }
+        return;
+      }
+
+      // OFF-ROUTE: check if rider moved enough to warrant a new OSRM fetch
+      const last = lastPosRef.current[key];
+      const moved = !last || getDistance(p.lat, p.lng, last.lat, last.lng) > REROUTE_DEBOUNCE_M;
+      if (!moved || fetchingRef.current[key]) return;
+
+      fetchingRef.current[key] = true;
+      lastPosRef.current[key] = { lat: p.lat, lng: p.lng };
+
+      const joinLat = savedCoords[closestIdx][0];
+      const joinLng = savedCoords[closestIdx][1];
+      const url = `${OSRM_BASE}/${p.lng},${p.lat};${joinLng},${joinLat}?overview=full&geometries=geojson`;
+      const riderColor = p.color || "#8b5cf6";
+
+      // Stagger fetches by 200ms per rider to avoid OSRM rate limits
+      const delay = fetchDelay;
+      fetchDelay += 200;
+
+      setTimeout(() => {
+        fetch(url)
+          .then(r => r.json())
+          .then(data => {
+            if (data.code === "Ok" && data.routes?.[0]) {
+              const coords = data.routes[0].geometry.coordinates.map(pt => [pt[1], pt[0]]);
+              if (linesRef.current[key]) map.removeLayer(linesRef.current[key]);
+              const outline = L.polyline(coords, { color: "#ffffff", weight: 14, opacity: 0.6 });
+              const inline  = L.polyline(coords, { color: riderColor, weight: 7, opacity: 0.85, dashArray: "10 6" });
+              linesRef.current[key] = L.layerGroup([outline, inline]).addTo(map);
+            }
+          })
+          .catch(() => {
+            // Fallback: straight line from rider → nearest route point
+            if (linesRef.current[key]) map.removeLayer(linesRef.current[key]);
+            const fallback = [[p.lat, p.lng], savedCoords[closestIdx]];
+            const outline = L.polyline(fallback, { color: "#ffffff", weight: 14, opacity: 0.6 });
+            const inline  = L.polyline(fallback, { color: riderColor, weight: 7, opacity: 0.85, dashArray: "10 6" });
+            linesRef.current[key] = L.layerGroup([outline, inline]).addTo(map);
+          })
+          .finally(() => { fetchingRef.current[key] = false; });
+      }, delay);
+    });
+
+    // Clean up lines for riders who left or are no longer in participants
+    Object.keys(linesRef.current).forEach(key => {
+      if (!activeIds.has(key)) {
+        map.removeLayer(linesRef.current[key]);
+        delete linesRef.current[key];
+        delete lastPosRef.current[key];
+      }
+    });
+  }, [map, participants, currentUserId, routeCoordinates]);
+
+  // Cleanup all on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(linesRef.current).forEach(layer => {
+        try { map?.removeLayer(layer); } catch {}
+      });
+      linesRef.current = {};
+    };
+  }, [map]);
+
+  return null;
+}
 
 // ===========================================================================
 // MapInternals — all hook-based components inside MapContainer
@@ -826,7 +988,7 @@ const WORLD_BOUNDS = L.latLngBounds(
   L.latLng(85, 180),
 );
 
-export default function RideMap({ ride, myLocation, isLive = false, participants = [], currentUserId = null }) {
+export default function RideMap({ ride, myLocation, isLive = false, participants = [], currentUserId = null, onRouteStatus }) {
   const tileLayerRef  = useRef(null);
   const [showTiles,   setShowTiles]  = useState(false);
   const [activeTile,  setActiveTile] = useState(0);
@@ -889,8 +1051,17 @@ export default function RideMap({ ride, myLocation, isLive = false, participants
           keepBuffer={4}          /* keep 4 rows of off-screen tiles loaded */
         />
 
-        {/* Dynamic Route line — automatically trims based on myLocation */}
-        <DynamicRouteLine ride={ride} myLocation={myLocation} isLive={isLive} />
+        {/* Dynamic Route line — trims based on myLocation; draws purple rejoin when off-route */}
+        <DynamicRouteLine ride={ride} myLocation={myLocation} isLive={isLive} onRouteStatus={onRouteStatus} />
+
+        {/* Purple rejoin lines for off-route group riders */}
+        {participants.length > 0 && (
+          <RiderRejoinLines
+            participants={participants}
+            currentUserId={currentUserId}
+            routeCoordinates={ride?.routeCoordinates}
+          />
+        )}
 
         {/* Track bearing changes from the map and push to parent state */}
         <MapBehavior onBearingChange={setBearing} />

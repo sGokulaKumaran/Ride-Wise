@@ -130,6 +130,10 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
   const [confirmLeave,    setConfirmLeave]     = useState(false);
   const [leaving,         setLeaving]          = useState(false);
   const [showDirections,  setShowDirections]   = useState(false);
+  // ── Off-route rejoin state (group rides — purple polyline) ──
+  const [isOffRoute,      setIsOffRoute]       = useState(false);
+  const [rejoinSteps,     setRejoinSteps]      = useState(null);  // turn-by-turn steps for rejoin segment
+  const [rejoinDistance,  setRejoinDistance]    = useState(null);  // metres to rejoin point
   const [miniPosition,    setMiniPosition]     = useState(null);
   // Measured height of the bottom stats bar. Every floating control
   // (re-center, speed, steps, riders) is positioned from this instead of
@@ -264,6 +268,13 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
   //     re-anchoring on resume so skipped stretches are never counted
   //   • resets automatically when a different ride starts
   // ====================================================================
+  // ── Off-route status callback (from DynamicRouteLine via RideMap) ──
+  const handleRouteStatus = useCallback(({ isOffRoute, rejoinSteps, rejoinDistance }) => {
+    setIsOffRoute(isOffRoute);
+    setRejoinSteps(rejoinSteps || null);
+    setRejoinDistance(rejoinDistance != null ? rejoinDistance : null);
+  }, []);
+
   const { distanceTraveled, usingRoute } = useRideDistance(myLocation, {
     routeCoordinates: ride?.routeCoordinates,
     rideId: ride?.id,
@@ -383,6 +394,14 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
 
   // ── Current step derived values ──
   const currentStep    = steps[activeStep];
+
+  // ── Off-route: override the displayed step with the first rejoin step ──
+  const displayStep = isOffRoute && rejoinSteps?.length > 0
+    ? rejoinSteps[0]
+    : currentStep;
+  const displayDist = isOffRoute && rejoinDistance != null
+    ? rejoinDistance
+    : (currentStep?.distance || 0);
 
   // ====================================================================
   // START GPS when overlay mounts (only for active rides); STOP on unmount
@@ -706,7 +725,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
         pointerEvents:  "none",
       }}>
         {/* ── Row 1: Next turn instruction (only for active rides with steps) ── */}
-        {currentStep && isActiveRide && (
+        {(displayStep || isOffRoute) && isActiveRide && (
           <div style={{
             display:        "flex",
             alignItems:     "center",
@@ -721,6 +740,27 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
             pointerEvents:  "auto",
           }}>
 
+            {/* Off-route rejoin badge */}
+            {isOffRoute && (
+              <div style={{
+                position:     "absolute",
+                top:          "-8px",
+                left:         "16px",
+                background:   "linear-gradient(135deg, #8b5cf6, #7c3aed)",
+                color:        "white",
+                fontSize:     "9px",
+                fontWeight:   800,
+                padding:      "3px 8px",
+                borderRadius: "50px",
+                letterSpacing:"0.5px",
+                textTransform:"uppercase",
+                boxShadow:    "0 2px 8px rgba(139,92,246,0.5)",
+                zIndex:       1,
+              }}>
+                ↩ Rejoining route
+              </div>
+            )}
+
             {/* Maneuver icon circle */}
             <div style={{
               width:          "38px",
@@ -733,21 +773,21 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
               justifyContent: "center",
               flexShrink:     0,
             }}>
-              <Icon name={getStepIconName(currentStep)} size={21} />
+              <Icon name={displayStep ? getStepIconName(displayStep) : "maneuverMerge"} size={21} />
             </div>
 
             {/* Instruction text + distance */}
             <div style={{ flex: 1, minWidth: 0 }}>
               {/* Distance to next maneuver */}
-              {stepDist > 0 && (
+              {displayDist > 0 && (
                 <p style={{
-                  color:      "#4285F4",
+                  color:      isOffRoute ? "#8b5cf6" : "#4285F4",
                   fontWeight: 900,
                   fontSize:   "13px",
                   margin:     "0 0 2px",
                   letterSpacing: "0.5px",
                 }}>
-                  in {formatDistance(stepDist)}
+                  {isOffRoute ? "rejoin in" : "in"} {formatDistance(displayDist)}
                 </p>
               )}
               {/* Instruction */}
@@ -763,7 +803,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
                 WebkitLineClamp: 2,
                 WebkitBoxOrient: "vertical",
               }}>
-                {currentStep.instruction}
+                {displayStep?.instruction || "Calculating route back…"}
               </p>
             </div>
 
@@ -924,6 +964,7 @@ export default function ActiveRideOverlay({ ride, onClose, onEnd, onLeave }) {
                 isLive={isActiveRide}
                 participants={ride?.rideType === "group" ? participantsWithLocations : []}
                 currentUserId={user?.id}
+                onRouteStatus={handleRouteStatus}
               />
 
               {ride?.rideType === "group" && participantsWithLocations.length > 0 && (
