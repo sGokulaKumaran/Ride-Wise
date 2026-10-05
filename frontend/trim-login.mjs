@@ -6,7 +6,6 @@ let src = fs.readFileSync(path, "utf8");
 const before = src.split(/\r?\n/).length;
 
 // The login page component ends before the TiltCard helper block.
-const m = src.match(/\r?\n\/\*+[^\n]*|/); // noop, keeps regex import used
 const cut = src.search(/\r?\n\/\/ =+\r?\n\/\/ TiltCard/);
 if (cut < 0) {
   console.log("TiltCard block not found — nothing removed");

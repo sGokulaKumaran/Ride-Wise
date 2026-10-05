@@ -9,6 +9,14 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
+    private final SessionAuthInterceptor sessionAuthInterceptor;
+    private final AllowedOrigins allowedOrigins;
+
+    public WebConfig(SessionAuthInterceptor sessionAuthInterceptor, AllowedOrigins allowedOrigins) {
+        this.sessionAuthInterceptor = sessionAuthInterceptor;
+        this.allowedOrigins = allowedOrigins;
+    }
+
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
@@ -16,13 +24,9 @@ public class WebConfig implements WebMvcConfigurer {
                 // domain such as https://*.trycloudflare.com is accepted and a
                 // brand-new URL never needs editing. The pattern form is also
                 // what allows wildcards together with allowCredentials(true).
-                .allowedOriginPatterns(
-                        "https://ride-wise.pages.dev",
-                        "http://localhost:5173",
-                        "https://ridewise38.netlify.app",
-                        "https://*.trycloudflare.com",
-                        "https://*.ngrok-free.app",
-                        "https://*.ngrok.app")
+                // The list itself lives in AllowedOrigins (shared with the
+                // ride socket) and can be changed with ridewise.allowed-origins.
+                .allowedOriginPatterns(allowedOrigins.forRest())
                 .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                 .allowedHeaders("*")
                 .allowCredentials(true);
@@ -30,7 +34,7 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(new SessionAuthInterceptor())
+        registry.addInterceptor(sessionAuthInterceptor)
                 .addPathPatterns("/api/**")
                 .excludePathPatterns("/api/auth/login", "/api/auth/signup");
     }

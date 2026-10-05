@@ -1,36 +1,43 @@
 package vehicle.ridewise.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import vehicle.ridewise.entity.Ride;
 import vehicle.ridewise.repository.*;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * DataCleanupService — Automatic database maintenance for RideWise.
+ * DataCleanupService — automatic database maintenance for RideWise.
  *
- * Three types of cleanup:
+ * 1. EVENT-DRIVEN (immediate)
+ *    cleanupRideLocationData(rideId) — removes a ride's GPS breadcrumbs and
+ *    live positions when the ride ends or is deleted.
  *
- * 1. EVENT-DRIVEN (immediate):
- *    cleanupRideLocationData(rideId) — deletes GPS breadcrumbs when a ride ends.
- *    Called by RideService.updateStatus() after a ride is completed/cancelled.
- *    This is the biggest storage saver (hundreds of rows per ride).
+ * 2. SCHEDULED (every 6 hours, first run 60 s after startup)
+ *    - read notifications older than 30 days
+ *    - any notification older than 90 days
+ *    - the large route TEXT columns of rides that ended more than 7 days ago
+ *      (names, distance and duration are kept)
+ *    - GPS breadcrumbs left behind by rides that have ended
+ *    - live positions that have not been refreshed for hours
  *
- * 2. SCHEDULED (every 6 hours):
- *    - Deletes read notifications older than 30 days
- *    - Deletes unread notifications older than 90 days
- *    - Clears route_coordinates and route_steps TEXT blobs from rides
- *      that ended more than 7 days ago (from/destination names + distance kept)
- *    - Deletes orphaned location updates for non-active rides
+ *    Every one of these is a SINGLE statement run inside the database.
+ *    The previous version loaded every ended ride — route blobs included —
+ *    into memory on each run and worked through them one by one, which
+ *    grew slower with every ride ever taken.
  *
- * 3. USER CLEANUP (for future admin user deletion):
- *    cleanupUserData(userId) — removes all data belonging to a user.
+ * 3. USER CLEANUP
+ *    cleanupUserData(userId) — removes everything belonging to a user.
  */
 @Service
 public class DataCleanupService {
+
+    private static final Logger log = LoggerFactory.getLogger(DataCleanupService.class);
+    private static final List<String> ENDED = List.of("completed", "cancelled");
 
     private final LocationUpdateRepository locationUpdateRepository;
     private final UserLocationRepository userLocationRepository;
@@ -54,183 +61,70 @@ public class DataCleanupService {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // 1. EVENT-DRIVEN: Clean up GPS breadcrumbs when a ride ends
+    // 1. EVENT-DRIVEN: a ride ended or was deleted
     // ═══════════════════════════════════════════════════════════════
 
     /**
-     * Deletes all location_updates rows for the given ride.
-     * Called immediately after a ride is completed or cancelled.
-     * The actual travelled distance is already saved on the ride row,
-     * so these GPS breadcrumbs are no longer needed.
+     * Deletes the GPS breadcrumbs (location_updates) and the live latest
+     * positions (user_locations) of one ride. The distance ridden is
+     * already saved on the ride row, and a finished ride must not leave
+     * stale markers on anyone's map.
+     *
+     * Runs inside the caller's transaction, so it commits — or rolls back —
+     * together with the ride change that triggered it.
      */
     @Transactional
     public void cleanupRideLocationData(Long rideId) {
-        try {
-            long count = locationUpdateRepository.countByRideId(rideId);
-            if (count > 0) {
-                locationUpdateRepository.deleteByRideId(rideId);
-                System.out.println("[RideWise Cleanup] Deleted " + count + " GPS breadcrumbs for ride #" + rideId);
-            }
-            // Also drop the LIVE latest-location rows so a finished ride cannot
-            // leak stale markers into anyone's map.
-            userLocationRepository.deleteByRideId(rideId);
-        } catch (Exception e) {
-            // Don't let cleanup failure break the ride flow
-            System.err.println("[RideWise Cleanup] Failed to clean location data for ride #" + rideId + ": " + e.getMessage());
-        }
+        locationUpdateRepository.deleteByRideId(rideId);
+        userLocationRepository.deleteByRideId(rideId);
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // 2. SCHEDULED: Automatic periodic cleanup (every 6 hours)
-    //    Also runs once 60 seconds after startup.
+    // 2. SCHEDULED
     // ═══════════════════════════════════════════════════════════════
 
     @Scheduled(initialDelay = 60_000, fixedRate = 6 * 60 * 60 * 1000)
     public void scheduledCleanup() {
-        System.out.println("[RideWise Cleanup] ═══ Starting scheduled cleanup ═══");
-        long startTime = System.currentTimeMillis();
+        long startedAt = System.currentTimeMillis();
+        LocalDateTime now = LocalDateTime.now();
 
-        int totalCleaned = 0;
-        totalCleaned += cleanupOldReadNotifications();
-        totalCleaned += cleanupVeryOldNotifications();
-        totalCleaned += cleanupOldRouteBlobs();
-        totalCleaned += cleanupOrphanedLocationUpdates();
-        totalCleaned += cleanupStaleUserLocations();
+        int readNotifications = run("old read notifications",
+                () -> notificationRepository.deleteByIsReadTrueAndCreatedAtBefore(now.minusDays(30)));
+        int oldNotifications = run("very old notifications",
+                () -> notificationRepository.deleteByCreatedAtBefore(now.minusDays(90)));
+        int routeData = run("old route data",
+                () -> rideRepository.clearRouteDataEndedBefore(ENDED, now.minusDays(7)));
+        int breadcrumbs = run("orphaned GPS breadcrumbs",
+                () -> locationUpdateRepository.deleteForRidesEndedBefore(ENDED, now.minusHours(6)));
+        int livePositions = run("stale live positions",
+                () -> (int) userLocationRepository.deleteByUpdatedAtBefore(now.minusHours(6)));
 
-        long elapsed = System.currentTimeMillis() - startTime;
-        System.out.println("[RideWise Cleanup] ═══ Completed in " + elapsed + "ms — " + totalCleaned + " total items cleaned ═══");
-    }
-
-    /**
-     * Delete read notifications older than 30 days.
-     * These have been seen by the user and have no further purpose.
-     */
-    @Transactional
-    public int cleanupOldReadNotifications() {
-        try {
-            LocalDateTime cutoff = LocalDateTime.now().minusDays(30);
-            int deleted = notificationRepository.deleteByIsReadTrueAndCreatedAtBefore(cutoff);
-            if (deleted > 0) {
-                System.out.println("[RideWise Cleanup]   ↳ Deleted " + deleted + " read notifications (> 30 days old)");
-            }
-            return deleted;
-        } catch (Exception e) {
-            System.err.println("[RideWise Cleanup] Failed to clean old read notifications: " + e.getMessage());
-            return 0;
+        int total = readNotifications + oldNotifications + routeData + breadcrumbs + livePositions;
+        if (total > 0) {
+            log.info("Cleanup removed {} read + {} old notifications, route data of {} rides, "
+                            + "{} GPS breadcrumbs, {} stale live positions in {} ms",
+                    readNotifications, oldNotifications, routeData, breadcrumbs, livePositions,
+                    System.currentTimeMillis() - startedAt);
         }
     }
 
-    /**
-     * Delete ALL notifications (read or unread) older than 90 days.
-     * Even unread notifications lose relevance after 3 months.
-     */
-    @Transactional
-    public int cleanupVeryOldNotifications() {
-        try {
-            LocalDateTime cutoff = LocalDateTime.now().minusDays(90);
-            int deleted = notificationRepository.deleteByCreatedAtBefore(cutoff);
-            if (deleted > 0) {
-                System.out.println("[RideWise Cleanup]   ↳ Deleted " + deleted + " old notifications (> 90 days old)");
-            }
-            return deleted;
-        } catch (Exception e) {
-            System.err.println("[RideWise Cleanup] Failed to clean very old notifications: " + e.getMessage());
-            return 0;
-        }
+    private interface Step {
+        int execute();
     }
 
-    /**
-     * Clear route_coordinates and route_steps TEXT blobs from rides
-     * that ended more than 7 days ago.
-     *
-     * These are large JSON strings (often 10-50KB each) that are only
-     * useful during the ride and shortly after. Thefrom/destination
-     * names, distance, and duration are still preserved.
-     */
-    @Transactional
-    public int cleanupOldRouteBlobs() {
+    // One failing step must not stop the others.
+    private int run(String what, Step step) {
         try {
-            LocalDateTime cutoff = LocalDateTime.now().minusDays(7);
-            List<Ride> oldRides = rideRepository.findByStatusInAndEndedAtBefore(
-                    List.of("completed", "cancelled"), cutoff);
-
-            int cleaned = 0;
-            for (Ride ride : oldRides) {
-                if (ride.getRouteCoordinates() != null || ride.getRouteSteps() != null) {
-                    ride.setRouteCoordinates(null);
-                    ride.setRouteSteps(null);
-                    rideRepository.save(ride);
-                    cleaned++;
-                }
-            }
-
-            if (cleaned > 0) {
-                System.out.println("[RideWise Cleanup]   ↳ Cleared route blobs from " + cleaned + " old rides (> 7 days ended)");
-            }
-            return cleaned;
+            return step.execute();
         } catch (Exception e) {
-            System.err.println("[RideWise Cleanup] Failed to clean old route blobs: " + e.getMessage());
-            return 0;
-        }
-    }
-
-    /**
-     * Delete orphaned location updates — GPS breadcrumbs where the
-     * parent ride is already completed/cancelled but the location
-     * data wasn't cleaned up (e.g., from before this cleanup service existed).
-     */
-    @Transactional
-    public int cleanupOrphanedLocationUpdates() {
-        try {
-            LocalDateTime cutoff = LocalDateTime.now().minusHours(6);
-            List<Ride> endedRides = rideRepository.findByStatusInAndEndedAtBefore(
-                    List.of("completed", "cancelled"), cutoff);
-
-            int totalDeleted = 0;
-            for (Ride ride : endedRides) {
-                long count = locationUpdateRepository.countByRideId(ride.getId());
-                if (count > 0) {
-                    locationUpdateRepository.deleteByRideId(ride.getId());
-                    totalDeleted += (int) count;
-                }
-            }
-
-            if (totalDeleted > 0) {
-                System.out.println("[RideWise Cleanup]   ↳ Deleted " + totalDeleted + " orphaned GPS breadcrumbs from " + endedRides.size() + " ended rides");
-            }
-            return totalDeleted;
-        } catch (Exception e) {
-            System.err.println("[RideWise Cleanup] Failed to clean orphaned location updates: " + e.getMessage());
-            return 0;
-        }
-    }
-
-    /**
-     * Delete live latest-location rows that have not been refreshed for a
-     * while. This covers a rider who closed the tab/lost signal without
-     * ending the ride — their stale marker must not linger on the map.
-     */
-    @Transactional
-    public int cleanupStaleUserLocations() {
-        try {
-            LocalDateTime cutoff = LocalDateTime.now().minusHours(6);
-            long before = userLocationRepository.count();
-            userLocationRepository.deleteByUpdatedAtBefore(cutoff);
-            long after = userLocationRepository.count();
-            int deleted = (int) Math.max(0, before - after);
-            if (deleted > 0) {
-                System.out.println("[RideWise Cleanup]   ↳ Deleted " + deleted + " stale live locations (> 6 hours old)");
-            }
-            return deleted;
-        } catch (Exception e) {
-            System.err.println("[RideWise Cleanup] Failed to clean stale live locations: " + e.getMessage());
+            log.warn("Cleanup of {} failed: {}", what, e.getMessage());
             return 0;
         }
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // 3. USER CLEANUP: Remove all data for a deleted user
-    //    (pre-wired for future admin user deletion feature)
+    // 3. USER CLEANUP: remove all data of a deleted user
+    //    (pre-wired for a future "delete account" feature)
     // ═══════════════════════════════════════════════════════════════
 
     /**
@@ -240,16 +134,11 @@ public class DataCleanupService {
      */
     @Transactional
     public void cleanupUserData(Long userId) {
-        try {
-            notificationRepository.deleteByUserId(userId);
-            rideParticipantRepository.deleteByUserId(userId);
-            connectionRepository.deleteByUserIdOrConnectedUserId(userId, userId);
-            locationUpdateRepository.deleteByUserId(userId);
-            userLocationRepository.deleteByUserId(userId);
-            System.out.println("[RideWise Cleanup] Cleaned up all data for user #" + userId);
-        } catch (Exception e) {
-            System.err.println("[RideWise Cleanup] Failed to clean data for user #" + userId + ": " + e.getMessage());
-            throw e; // Re-throw so the calling transaction rolls back
-        }
+        notificationRepository.deleteByUserId(userId);
+        rideParticipantRepository.deleteByUserId(userId);
+        connectionRepository.deleteByUserIdOrConnectedUserId(userId, userId);
+        locationUpdateRepository.deleteByUserId(userId);
+        userLocationRepository.deleteByUserId(userId);
+        log.info("Removed all data of user #{}", userId);
     }
 }

@@ -8,13 +8,16 @@
 //   - View ride details (from → destination, distance, creator)
 //   - Expandable group ride participant list
 // ============================================================
-import { useState, useEffect, useCallback } from "react";
+import { Fragment, useState, useEffect } from "react";
+import { toast } from "react-toastify";
 import { getRides, getRideDetail } from "../../services/adminApi";
 import { useTheme } from "../hooks/useTheme";
 import AdminLayout from "./AdminLayout";
 import { useAuth } from "../../context/AuthContext";
 import Icon from "../components/ui/Icon";
 import Button, { Chip } from "../components/ui/Button";
+
+const SIZE = 15;
 
 export default function AdminRides() {
   const { user } = useAuth();
@@ -23,34 +26,41 @@ export default function AdminRides() {
   const [rides, setRides] = useState([]);
   const [totalRides, setTotalRides] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
-  const [page, setPage] = useState(0);
-  const [statusFilter, setStatusFilter] = useState("");
-  const [typeFilter, setTypeFilter] = useState("");
+  // One object: changing a filter always goes back to the first page.
+  const [query, setQuery] = useState({ status: "", type: "", page: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expandedRide, setExpandedRide] = useState(null); // { id, data }
   const [expandLoading, setExpandLoading] = useState(null);
-  const SIZE = 15;
 
-  const loadRides = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await getRides(statusFilter, typeFilter, page, SIZE);
-      setRides(data.rides || []);
-      setTotalRides(data.totalRides || 0);
-      setTotalPages(data.totalPages || 0);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+  const { status: statusFilter, type: typeFilter, page } = query;
+  // Only a real change starts a load (re-selecting the current filter is a no-op).
+  const changeQuery = (patch) => {
+    const next = { ...query, ...patch };
+    if (next.status === query.status && next.type === query.type && next.page === query.page) return;
+    setLoading(true);
+    setExpandedRide(null);
+    setQuery(next);
+  };
+  const setStatusFilter = (status) => changeQuery({ status, page: 0 });
+  const setTypeFilter = (type) => changeQuery({ type, page: 0 });
+  const setPage = (toPage) => changeQuery({ page: toPage });
+
+  // Load the page; a slow answer for an older filter is ignored.
+  useEffect(() => {
+    let cancelled = false;
+    getRides(statusFilter, typeFilter, page, SIZE)
+      .then((data) => {
+        if (cancelled) return;
+        setRides(data.rides || []);
+        setTotalRides(data.totalRides || 0);
+        setTotalPages(data.totalPages || 0);
+        setError(null);
+      })
+      .catch((err) => { if (!cancelled) setError(err.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [statusFilter, typeFilter, page]);
-
-  useEffect(() => { loadRides(); }, [loadRides]);
-
-  // Reset page when filters change
-  useEffect(() => { setPage(0); }, [statusFilter, typeFilter]);
 
   const handleExpand = async (rideId) => {
     if (expandedRide?.id === rideId) {
@@ -62,7 +72,7 @@ export default function AdminRides() {
       const data = await getRideDetail(rideId);
       setExpandedRide({ id: rideId, data });
     } catch (err) {
-      alert("Failed to load ride details: " + err.message);
+      toast.error(err.message || "Couldn't load the ride's riders.");
     } finally {
       setExpandLoading(null);
     }
@@ -101,7 +111,9 @@ export default function AdminRides() {
           <div>
             <h1 className="text-2xl font-bold">Ride Monitoring</h1>
             <p className={`text-sm ${tc.sub} mt-1`}>
-              {totalRides} total ride{totalRides !== 1 ? "s" : ""}
+              {statusFilter || typeFilter
+                ? `${totalRides} ride${totalRides !== 1 ? "s" : ""} match${totalRides === 1 ? "es" : ""} the filters`
+                : `${totalRides} total ride${totalRides !== 1 ? "s" : ""}`}
             </p>
           </div>
 
@@ -166,9 +178,8 @@ export default function AdminRides() {
                 )}
 
                 {!loading && rides.map((ride) => (
-                  <>
+                  <Fragment key={ride.id}>
                     <tr
-                      key={ride.id}
                       className={`border-b ${tc.divider} transition-colors ${tc.cardHover}`}
                     >
                       <td className={`px-4 py-3 font-mono text-xs ${tc.sub}`}>#{ride.id}</td>
@@ -201,7 +212,7 @@ export default function AdminRides() {
                         </span>
                       </td>
                       <td className={`px-4 py-3 hidden lg:table-cell text-xs ${tc.sub}`}>
-                        {formatDistance(ride.actualDistanceMeters || ride.distanceMeters)}
+                        {formatDistance(ride.actualDistanceMeters ?? ride.distanceMeters)}
                       </td>
                       <td className={`px-4 py-3 hidden sm:table-cell text-xs ${tc.sub}`}>
                         {formatDate(ride.createdAt)}
@@ -224,7 +235,7 @@ export default function AdminRides() {
 
                     {/* ── Expanded Participant Detail ── */}
                     {expandedRide?.id === ride.id && expandedRide.data?.participants && (
-                      <tr key={`${ride.id}-detail`}>
+                      <tr>
                         <td colSpan={8} className={`px-6 py-4 border-b ${tc.divider}`}>
                           <div className="space-y-2">
                             <p className={`text-xs font-semibold uppercase tracking-wider ${tc.sub}`}>
@@ -254,7 +265,7 @@ export default function AdminRides() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -271,7 +282,7 @@ export default function AdminRides() {
                   variant="ghost"
                   size="sm"
                   icon="chevronLeft"
-                  onClick={() => setPage(p => Math.max(0, p - 1))}
+                  onClick={() => setPage(Math.max(0, page - 1))}
                   disabled={page === 0}
                   tc={tc}
                 >
@@ -282,7 +293,7 @@ export default function AdminRides() {
                   size="sm"
                   icon="chevronRight"
                   iconRight
-                  onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                  onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
                   disabled={page >= totalPages - 1}
                   tc={tc}
                 >

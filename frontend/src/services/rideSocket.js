@@ -27,6 +27,9 @@
 //   sendRideLocation({ lat, lng, accuracy }) pushes my position
 //   sendRideStop(rideId) tells the group I stopped sharing
 //                    → server replies { type: "location-cleared", userId }
+//   server may also send
+//                    { type: "participants-changed" }  a rider joined / left
+//                    { type: "ride-ended", status, endedBy }  the ride is over
 //   closeRideSocket() stops reconnecting and closes the socket
 //
 // Connection is dropped whenever the ride ends / tracking stops, and
@@ -93,6 +96,20 @@ function open() {
         // of waiting for the staleness window (requirement 8/9).
         if (msg.userId != null) handlers.onLocationCleared?.(msg.userId);
         break;
+      case "participants-changed":
+        // Someone joined or left — refresh the riders list right away
+        // instead of waiting for the next poll.
+        handlers.onParticipantsChanged?.();
+        break;
+      case "ride-ended":
+        // The admin ended (or deleted) the ride. Stop reconnecting — the
+        // server would refuse the subscription anyway — and tell the map.
+        // endedBy is the user id of whoever ended it (null: ended by the
+        // server itself), so the rider who tapped "End ride" can tell the
+        // echo of their own action from someone else's.
+        closedByUs = true;
+        handlers.onRideEnded?.(msg.status || "completed", msg.endedBy ?? null);
+        break;
       case "error":
         handlers.onError?.(msg.message || "Location sharing error");
         break;
@@ -134,7 +151,8 @@ function sendJson(payload) {
 
 // ============================================================
 // connectRideSocket — open (or reuse) the socket for one ride
-// opts: { onLocation, onSnapshot, onStatus, onError }
+// opts: { onSnapshot, onLocation, onLocationCleared,
+//         onParticipantsChanged, onRideEnded, onStatus, onError }
 // ============================================================
 export function connectRideSocket(rideId, opts = {}) {
   if (!rideId) return;

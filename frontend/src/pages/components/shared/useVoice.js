@@ -1,8 +1,20 @@
 // ============================================================
-// 🎤 useVoice HOOK — Voice command recognition
+// useVoice — spoken commands for the app ("start", "history", "dark"…)
+//
+//   const { voiceMode, startVoice, voiceSupported } = useVoice({
+//     start: () => …, history: () => …,
+//   });
+//
+// startVoice() listens for one phrase (up to 6 seconds) and runs the
+// first command whose keyword it contains. Uses the browser's Web
+// Speech API; `voiceSupported` is false where that does not exist.
 // ============================================================
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import { toast } from "react-toastify";
+
+const getRecognition = () =>
+  (typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition)) || null;
 
 export function useVoice(commands = {}) {
   const [voiceMode, setVoiceMode] = useState(false);
@@ -10,56 +22,55 @@ export function useVoice(commands = {}) {
   const timerRef = useRef(0);          // auto-stop timer id
 
   const startVoice = useCallback(() => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const SpeechRecognition = getRecognition();
     if (!SpeechRecognition) {
-      alert("Voice not supported on this browser. Try Chrome or Edge.");
+      toast.info("Voice commands aren't supported in this browser. Try Chrome or Edge.");
       return;
     }
 
-    const rec = new SpeechRecognition();
-    rec.lang = "en-US";
-    rec.continuous = false;
-    rec.interimResults = false;
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-US";
+    recognition.continuous = false;
+    recognition.interimResults = false;
 
-    rec.onresult = (event) => {
-      const text = event.results[0][0].transcript.toLowerCase().trim();
-      console.log("🎤 Heard:", text);
-
-      for (const [keyword, fn] of Object.entries(commands)) {
-        if (text.includes(keyword)) {
-          fn();
-          break;
-        }
+    recognition.onresult = (event) => {
+      const heard = event.results[0][0].transcript.toLowerCase().trim();
+      const match = Object.entries(commands).find(([keyword]) => heard.includes(keyword));
+      if (match) match[1]();
+      else toast.info(`Didn't recognise "${heard}". Try: ${Object.keys(commands).join(", ")}.`);
+    };
+    recognition.onend = () => setVoiceMode(false);
+    recognition.onerror = (event) => {
+      setVoiceMode(false);
+      if (event?.error === "not-allowed" || event?.error === "service-not-allowed") {
+        toast.error("Microphone access is blocked. Allow it in your browser settings.");
       }
     };
-
-    rec.onend = () => setVoiceMode(false);
-    rec.onerror = () => setVoiceMode(false);
 
     // Stop any previous session before starting a new one
     try { recognitionRef.current?.stop(); } catch { /* already stopped */ }
     clearTimeout(timerRef.current);
-    recognitionRef.current = rec;
-    rec.start();
+    recognitionRef.current = recognition;
+
+    try {
+      recognition.start();
+    } catch {
+      return; // already listening
+    }
     setVoiceMode(true);
 
-    // Auto-stop after 6 seconds (timer tracked so unmount can cancel it)
+    // Auto-stop after 6 seconds (tracked so unmount can cancel it)
     timerRef.current = setTimeout(() => {
-      try { rec.stop(); } catch { /* already stopped */ }
+      try { recognition.stop(); } catch { /* already stopped */ }
       setVoiceMode(false);
     }, 6000);
   }, [commands]);
 
-  // Cleanup on unmount: stop the mic + cancel the timer so neither can
-  // fire setState (or keep recording) after the page is gone.
+  // Unmount: stop the mic and the timer so neither outlives the page.
   useEffect(() => () => {
     try { recognitionRef.current?.stop(); } catch { /* already stopped */ }
     clearTimeout(timerRef.current);
   }, []);
 
-  return {
-    voiceMode,
-    startVoice,
-    voiceSupported: !!(window.SpeechRecognition || window.webkitSpeechRecognition),
-  };
+  return { voiceMode, startVoice, voiceSupported: Boolean(getRecognition()) };
 }

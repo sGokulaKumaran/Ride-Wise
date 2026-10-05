@@ -1,280 +1,143 @@
 // ============================================================
-// 📍 DirectionsPanel.jsx — Turn-by-turn directions drawer
+// DirectionsPanel.jsx — the full list of turns
 //
-// A Google Maps-style slide-up panel that shows the full
-// list of route steps. The current/nearest step is highlighted
-// and automatically scrolled into view as the user moves.
+// A bottom sheet with every step of the route. It follows the rider:
+//   • steps already ridden are ticked and dimmed
+//   • the NEXT step is highlighted with the live distance to it
+//   • the list scrolls to keep that step in view
 //
-// PROPS:
-//   steps        — array of step objects from parseRouteSteps()
-//   activeStep   — index of the currently nearest step (0-based)
-//   onClose      — called when the X button is pressed
-//   totalDist    — total route distance (metres)
-//   totalTime    — total route duration (seconds)
-//   destName     — short destination name string
+// PROPS
+//   steps           route steps (each with an instruction and distance)
+//   activeIndex     index of the next step; -1 for a finished ride
+//   activeDistance  metres to that step (live), or null
+//   offRoute        true while the rider is off the route
+//   joining         …and has not been on it yet (the ride starts off the road)
+//   summary         one line under the title ("12 km · 25 min left")
+//   destName        destination name for the title
+//   onClose         close the sheet
+//   tc              theme classes
 // ============================================================
 
 import { useEffect, useRef } from "react";
 import Icon from "../ui/Icon";
-import { formatDistance, formatDuration } from "../../../services/routingApi";
-
-function getStepIconName(step) {
-  const type = step.maneuverType || "";
-  const modifier = String(step.maneuverModifier || "");
-  const legacyIcon = String(step.icon || "");
-  if (type === "arrive" || legacyIcon.includes("flag")) return "maneuverArrive";
-  if (type === "depart" || legacyIcon.includes("location")) return "maneuverDepart";
-  if (["merge", "roundabout", "rotary"].includes(type) || legacyIcon.includes("merge") || legacyIcon.includes("rotate")) {
-    return "maneuverMerge";
-  }
-  if (modifier === "uturn" || legacyIcon.includes("rotate-left")) return "maneuverUTurn";
-  if (modifier === "slight left" || legacyIcon.includes("up-left")) return "maneuverSlightLeft";
-  if (modifier === "slight right" || legacyIcon.includes("up-right")) return "maneuverSlightRight";
-  if (modifier.includes("left") || legacyIcon.includes("left")) return "maneuverLeft";
-  if (modifier.includes("right") || legacyIcon.includes("right")) return "maneuverRight";
-  return "maneuverStraight";
-}
+import { IconButton } from "../ui/Button";
+import {
+  formatDistance,
+  formatManeuverDistance,
+  stepIconName,
+} from "../../../services/routingApi";
 
 export default function DirectionsPanel({
-  steps       = [],
-  activeStep  = 0,
+  steps = [],
+  activeIndex = -1,
+  activeDistance = null,
+  offRoute = false,
+  joining = false,
+  summary = "",
+  destName = "Destination",
   onClose,
-  totalDist   = 0,
-  totalTime   = 0,
-  destName    = "Destination",
   tc,
 }) {
-  const activeRef = useRef(null); // ref to the active step row
+  const activeRef = useRef(null);
 
-  // Auto-scroll the active step into view whenever it changes
+  // Keep the next step in view as the rider advances
   useEffect(() => {
-    if (activeRef.current) {
-      activeRef.current.scrollIntoView({
-        behavior: "smooth",
-        block:    "nearest",
-      });
-    }
-  }, [activeStep]);
+    activeRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [activeIndex]);
+
+  // Escape closes the sheet
+  useEffect(() => {
+    const onKey = (event) => { if (event.key === "Escape") onClose?.(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   return (
-    <div style={{
-      position:       "fixed",
-      inset:          0,
-      zIndex:         9999,
-      display:        "flex",
-      flexDirection:  "column",
-      justifyContent: "flex-end",
-      // Backdrop: dark semi-transparent overlay behind the drawer
-      background:     "rgba(0,0,0,0.55)",
-      backdropFilter: "blur(2px)",
-      animation:      "dpFadeIn 0.25s ease-out both",
-    }}>
-
-      {/* ── Tap outside to close ── */}
+    <div
+      className={`fixed inset-0 z-[1200] flex flex-col justify-end ${tc.overlay}`}
+      onClick={(event) => { if (event.target === event.currentTarget) onClose?.(); }}
+    >
       <div
-        style={{ position: "absolute", inset: 0 }}
-        onClick={onClose}
-        aria-label="Close directions"
-      />
-
-      {/* ── Drawer ── */}
-      <div
-        className={`${tc.card} ${tc.text}`}
-        style={{
-          position:       "relative",
-          zIndex:         1999,
-          borderRadius:   "24px 24px 0 0",
-          maxHeight:      "72vh",
-          display:        "flex",
-          flexDirection:  "column",
-          border:         "1px solid currentColor",
-          borderBottom:   "none",
-          boxShadow:      "0 -24px 80px rgba(0,0,0,0.35)",
-        animation:      "dpSlideUp 0.32s cubic-bezier(0.32,0,0.67,0) both",
-      }}>
-
-        {/* ── Drawer header ── */}
-        <div
-          className={tc.divider}
-          style={{
-           padding:        "16px 20px 12px",
-          borderBottomWidth: "1px",
-          display:        "flex",
-          alignItems:     "center",
-          gap:            "12px",
-          flexShrink:     0,
-        }}>
-          {/* Drag handle */}
-          <div className={`${tc.sub} opacity-50`} style={{
-            position:   "absolute",
-            top:        "10px",
-            left:       "50%",
-            transform:  "translateX(-50%)",
-            width:      "40px",
-            height:     "4px",
-            borderRadius:"2px",
-          }} />
-
-          {/* Destination icon */}
-          <div
-            className={tc.accentSoft}
-            style={{
-             width:          "44px",
-             height:         "44px",
-             borderRadius:   "14px",
-            display:        "flex",
-            alignItems:     "center",
-            justifyContent: "center",
-            flexShrink:     0,
-          }}>
+        role="dialog"
+        aria-label="Directions"
+        className={`mx-auto flex max-h-[76vh] w-full max-w-xl flex-col rounded-t-xl border border-b-0 ${tc.card} ${tc.text}`}
+        style={{ animation: "rw-sheet-up 0.28s cubic-bezier(0.32,0.72,0,1) both" }}
+      >
+        {/* Header */}
+        <div className={`flex shrink-0 items-center gap-3 border-b px-4 py-3.5 ${tc.divider}`}>
+          <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${tc.surface2}`}>
             <Icon name="route" size={19} />
-          </div>
-
-          {/* Title + summary */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{
-              fontWeight: 800,
-              fontSize:  "15px",
-              margin:    0,
-              overflow:  "hidden",
-              textOverflow:"ellipsis",
-              whiteSpace: "nowrap",
-            }}>
-              {destName}
-            </p>
-            <p className={tc.sub} style={{
-              fontSize: "12px",
-              margin:   "2px 0 0",
-            }}>
-              {formatDistance(totalDist)} · {formatDuration(totalTime)} · {steps.length} steps
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[15px] font-semibold">Directions to {destName}</p>
+            <p className={`truncate text-xs ${tc.sub}`}>
+              {summary || `${steps.length} ${steps.length === 1 ? "step" : "steps"}`}
             </p>
           </div>
-
-          {/* Close button */}
-          <button
-            onClick={onClose}
-            className={tc.btnGhost}
-            style={{
-              width:          "36px",
-              height:         "36px",
-              borderRadius:   "50%",
-              cursor:         "pointer",
-              display:        "flex",
-              alignItems:     "center",
-              justifyContent: "center",
-              flexShrink:     0,
-              fontSize:       "13px",
-            }}
-          >
-            <Icon name="close" size={17} />
-          </button>
+          <IconButton icon="close" label="Close directions" size="sm" tc={tc} onClick={onClose} />
         </div>
 
-        {/* ── Step list (scrollable) ── */}
-        <div style={{
-          overflowY:  "auto",
-          flex:       1,
-          padding:    "8px 0 24px",
-        }}>
-          {steps.map((step, i) => {
-            const isActive  = i === activeStep;
-            const isLast    = i === steps.length - 1;
-            const isPast    = i < activeStep;
+        {offRoute && (
+          <p className={`mx-4 mt-3 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${tc.rejoinSoft}`}>
+            <Icon name="maneuverMerge" size={15} className="mt-px" />
+            {joining
+              ? "You're not on the route yet. Follow the purple line on the map — these steps start where you join it."
+              : "You're off the route. Follow the purple line on the map — these steps continue from where you rejoin."}
+          </p>
+        )}
 
+        {/* Steps */}
+        <ol className="flex-1 overflow-y-auto px-2 py-2">
+          {steps.map((step, index) => {
+            const active = index === activeIndex;
+            const passed = activeIndex >= 0 && index < activeIndex;
             return (
-                <div
-                  key={i}
-                  ref={isActive ? activeRef : null}
-                  className={isActive ? tc.accentSoft : ""}
-                  style={{
-                   display:        "flex",
-                  alignItems:     "flex-start",
-                  gap:            "14px",
-                  padding:        "12px 20px",
-                  background:     isActive
-                    ? "linear-gradient(90deg, rgba(249,115,22,0.12), rgba(236,72,153,0.05))"
-                    : "transparent",
-                  borderLeft:     isActive
-                    ? "3px solid #f97316"
-                    : "3px solid transparent",
-                  transition:     "background 0.3s, border-color 0.3s",
-                  opacity:        isPast ? 0.4 : 1,
-                }}
+              <li
+                key={index}
+                ref={active ? activeRef : null}
+                aria-current={active ? "step" : undefined}
+                className={`flex items-center gap-3 rounded-lg px-2.5 py-2.5 ${
+                  active ? `border ${tc.accentSoft}` : "border border-transparent"
+                } ${passed ? "opacity-50" : ""}`}
               >
-                {/* Icon circle */}
-                <div
-                  className={isActive ? tc.accentSoft : tc.surface2}
-                  style={{
-                  width:          "36px",
-                  height:         "36px",
-                  borderRadius:   "50%",
-                  flexShrink:     0,
-                  display:        "flex",
-                  alignItems:     "center",
-                  justifyContent: "center",
-                  border: isActive
-                    ? "1.5px solid #f97316"
-                    : "1.5px solid transparent",
-                  transition: "background 0.3s, border 0.3s",
-                }}>
-                  <Icon
-                    name={getStepIconName(step)}
-                    size={17}
-                    className={isActive ? tc.accent : tc.sub}
-                  />
-                </div>
+                <span
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
+                    active ? tc.inkTile : tc.surface2
+                  }`}
+                >
+                  <Icon name={passed ? "check" : stepIconName(step)} size={18} />
+                </span>
 
-                {/* Text content */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  {/* Instruction */}
-                  <p className={isActive ? "" : tc.sub} style={{
-                    fontWeight: isActive ? 700 : 500,
-                    fontSize:   "13px",
-                    margin:     0,
-                    lineHeight: "1.4",
-                  }}>
+                <span className="min-w-0 flex-1">
+                  <span className={`block text-sm leading-snug ${active ? "font-semibold" : "font-medium"} ${active ? tc.text : ""}`}>
                     {step.instruction}
-                  </p>
-
-                  {/* Distance for this step */}
-                  {step.distance > 0 && (
-                    <p className={isActive ? tc.accent : tc.sub} style={{
-                      fontSize:  "11px",
-                      margin:    "4px 0 0",
-                      fontWeight: isActive ? 700 : 400,
-                    }}>
-                      {formatDistance(step.distance)}
-                    </p>
+                  </span>
+                  {active && activeDistance != null && !offRoute && (
+                    <span className="mt-0.5 block text-xs font-semibold">
+                      {activeDistance <= 15 ? "Now" : `In ${formatManeuverDistance(activeDistance)}`}
+                    </span>
                   )}
-                </div>
+                </span>
 
-                {/* Step number badge (right side) */}
-                {!isLast && (
-                  <div className={tc.sub} style={{
-                    fontSize:   "10px",
-                    fontWeight: 700,
-                    flexShrink: 0,
-                    marginTop:  "2px",
-                  }}>
-                    {i + 1}
-                  </div>
+                {step.distance > 0 && (
+                  <span className={`shrink-0 text-xs tabular-nums ${active ? "" : tc.sub}`}>
+                    {formatDistance(step.distance)}
+                  </span>
                 )}
-              </div>
+              </li>
             );
           })}
-        </div>
+
+          {steps.length === 0 && (
+            <li className={`px-3 py-8 text-center text-sm ${tc.sub}`}>
+              Turn-by-turn directions aren&apos;t stored for this ride.
+            </li>
+          )}
+        </ol>
       </div>
 
-      {/* ── Keyframes ── */}
       <style>{`
-        @keyframes dpFadeIn {
-          from { opacity: 0; }
-          to   { opacity: 1; }
-        }
-        @keyframes dpSlideUp {
-          from { transform: translateY(100%); }
-          to   { transform: translateY(0);    }
-        }
+        @keyframes rw-sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
       `}</style>
     </div>
   );

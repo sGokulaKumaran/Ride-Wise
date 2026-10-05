@@ -1,39 +1,35 @@
 // ============================================================
-// 🔔 notificationApi.js — Notification data service
+// notificationApi.js — in-app notifications
 //
-// All notification operations go through this file.
-// Talks to the Spring Boot backend at /api/notifications.
+// ENDPOINTS:
+//   GET   /api/notifications               → getNotifications (latest 50)
+//   GET   /api/notifications/unread-count  → getUnreadCount
+//   PATCH /api/notifications/{id}/read     → markAsRead
+//   PATCH /api/notifications/read-all      → markAllAsRead
 //
-// ENDPOINT MAP:
-//   GET  /api/notifications?userId=           → getNotifications
-//   GET  /api/notifications/unread-count?userId= → getUnreadCount
-//   PATCH /api/notifications/{id}/read        → markAsRead
-//   PATCH /api/notifications/read-all?userId=  → markAllAsRead
+// The backend acts for the logged-in session. Notifications are a
+// convenience, so these never throw: a failed call returns an empty
+// result and the bell simply shows nothing new.
 // ============================================================
+
+import { apiJson } from "./http";
 
 const BASE = "/api/notifications";
 
-export async function getNotifications(userId) {
-  if (!userId) return [];
+export async function getNotifications() {
   try {
-    const params = new URLSearchParams({ userId });
-    const res = await fetch(`${BASE}?${params}`);
-    if (!res.ok) throw new Error(`Get notifications failed: ${res.status}`);
-    return await res.json();
+    const list = await apiJson(BASE);
+    return Array.isArray(list) ? list : [];
   } catch (err) {
     console.warn("[notificationApi] getNotifications failed:", err.message);
     return [];
   }
 }
 
-export async function getUnreadCount(userId) {
-  if (!userId) return 0;
+export async function getUnreadCount() {
   try {
-    const params = new URLSearchParams({ userId });
-    const res = await fetch(`${BASE}/unread-count?${params}`);
-    if (!res.ok) throw new Error(`Get unread count failed: ${res.status}`);
-    const data = await res.json();
-    return data.count || 0;
+    const data = await apiJson(`${BASE}/unread-count`);
+    return data?.count || 0;
   } catch (err) {
     console.warn("[notificationApi] getUnreadCount failed:", err.message);
     return 0;
@@ -43,21 +39,15 @@ export async function getUnreadCount(userId) {
 export async function markAsRead(notificationId) {
   if (!notificationId) return;
   try {
-    await fetch(`${BASE}/${notificationId}/read`, {
-      method: "PATCH",
-    });
+    await apiJson(`${BASE}/${notificationId}/read`, { method: "PATCH" });
   } catch (err) {
     console.warn("[notificationApi] markAsRead failed:", err.message);
   }
 }
 
-export async function markAllAsRead(userId) {
-  if (!userId) return;
+export async function markAllAsRead() {
   try {
-    const params = new URLSearchParams({ userId });
-    await fetch(`${BASE}/read-all?${params}`, {
-      method: "PATCH",
-    });
+    await apiJson(`${BASE}/read-all`, { method: "PATCH" });
   } catch (err) {
     console.warn("[notificationApi] markAllAsRead failed:", err.message);
   }

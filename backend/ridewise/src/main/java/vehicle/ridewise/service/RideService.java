@@ -1,195 +1,305 @@
-package vehicle.ridewise.service; // Package declaration
+package vehicle.ridewise.service;
 
-import org.springframework.stereotype.Service; // Import Service annotation
-import org.springframework.transaction.annotation.Transactional; // Import Transactional
-import vehicle.ridewise.repository.RideRepository; // Import RideRepository
-import vehicle.ridewise.entity.Ride; // Import Ride entity
-import vehicle.ridewise.dto.RideRequest; // Import RideRequest dto
-import vehicle.ridewise.dto.RideResponse; // Import RideResponse dto
-import vehicle.ridewise.exception.ApiException; // Import ApiException
-import vehicle.ridewise.repository.LocationUpdateRepository; // Import LocationUpdateRepository
-import java.util.List; // Import List
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.Map;
-import java.util.stream.Collectors; // Import Collectors
-import vehicle.ridewise.repository.RideParticipantRepository;
-import vehicle.ridewise.repository.ConnectionRepository;
-import vehicle.ridewise.repository.UserRepository;
-import vehicle.ridewise.entity.RideParticipant;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import vehicle.ridewise.dto.RideParticipantResponse;
+import vehicle.ridewise.dto.RideRequest;
+import vehicle.ridewise.dto.RideResponse;
+import vehicle.ridewise.entity.Ride;
+import vehicle.ridewise.entity.RideParticipant;
 import vehicle.ridewise.entity.User;
-import java.time.LocalDateTime; // Import LocalDateTime
+import vehicle.ridewise.exception.ApiException;
+import vehicle.ridewise.repository.ConnectionRepository;
+import vehicle.ridewise.repository.RideParticipantRepository;
+import vehicle.ridewise.repository.RideRepository;
+import vehicle.ridewise.repository.UserRepository;
+import vehicle.ridewise.websocket.RideLocationBroadcaster;
 
-@Service // Mark as service
-public class RideService { // Define class
+import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+// ============================================================
+// RideService — rides and their riders
+//
+// RULES ENFORCED HERE (never trusted to the client)
+//   • a ride is ended only by its owner (solo) or its admin (group)
+//   • a member can only leave as themself; the admin ends instead
+//   • riders are added to a group ride only by its admin, and only
+//     from the admin's own connections
+//   • every value of a new ride is validated and sized before it is saved
+//
+// REAL-TIME
+//   When a ride ends, or its riders change, everyone watching it over the
+//   ride socket is told at once ("ride-ended", "participants-changed") —
+//   after the database transaction has committed, so a client that reacts
+//   immediately always reads the new state.
+// ============================================================
+@Service
+public class RideService {
+
+    private static final int MAX_NAME_LENGTH = 255;       // column size of from_name / destination_name
+    private static final int MAX_ROUTE_CHARS = 4_000_000; // ≈ a 2,000 km route at full detail
+    private static final int MAX_STEPS_CHARS = 2_000_000;
+    private static final int MAX_GROUP_SIZE = 50;
 
     private final RideRepository rideRepository;
-    private final LocationUpdateRepository locationUpdateRepository;
     private final RideParticipantRepository rideParticipantRepository;
     private final NotificationService notificationService;
     private final DataCleanupService dataCleanupService;
     private final UserRepository userRepository;
     private final ConnectionRepository connectionRepository;
+    private final UserLocationService userLocationService;
+    private final RideLocationBroadcaster broadcaster;
 
-    public RideService(RideRepository rideRepository, LocationUpdateRepository locationUpdateRepository,
-                       RideParticipantRepository rideParticipantRepository, NotificationService notificationService,
+    public RideService(RideRepository rideRepository,
+                       RideParticipantRepository rideParticipantRepository,
+                       NotificationService notificationService,
                        DataCleanupService dataCleanupService,
-                       UserRepository userRepository, ConnectionRepository connectionRepository) {
+                       UserRepository userRepository,
+                       ConnectionRepository connectionRepository,
+                       UserLocationService userLocationService,
+                       RideLocationBroadcaster broadcaster) {
         this.rideRepository = rideRepository;
-        this.locationUpdateRepository = locationUpdateRepository;
         this.rideParticipantRepository = rideParticipantRepository;
         this.notificationService = notificationService;
         this.dataCleanupService = dataCleanupService;
         this.userRepository = userRepository;
         this.connectionRepository = connectionRepository;
-    } // End constructor
+        this.userLocationService = userLocationService;
+        this.broadcaster = broadcaster;
+    }
 
-    @Transactional // Multi-write: ride + participants + notifications
-    public RideResponse createRide(RideRequest req) { // Create ride method
-        if (req.getUserId() == null) throw ApiException.badRequest("Authenticated user is required");
-        if (!"solo".equals(req.getRideType()) && !"group".equals(req.getRideType())) {
+    // ============================================================
+    // CREATE
+    // ============================================================
+    @Transactional // ride + participants + notifications succeed or fail together
+    public RideResponse createRide(RideRequest req) {
+        Long ownerId = req.getUserId();
+        if (ownerId == null) throw ApiException.badRequest("Authenticated user is required");
+
+        String rideType = req.getRideType();
+        if (!"solo".equals(rideType) && !"group".equals(rideType)) {
             throw ApiException.badRequest("Ride type must be solo or group");
         }
-        if (req.getFromName() == null || req.getFromName().isBlank() ||
-                req.getDestinationName() == null || req.getDestinationName().isBlank() ||
-                req.getFromLat() == null || req.getFromLng() == null ||
-                req.getDestinationLat() == null || req.getDestinationLng() == null) {
+
+        // Place names come from a geocoder and can be longer than the column.
+        // Trimmed to fit, instead of failing the whole ride with a SQL error.
+        String fromName = cleanName(req.getFromName());
+        String destinationName = cleanName(req.getDestinationName());
+        if (fromName == null || destinationName == null
+                || !validCoordinate(req.getFromLat(), req.getFromLng())
+                || !validCoordinate(req.getDestinationLat(), req.getDestinationLng())) {
             throw ApiException.badRequest("Ride start and destination are required");
         }
+        if (tooLong(req.getRouteCoordinates(), MAX_ROUTE_CHARS) || tooLong(req.getRouteSteps(), MAX_STEPS_CHARS)) {
+            throw ApiException.badRequest("This route is too long to save. Try a shorter ride.");
+        }
 
-        User adminUser = userRepository.findById(req.getUserId())
+        User owner = userRepository.findById(ownerId)
                 .orElseThrow(() -> ApiException.notFound("User not found"));
 
-        List<Long> participantIds = req.getParticipantIds() != null
-                ? req.getParticipantIds().stream()
-                    .filter(id -> id != null && !id.equals(req.getUserId()))
-                    .collect(Collectors.collectingAndThen(Collectors.toCollection(LinkedHashSet::new), List::copyOf))
-                : List.of();
+        // Invited riders: no nulls, no duplicates, never the owner
+        Set<Long> participantIds = new LinkedHashSet<>();
+        if (req.getParticipantIds() != null) {
+            for (Long id : req.getParticipantIds()) {
+                if (id != null && !id.equals(ownerId)) participantIds.add(id);
+            }
+        }
 
-        if ("group".equals(req.getRideType())) {
-            if (participantIds.isEmpty()) throw ApiException.badRequest("Select at least one friend for a group ride");
+        if ("group".equals(rideType)) {
+            if (participantIds.isEmpty()) {
+                throw ApiException.badRequest("Select at least one friend for a group ride");
+            }
+            if (participantIds.size() + 1 > MAX_GROUP_SIZE) {
+                throw ApiException.badRequest("A group ride can have at most " + MAX_GROUP_SIZE + " riders");
+            }
             for (Long participantId : participantIds) {
-                if (participantId == null || participantId.equals(req.getUserId())) continue;
-                if (!userRepository.existsById(participantId)) throw ApiException.notFound("Selected rider not found");
-                if (!areConnected(req.getUserId(), participantId)) {
+                User invited = userRepository.findById(participantId)
+                        .orElseThrow(() -> ApiException.notFound("Selected rider not found"));
+                if (Boolean.FALSE.equals(invited.getEnabled())) {
+                    throw ApiException.badRequest("One of the selected riders is not available");
+                }
+                if (!areConnected(ownerId, participantId)) {
                     throw ApiException.badRequest("You can only add connected friends to a group ride");
                 }
             }
         }
 
-        Ride ride = new Ride(); // Create entity
-        ride.setUserId(req.getUserId()); // Set user ID
-        ride.setFromName(req.getFromName()); // Set from name
-        ride.setFromLat(req.getFromLat()); // Set from lat
-        ride.setFromLng(req.getFromLng()); // Set from lng
-        ride.setDestinationName(req.getDestinationName()); // Set dest name
-        ride.setDestinationLat(req.getDestinationLat()); // Set dest lat
-        ride.setDestinationLng(req.getDestinationLng()); // Set dest lng
-        ride.setRouteCoordinates(req.getRouteCoordinates()); // Set route
-        ride.setRouteSteps(req.getRouteSteps()); // Set route steps (turn-by-turn navigation)
-        ride.setDistanceMeters(req.getDistanceMeters()); // Set distance
-        ride.setDurationSeconds(req.getDurationSeconds()); // Set duration
-        ride.setRideType(req.getRideType()); // Set type
-        ride.setStatus("active"); // Set default status
-        Ride saved = rideRepository.save(ride); // Save entity
-        RideResponse response = RideResponse.from(saved); // Return DTO
-        if ("group".equals(req.getRideType())) { // Group ride: register admin + members
-            RideParticipant admin = new RideParticipant();
-            admin.setRideId(saved.getId());
-            admin.setUserId(req.getUserId());
-            admin.setRole("admin");
-            admin.setStatus("active");
-            rideParticipantRepository.save(admin);
+        Ride ride = new Ride();
+        ride.setUserId(ownerId);
+        ride.setFromName(fromName);
+        ride.setFromLat(req.getFromLat());
+        ride.setFromLng(req.getFromLng());
+        ride.setDestinationName(destinationName);
+        ride.setDestinationLat(req.getDestinationLat());
+        ride.setDestinationLng(req.getDestinationLng());
+        ride.setRouteCoordinates(blankToNull(req.getRouteCoordinates()));
+        ride.setRouteSteps(blankToNull(req.getRouteSteps()));
+        ride.setDistanceMeters(nonNegative(req.getDistanceMeters()));
+        ride.setDurationSeconds(nonNegative(req.getDurationSeconds()));
+        ride.setRideType(rideType);
+        ride.setStatus("active");
+        Ride saved = rideRepository.save(ride);
 
-            String adminUsername = adminUser.getUsername() != null ? adminUser.getUsername() : "Someone";
+        if ("group".equals(rideType)) {
+            saveParticipant(saved.getId(), ownerId, "admin");
 
-            // Dedupe participant IDs and skip the admin's own ID (already added above)
-            for (Long participantId : new LinkedHashSet<>(participantIds)) {
-                if (participantId == null || participantId.equals(req.getUserId())) {
-                    continue;
-                }
-                RideParticipant member = new RideParticipant();
-                member.setRideId(saved.getId());
-                member.setUserId(participantId);
-                member.setRole("member");
-                member.setStatus("active");
-                rideParticipantRepository.save(member);
-
-                String message = adminUsername + " invited you to a group ride from " + req.getFromName() + " to " + req.getDestinationName();
-                notificationService.createNotification(participantId, "group_ride_invite", "Group Ride Invitation", message, saved.getId());
+            String ownerName = owner.getUsername() != null ? owner.getUsername() : "Someone";
+            String message = ownerName + " invited you to a group ride from " + fromName + " to " + destinationName;
+            for (Long participantId : participantIds) {
+                saveParticipant(saved.getId(), participantId, "member");
+                notificationService.createNotification(
+                        participantId, "group_ride_invite", "Group ride invitation", message, saved.getId());
             }
-            populateGroupRideData(response);
         }
+
+        RideResponse response = RideResponse.from(saved);
+        attachGroupData(List.of(response));
         return response;
-    } // End method
+    }
 
-    public List<RideResponse> getUserRides(Long userId) { // Get user rides method
-        List<Ride> userRides = rideRepository.findByUserIdOrderByCreatedAtDesc(userId);
-        List<Long> visibleRideIds = rideParticipantRepository.findVisibleRideIdsByUserId(userId);
-        List<Ride> participantRides = visibleRideIds.isEmpty() ? new ArrayList<>() : rideRepository.findByIdInOrderByCreatedAtDesc(visibleRideIds);
-        
-        Map<Long, Ride> uniqueRides = new LinkedHashMap<>();
-        for (Ride r : userRides) {
-            uniqueRides.put(r.getId(), r);
+    private void saveParticipant(Long rideId, Long userId, String role) {
+        RideParticipant participant = new RideParticipant();
+        participant.setRideId(rideId);
+        participant.setUserId(userId);
+        participant.setRole(role);
+        participant.setStatus("active");
+        rideParticipantRepository.save(participant);
+    }
+
+    // ============================================================
+    // READ
+    // ============================================================
+
+    // A rider's rides — the ones they created plus the group rides they are
+    // part of — newest first.
+    //
+    // summary = true returns lightweight rows without the route geometry
+    // (each carries hasRoute instead). That is what the app's ride list
+    // uses; the full route is fetched with getRide() when a ride is opened.
+    @Transactional(readOnly = true)
+    public List<RideResponse> getUserRides(Long userId, boolean summary) {
+        List<Long> joined = rideParticipantRepository.findVisibleRideIdsByUserId(userId);
+        Collection<Long> rideIds = joined.isEmpty() ? List.of(-1L) : joined; // IN () must not be empty
+
+        List<RideResponse> rides = summary
+                ? rideRepository.findSummariesForUser(userId, rideIds)
+                : rideRepository.findAllForUser(userId, rideIds).stream()
+                        .map(RideResponse::from)
+                        .collect(Collectors.toList());
+
+        attachGroupData(rides);
+        return rides;
+    }
+
+    @Transactional(readOnly = true)
+    public List<RideResponse> getActiveRides(Long userId) {
+        return getUserRides(userId, true).stream()
+                .filter(ride -> "active".equals(ride.getStatus()))
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public RideResponse getRide(Long rideId, Long userId, boolean summary) {
+        Ride ride = rideRepository.findById(rideId)
+                .orElseThrow(() -> ApiException.notFound("Ride not found"));
+        assertRideAccess(ride, userId);
+        RideResponse response = summary ? RideResponse.summaryOf(ride) : RideResponse.from(ride);
+        attachGroupData(List.of(response));
+        return response;
+    }
+
+    // Fill `participants` and `creatorUsername` for every GROUP ride in the
+    // list with two queries in total — however many rides there are. (The
+    // old code ran two queries per ride.)
+    //
+    //   active ride → riders currently in it
+    //   ended ride  → everyone who rode it (those who left are not listed)
+    private void attachGroupData(List<RideResponse> rides) {
+        List<Long> groupRideIds = rides.stream()
+                .filter(ride -> "group".equals(ride.getRideType()))
+                .map(RideResponse::getId)
+                .collect(Collectors.toList());
+        if (groupRideIds.isEmpty()) return;
+
+        List<RideParticipant> participants = rideParticipantRepository.findByRideIdIn(groupRideIds);
+        Map<Long, User> users = usersById(participants.stream()
+                .map(RideParticipant::getUserId)
+                .collect(Collectors.toSet()));
+        Map<Long, List<RideParticipant>> byRide = participants.stream()
+                .collect(Collectors.groupingBy(RideParticipant::getRideId));
+
+        for (RideResponse ride : rides) {
+            if (!"group".equals(ride.getRideType())) continue;
+            List<RideParticipant> ofRide = byRide.getOrDefault(ride.getId(), List.of());
+            boolean active = "active".equals(ride.getStatus());
+
+            ride.setParticipants(ofRide.stream()
+                    .filter(p -> active
+                            ? "active".equals(p.getStatus())
+                            : !"left".equals(p.getStatus()) && !"declined".equals(p.getStatus()))
+                    .map(p -> RideParticipantResponse.from(p, users.get(p.getUserId())))
+                    .collect(Collectors.toList()));
+
+            ofRide.stream()
+                    .filter(p -> "admin".equals(p.getRole()))
+                    .findFirst()
+                    .map(p -> users.get(p.getUserId()))
+                    .ifPresent(admin -> ride.setCreatorUsername(admin.getUsername()));
         }
-        for (Ride r : participantRides) {
-            uniqueRides.putIfAbsent(r.getId(), r);
-        }
-        
-        List<Ride> allRides = new ArrayList<>(uniqueRides.values());
-        allRides.sort((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()));
-        
-        return allRides.stream().map(r -> {
-            RideResponse resp = RideResponse.from(r);
-            if ("group".equals(r.getRideType())) {
-                populateGroupRideData(resp);
-            }
-            return resp;
-        }).collect(Collectors.toList());
-    } // End method
+    }
 
-    public List<RideResponse> getActiveRides(Long userId) { // Get active rides method
-        List<Ride> activeRides = rideRepository.findByUserIdAndStatus(userId, "active");
-        List<Long> activeRideIds = rideParticipantRepository.findActiveRideIdsByUserId(userId);
-        List<Ride> activeParticipantRides = activeRideIds.isEmpty() ? new ArrayList<>() : rideRepository.findByIdInOrderByCreatedAtDesc(activeRideIds)
-                .stream().filter(r -> "active".equals(r.getStatus())).collect(Collectors.toList());
-        
-        Map<Long, Ride> uniqueRides = new LinkedHashMap<>();
-        for (Ride r : activeRides) {
-            uniqueRides.put(r.getId(), r);
-        }
-        for (Ride r : activeParticipantRides) {
-            uniqueRides.putIfAbsent(r.getId(), r);
-        }
-        
-        return uniqueRides.values().stream().map(r -> {
-            RideResponse resp = RideResponse.from(r);
-            if ("group".equals(r.getRideType())) {
-                populateGroupRideData(resp);
-            }
-            return resp;
-        }).collect(Collectors.toList());
-    } // End method
+    private Map<Long, User> usersById(Collection<Long> ids) {
+        if (ids.isEmpty()) return Map.of();
+        return userRepository.findAllById(ids).stream()
+                .collect(Collectors.toMap(User::getId, user -> user));
+    }
 
-    public RideResponse updateStatus(Long rideId, String status) { // Legacy entry point (no actor check)
-        return updateStatus(rideId, status, null, null); // Delegate with null actor + no distance
-    } // End method
+    // ACTIVE riders of a ride (the live map)
+    @Transactional(readOnly = true)
+    public List<RideParticipantResponse> getParticipants(Long rideId, Long userId) {
+        Ride ride = rideRepository.findById(rideId)
+                .orElseThrow(() -> ApiException.notFound("Ride not found"));
+        assertRideAccess(ride, userId);
 
-    public RideResponse updateStatus(Long rideId, String status, Long actorUserId) { // Backwards-compatible entry point
-        return updateStatus(rideId, status, actorUserId, null); // Delegate without travelled distance
-    } // End method
+        List<RideParticipant> active = rideParticipantRepository.findByRideId(rideId).stream()
+                .filter(p -> "active".equals(p.getStatus()))
+                .collect(Collectors.toList());
+        Map<Long, User> users = usersById(active.stream()
+                .map(RideParticipant::getUserId)
+                .collect(Collectors.toSet()));
+        return active.stream()
+                .map(p -> RideParticipantResponse.from(p, users.get(p.getUserId())))
+                .collect(Collectors.toList());
+    }
 
-    @Transactional // Multi-write: ride (+ participant statuses on group end)
-    public RideResponse updateStatus(Long rideId, String status, Long actorUserId, Double actualDistanceMeters) { // Update status method
+    private void assertRideAccess(Ride ride, Long userId) {
+        if (Objects.equals(ride.getUserId(), userId)) return;
+        boolean participant = rideParticipantRepository.findByRideIdAndUserId(ride.getId(), userId).isPresent();
+        if (!participant) throw ApiException.forbidden("You are not a participant in this ride");
+    }
+
+    // ============================================================
+    // END A RIDE
+    // ============================================================
+    @Transactional
+    public RideResponse updateStatus(Long rideId, String status, Long actorUserId, Double actualDistanceMeters) {
         if (actorUserId == null) throw ApiException.badRequest("Authenticated user is required");
         if (!"completed".equals(status) && !"cancelled".equals(status)) {
             throw ApiException.badRequest("Ride status can only be changed to completed or cancelled");
         }
 
-        Ride ride = rideRepository.findById(rideId) // Find ride
-                .orElseThrow(() -> ApiException.notFound("Ride not found")); // Throw if not found
+        Ride ride = rideRepository.findById(rideId)
+                .orElseThrow(() -> ApiException.notFound("Ride not found"));
         if (!"active".equals(ride.getStatus())) {
             throw ApiException.badRequest("Only an active ride can be ended");
         }
@@ -198,123 +308,94 @@ public class RideService { // Define class
             if (!isActiveAdmin(ride, actorUserId)) {
                 throw ApiException.forbidden("Only the ride admin can end this group ride");
             }
-        } else if (!ride.getUserId().equals(actorUserId)) {
+        } else if (!Objects.equals(ride.getUserId(), actorUserId)) {
             throw ApiException.forbidden("Only the ride owner can end this ride");
         }
 
-        ride.setStatus(status); // Set status
-        ride.setEndedAt(LocalDateTime.now()); // Set endedAt
+        return finish(ride, status, actualDistanceMeters, actorUserId);
+    }
 
-        // Real travelled distance reported by the client when the ride ends
-        // (route-accurate, GPS-noise filtered). Stored only for completed rides
-        // and only when it is a sane, non-negative number.
-        if ("completed".equals(status)
-                && actualDistanceMeters != null
-                && !actualDistanceMeters.isNaN()
-                && !actualDistanceMeters.isInfinite()
-                && actualDistanceMeters >= 0) {
-            ride.setActualDistanceMeters(actualDistanceMeters); // Persist real distance
+    // End a ride that was left "active" long ago (see StaleRideSweeper).
+    // A system action: there is no acting rider and no reported distance.
+    @Transactional
+    public void endAbandonedRide(Long rideId) {
+        rideRepository.findById(rideId)
+                .filter(ride -> "active".equals(ride.getStatus()))
+                .ifPresent(ride -> finish(ride, "completed", null, null));
+    }
+
+    private RideResponse finish(Ride ride, String status, Double actualDistanceMeters, Long actorUserId) {
+        Long rideId = ride.getId();
+        ride.setStatus(status);
+        ride.setEndedAt(LocalDateTime.now());
+
+        // The distance really ridden, reported by the client when the ride
+        // ends. Stored only for completed rides and only when it is sane.
+        Double distance = nonNegative(actualDistanceMeters);
+        if ("completed".equals(status) && distance != null) {
+            ride.setActualDistanceMeters(distance);
         }
-
-        Ride saved = rideRepository.save(ride); // Save changes
+        Ride saved = rideRepository.save(ride);
 
         if ("group".equals(saved.getRideType())) {
-            List<RideParticipant> all = rideParticipantRepository.findByRideId(rideId);
-            for (RideParticipant participant : all) {
-                if ("active".equals(participant.getStatus())) participant.setStatus("completed");
+            List<RideParticipant> participants = rideParticipantRepository.findByRideId(rideId);
+            String route = saved.getFromName() + " to " + saved.getDestinationName();
+            for (RideParticipant participant : participants) {
+                if (!"active".equals(participant.getStatus())) continue;
+                participant.setStatus("completed");
+                // Tell the other riders, including those not looking at the map
+                if (!Objects.equals(participant.getUserId(), actorUserId)) {
+                    notificationService.createNotification(participant.getUserId(), "group_ride_ended",
+                            "Group ride ended", "The group ride from " + route + " has ended", rideId);
+                }
             }
-            rideParticipantRepository.saveAll(all);
+            rideParticipantRepository.saveAll(participants);
         }
 
-        RideResponse response = RideResponse.from(saved); // Return DTO
-        if ("group".equals(saved.getRideType())) populateGroupRideData(response, true);
-
-        // Clean up GPS breadcrumbs — they've served their purpose.
-        // The actual distance is already saved on the ride row.
+        // GPS breadcrumbs and live positions have served their purpose —
+        // the distance is saved on the ride itself.
         dataCleanupService.cleanupRideLocationData(rideId);
 
-        return response; // Return DTO
-    } // End method
+        announceRideEnded(rideId, status, actorUserId);
 
-    @Transactional // Multi-write: location updates + participants + ride
-    public void deleteRide(Long rideId, Long actorUserId) { // Delete ride method
+        RideResponse response = RideResponse.from(saved);
+        attachGroupData(List.of(response));
+        return response;
+    }
+
+    // ============================================================
+    // DELETE
+    // ============================================================
+    @Transactional
+    public void deleteRide(Long rideId, Long actorUserId) {
         Ride ride = rideRepository.findById(rideId)
                 .orElseThrow(() -> ApiException.notFound("Ride not found"));
-        if ("group".equals(ride.getRideType())) {
-            if (!ride.getUserId().equals(actorUserId)) {
-                throw ApiException.forbidden("Only the group ride admin can delete this shared ride");
-            }
-        } else if (!ride.getUserId().equals(actorUserId)) {
-            throw ApiException.forbidden("Only the ride owner can delete this ride");
+        if (!Objects.equals(ride.getUserId(), actorUserId)) {
+            throw ApiException.forbidden("group".equals(ride.getRideType())
+                    ? "Only the group ride admin can delete this shared ride"
+                    : "Only the ride owner can delete this ride");
         }
-        locationUpdateRepository.deleteByRideId(rideId);
+
+        boolean wasActive = "active".equals(ride.getStatus());
+
+        // Everything that points at the ride goes with it: GPS history, live
+        // positions (no ghost markers), riders, and notifications that would
+        // otherwise open a ride that no longer exists.
+        dataCleanupService.cleanupRideLocationData(rideId);
         rideParticipantRepository.deleteByRideId(rideId);
-        rideRepository.deleteById(rideId); // Delete by ID
-    } // End method
+        notificationService.deleteForRide(rideId);
+        rideRepository.deleteById(rideId);
 
-    public RideResponse getRide(Long rideId, Long userId) { // Get ride method
-        Ride ride = rideRepository.findById(rideId) // Find ride
-                .orElseThrow(() -> ApiException.notFound("Ride not found")); // Throw if not found
-        assertRideAccess(ride, userId);
-        RideResponse resp = RideResponse.from(ride); // Return DTO
-        if ("group".equals(ride.getRideType())) {
-            populateGroupRideData(resp, !"active".equals(ride.getStatus()));
-        }
-        return resp;
-    } // End method
-    
-    private void populateGroupRideData(RideResponse response) {
-        populateGroupRideData(response, false);
+        // Riders still on the map of a ride that was deleted mid-way
+        if (wasActive) announceRideEnded(rideId, "deleted", actorUserId);
     }
 
-    private void populateGroupRideData(RideResponse response, boolean includeInactive) {
-        if (!"group".equals(response.getRideType())) return;
-        List<RideParticipantResponse> participantResponses = includeInactive
-                ? getAllParticipants(response.getId())
-                : getParticipants(response.getId());
-        response.setParticipants(participantResponses);
+    // ============================================================
+    // GROUP MEMBERSHIP
+    // ============================================================
 
-        for (RideParticipantResponse pr : participantResponses) {
-            if ("admin".equals(pr.getRole())) {
-                response.setCreatorUsername(pr.getUsername());
-                break;
-            }
-        }
-    }
-
-    public List<RideParticipantResponse> getParticipants(Long rideId) {
-        // Only ACTIVE participants are returned (used by the live map + active RideResponse).
-        return getAllParticipants(rideId).stream()
-                .filter(p -> "active".equals(p.getStatus()))
-                .collect(Collectors.toList());
-    }
-
-    public List<RideParticipantResponse> getParticipants(Long rideId, Long userId) {
-        Ride ride = rideRepository.findById(rideId)
-                .orElseThrow(() -> ApiException.notFound("Ride not found"));
-        assertRideAccess(ride, userId);
-        return getParticipants(rideId);
-    }
-
-    private List<RideParticipantResponse> getAllParticipants(Long rideId) {
-        List<RideParticipant> participants = rideParticipantRepository.findByRideId(rideId);
-        List<Long> userIds = participants.stream().map(RideParticipant::getUserId).collect(Collectors.toList());
-        Map<Long, User> users = userRepository.findAllById(userIds).stream()
-                .collect(Collectors.toMap(User::getId, u -> u));
-        return participants.stream()
-                .map(p -> RideParticipantResponse.from(p, users.get(p.getUserId())))
-                .collect(Collectors.toList());
-    }
-
-    private void assertRideAccess(Ride ride, Long userId) {
-        if (ride.getUserId().equals(userId)) return;
-        boolean participant = rideParticipantRepository.findByRideIdAndUserId(ride.getId(), userId).isPresent();
-        if (!participant) throw ApiException.forbidden("You are not a participant in this ride");
-    }
-
-    // ── MEMBER LEAVE ─────────────────────────────────────────
-    // A non-admin ACTIVE participant leaves themself. Members cannot end the
-    // ride via this route; the admin must use PATCH /api/rides/{id}/status.
+    // A non-admin ACTIVE participant leaves themself. Members cannot end
+    // the ride via this route; the admin uses updateStatus().
     @Transactional
     public void updateParticipantStatus(Long rideId, Long userId, String status, Long actorUserId) {
         if (!"left".equals(status)) {
@@ -339,18 +420,20 @@ public class RideService { // Define class
         participant.setStatus("left");
         rideParticipantRepository.save(participant);
 
-        // Notify the ride admin that a member left (same transaction)
+        // Their marker must not stay on the others' maps
+        userLocationService.clearLocation(rideId, userId);
+
         User leaver = userRepository.findById(userId).orElse(null);
-        String leaverName = leaver != null ? leaver.getUsername() : "A rider";
+        String leaverName = leaver != null && leaver.getUsername() != null ? leaver.getUsername() : "A rider";
         notificationService.createNotification(ride.getUserId(), "group_ride_member_left",
-                "Rider Left Group Ride", leaverName + " left your group ride", rideId);
+                "A rider left your ride", leaverName + " left your group ride", rideId);
+
+        announceParticipantsChanged(rideId);
     }
 
-    // ── LIVE ADD RIDER (ADMIN ONLY) ──────────────────────────
-    // Only the ACTIVE admin of an ACTIVE group ride can add a rider.
-    // The rider must exist and be a connected friend (either direction).
-    // Re-adding a participant who left/declined re-activates them; adding an
-    // already-active participant is rejected as a duplicate.
+    // Only the ACTIVE admin of an ACTIVE group ride can add a rider, and
+    // only one of their own connections. Re-adding someone who left
+    // re-activates them; adding an already-active rider is a conflict.
     @Transactional
     public RideParticipantResponse addParticipant(Long rideId, Long adminId, Long userId) {
         if (adminId == null || userId == null) {
@@ -372,6 +455,9 @@ public class RideService { // Define class
         }
         User addedUser = userRepository.findById(userId)
                 .orElseThrow(() -> ApiException.notFound("User not found"));
+        if (Boolean.FALSE.equals(addedUser.getEnabled())) {
+            throw ApiException.badRequest("This rider is not available");
+        }
         if (!areConnected(adminId, userId)) {
             throw ApiException.badRequest("You can only add connected friends to a group ride");
         }
@@ -381,24 +467,31 @@ public class RideService { // Define class
             if ("active".equals(participant.getStatus())) {
                 throw ApiException.conflict("User is already an active participant in this ride");
             }
-            // Rejoin: re-activate a participant who previously left/declined/was pending
+            // Rejoin: re-activate a rider who previously left
             participant.setStatus("active");
             participant.setRole("member");
-            participant = rideParticipantRepository.save(participant);
         } else {
+            long riders = rideParticipantRepository.findByRideId(rideId).stream()
+                    .filter(p -> "active".equals(p.getStatus()))
+                    .count();
+            if (riders >= MAX_GROUP_SIZE) {
+                throw ApiException.badRequest("A group ride can have at most " + MAX_GROUP_SIZE + " riders");
+            }
             participant = new RideParticipant();
             participant.setRideId(rideId);
             participant.setUserId(userId);
             participant.setRole("member");
             participant.setStatus("active");
-            participant = rideParticipantRepository.save(participant);
         }
+        participant = rideParticipantRepository.save(participant);
 
         User adminUser = userRepository.findById(adminId).orElse(null);
-        String adminUsername = adminUser != null ? adminUser.getUsername() : "Someone";
-        String message = adminUsername + " added you to a group ride from " + ride.getFromName() + " to " + ride.getDestinationName();
-        notificationService.createNotification(userId, "group_ride_invite", "Group Ride Invitation", message, rideId);
+        String adminName = adminUser != null && adminUser.getUsername() != null ? adminUser.getUsername() : "Someone";
+        notificationService.createNotification(userId, "group_ride_invite", "Group ride invitation",
+                adminName + " added you to a group ride from " + ride.getFromName() + " to " + ride.getDestinationName(),
+                rideId);
 
+        announceParticipantsChanged(rideId);
         return RideParticipantResponse.from(participant, addedUser);
     }
 
@@ -408,14 +501,76 @@ public class RideService { // Define class
         if (participant != null) {
             return "admin".equals(participant.getRole()) && "active".equals(participant.getStatus());
         }
-        // Fallback for legacy group rides with no admin participant row: ride owner counts as admin
-        return ride.getUserId() != null && ride.getUserId().equals(userId);
+        // Group rides created before admins had a participant row: the owner counts
+        return Objects.equals(ride.getUserId(), userId);
     }
 
-    // Friendship check — connected in EITHER direction (canonical connections logic
-    // writes both directions, but legacy rows may exist in only one).
+    // Connected in EITHER direction (both are written, but older rows may
+    // exist in only one).
     private boolean areConnected(Long userId, Long otherUserId) {
         return connectionRepository.existsByUserIdAndConnectedUserId(userId, otherUserId)
                 || connectionRepository.existsByUserIdAndConnectedUserId(otherUserId, userId);
     }
-} // End of class
+
+    // ============================================================
+    // REAL-TIME ANNOUNCEMENTS (sent after the transaction commits)
+    // ============================================================
+    private void announceRideEnded(Long rideId, String status, Long endedBy) {
+        Map<String, Object> payload = new HashMap<>(); // HashMap: endedBy may be null
+        payload.put("type", "ride-ended");
+        payload.put("rideId", rideId);
+        payload.put("status", status);
+        payload.put("endedBy", endedBy);
+        afterCommit(() -> {
+            broadcaster.broadcast(rideId, payload);
+            broadcaster.closeRide(rideId);
+        });
+    }
+
+    private void announceParticipantsChanged(Long rideId) {
+        afterCommit(() -> broadcaster.broadcast(rideId,
+                Map.of("type", "participants-changed", "rideId", rideId)));
+    }
+
+    private static void afterCommit(Runnable action) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    action.run();
+                }
+            });
+        } else {
+            action.run();
+        }
+    }
+
+    // ============================================================
+    // INPUT HELPERS
+    // ============================================================
+    private static String cleanName(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        if (trimmed.isEmpty()) return null;
+        return trimmed.length() > MAX_NAME_LENGTH ? trimmed.substring(0, MAX_NAME_LENGTH) : trimmed;
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
+    }
+
+    private static boolean tooLong(String value, int max) {
+        return value != null && value.length() > max;
+    }
+
+    private static boolean validCoordinate(Double lat, Double lng) {
+        return lat != null && lng != null && !lat.isNaN() && !lng.isNaN()
+                && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+    }
+
+    // A finite number >= 0, or null when it is anything else
+    private static Double nonNegative(Double value) {
+        if (value == null || value.isNaN() || value.isInfinite() || value < 0) return null;
+        return value;
+    }
+}

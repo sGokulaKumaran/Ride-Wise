@@ -142,6 +142,9 @@ class RideLocationSocketTests {
             assertEquals(13.111, received.get("location").get("lat").asDouble(), 1e-9);
 
             // A second fix must UPDATE the single latest row, not add a row.
+            // (Real clients send every ~1.5 s; anything faster than 4/s is
+            // dropped by the server's flood guard, so wait a moment.)
+            Thread.sleep(350);
             adminWs.sendMessage(new TextMessage(json(Map.of(
                     "type", "location", "rideId", rideId, "lat", 13.333, "lng", 80.444))));
 
@@ -249,6 +252,112 @@ class RideLocationSocketTests {
                 "the member's own position must be deleted");
         assertTrue(userLocationRepository.findByUserId(adminId).isPresent(),
                 "clearing must never touch another rider's position");
+    }
+
+    // ── A burst of positions cannot flood the group or the database ──
+    @Test
+    void rapidFirePositionsAreThrottled() throws Exception {
+        String adminCookie = login(adminId);
+        String memberCookie = login(memberId);
+        rideId = createGroupRide(adminCookie, List.of(memberId));
+
+        TestHandler memberHandler = new TestHandler();
+        WebSocketSession adminWs = connect(adminCookie, new TestHandler());
+        WebSocketSession memberWs = connect(memberCookie, memberHandler);
+        try {
+            adminWs.sendMessage(new TextMessage(json(Map.of("type", "subscribe", "rideId", rideId))));
+            memberWs.sendMessage(new TextMessage(json(Map.of("type", "subscribe", "rideId", rideId))));
+            assertNotNull(memberHandler.await("subscribed", 5000), "member subscribe ack");
+
+            for (int i = 0; i < 10; i++) {
+                adminWs.sendMessage(new TextMessage(json(Map.of(
+                        "type", "location", "rideId", rideId, "lat", 13.0 + i * 0.001, "lng", 80.0))));
+            }
+            assertNotNull(memberHandler.await("location", 5000), "the first position is delivered");
+            Thread.sleep(400);
+            long delivered = 1 + memberHandler.messages.stream()
+                    .filter(payload -> payload.contains("\"type\":\"location\"")).count();
+            assertTrue(delivered <= 3, "10 instant positions must not all be relayed (got " + delivered + ")");
+        } finally {
+            closeQuietly(adminWs);
+            closeQuietly(memberWs);
+        }
+    }
+
+    // ── When the admin ends the ride, members watching it are told at once ──
+    @Test
+    void endingTheRideNotifiesEveryoneOnTheMap() throws Exception {
+        String adminCookie = login(adminId);
+        String memberCookie = login(memberId);
+        rideId = createGroupRide(adminCookie, List.of(memberId));
+
+        TestHandler memberHandler = new TestHandler();
+        WebSocketSession memberWs = connect(memberCookie, memberHandler);
+        try {
+            memberWs.sendMessage(new TextMessage(json(Map.of("type", "subscribe", "rideId", rideId))));
+            assertNotNull(memberHandler.await("subscribed", 5000), "member subscribe ack");
+
+            // The member publishes a position, so there is live data to clean up.
+            ResponseEntity<String> posted = postLocation(memberCookie, 13.2, 80.2);
+            assertEquals(200, posted.getStatusCode().value());
+
+            // The admin ends the ride over REST.
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.add("Cookie", adminCookie);
+            ResponseEntity<String> ended = rest.exchange("/api/rides/" + rideId + "/status",
+                    HttpMethod.PATCH, new HttpEntity<>(json(Map.of("status", "completed")), headers), String.class);
+            assertEquals(200, ended.getStatusCode().value(), "the admin can end the ride");
+
+            JsonNode event = memberHandler.await("ride-ended", 5000);
+            assertNotNull(event, "the member must be told the ride ended");
+            assertEquals(rideId.longValue(), event.get("rideId").asLong());
+            assertEquals("completed", event.get("status").asText());
+            assertEquals(adminId.longValue(), event.get("endedBy").asLong());
+
+            // Live positions of a finished ride are gone, and it accepts no more.
+            assertTrue(userLocationRepository.findByRideId(rideId).isEmpty(),
+                    "a finished ride must not keep live positions");
+            ResponseEntity<String> late = postLocation(memberCookie, 13.3, 80.3);
+            assertEquals(400, late.getStatusCode().value(), "an ended ride accepts no positions");
+        } finally {
+            closeQuietly(memberWs);
+        }
+    }
+
+    // ── A new rider added mid-ride is announced to the group ──
+    @Test
+    void addingARiderAnnouncesTheChange() throws Exception {
+        Long friendId = saveUser("ws_friend", "ws_friend@test.com");
+        connect(adminId, friendId);
+        String adminCookie = login(adminId);
+        String memberCookie = login(memberId);
+        rideId = createGroupRide(adminCookie, List.of(memberId));
+
+        TestHandler memberHandler = new TestHandler();
+        WebSocketSession memberWs = connect(memberCookie, memberHandler);
+        try {
+            memberWs.sendMessage(new TextMessage(json(Map.of("type", "subscribe", "rideId", rideId))));
+            assertNotNull(memberHandler.await("subscribed", 5000), "member subscribe ack");
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.add("Cookie", adminCookie);
+            ResponseEntity<String> added = rest.postForEntity("/api/rides/" + rideId + "/participants",
+                    new HttpEntity<>(json(Map.of("userId", friendId)), headers), String.class);
+            assertEquals(200, added.getStatusCode().value(), "the admin can add a connected rider");
+
+            assertNotNull(memberHandler.await("participants-changed", 5000),
+                    "riders on the map must be told the group changed");
+        } finally {
+            closeQuietly(memberWs);
+            connectionRepository.deleteAll(connectionRepository.findAll().stream()
+                    .filter(c -> c.getUserId().equals(friendId) || c.getConnectedUserId().equals(friendId))
+                    .toList());
+            participantRepository.deleteByUserId(friendId);
+            notificationRepository.deleteByUserId(friendId);
+            userRepository.findById(friendId).ifPresent(userRepository::delete);
+        }
     }
 
     // ── No session cookie → the handshake is refused ──

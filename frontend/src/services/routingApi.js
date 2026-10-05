@@ -1,360 +1,744 @@
 // ============================================================
-// 🗺️ routingApi.js — Geocoding + Route calculation + Geo Math
+// routingApi.js — geocoding, road routing, geo math, formatting
 //
-// GEOCODING  : Converts a place name like "Chennai" into
-//              { lat, lng, name } using Nominatim (OpenStreetMap)
+// GEOCODING   Photon + Nominatim (OpenStreetMap) — place name ↔ coordinates
+// ROUTING     OSRM — road route + turn-by-turn steps between two points
+// GEO MATH    haversineDistance / bearingBetween
+// FORMATTING  metres, seconds, clock time, spoken distances
 //
-// ROUTING    : Calculates the road route between two lat/lng
-//              points using OSRM (free routing engine).
-//              Returns coordinates as [[lng, lat], ...] (GeoJSON order).
-//              Also returns turn-by-turn steps when steps=true is used.
+// No API key is needed for any of it.
 //
-// GEO MATH   : haversineDistance — straight-line distance between
-//              two lat/lng points (used for popup remaining-km display
-//              and for snapping the user to the nearest route point).
-//              bearingBetween — compass bearing A→B (used to rotate the
-//              GPS marker to face the direction of travel).
-//
-// FORMAT HELPERS: formatDistance / formatDuration convert
-//              raw meters/seconds into human-readable strings.
+// COORDINATE ORDER (the one thing that is easy to get wrong):
+//   navigator.geolocation      { latitude, longitude }
+//   RideWise objects           { lat, lng }
+//   OSRM URL                   {lng},{lat}
+//   OSRM / GeoJSON geometry    [lng, lat]
+//   Leaflet                    [lat, lng]
+// Route geometry is stored exactly as OSRM returns it ([lng, lat]);
+// it is flipped only at the moment it is handed to Leaflet.
 // ============================================================
 
-// ---------------------------------------------------------------------------
-// Nominatim — free OpenStreetMap geocoding API (no API key required)
-// Rate limit: 1 request per second; respect their usage policy.
-// ---------------------------------------------------------------------------
-const NOMINATIM = "https://nominatim.openstreetmap.org/search";
+const NOMINATIM = "https://nominatim.openstreetmap.org";
+const PHOTON = "https://photon.komoot.io/api/";
 
-// ---------------------------------------------------------------------------
-// OSRM — free Open Source Routing Machine (OSM road network data)
-// Returns the fastest driving route between two coordinates.
-// ---------------------------------------------------------------------------
-const OSRM = "https://router.project-osrm.org/route/v1/driving";
+// Two public OSRM servers with the same API. The second one is tried
+// automatically when the first is down, slow or rate-limiting, so one
+// overloaded demo server can no longer block "Calculate route".
+const OSRM_ENDPOINTS = [
+  "https://router.project-osrm.org/route/v1/driving",
+  "https://routing.openstreetmap.de/routed-car/route/v1/driving",
+];
 
-// ---------------------------------------------------------------------------
-// Earth's mean radius in metres — used by the Haversine formula.
-// ---------------------------------------------------------------------------
 const EARTH_RADIUS_M = 6_371_000;
+const ROUTE_TIMEOUT_MS = 12_000;
+const GEOCODE_TIMEOUT_MS = 10_000;
+const PLACE_SEARCH_TIMEOUT_MS = 6_000; // suggestions must feel quick; Nominatim is the backup
+
+// Both services ask for at most one request per second per client.
+const MIN_REQUEST_GAP_MS = 1100;
 
 // ============================================================
-// GEOCODE — convert a place name to coordinates
-//
-// INPUT:  "Chennai"
-// OUTPUT: { name: "Chennai, Tamil Nadu, India", lat: 13.08, lng: 80.27 }
-//         OR null if the place was not found
+// ERRORS
 // ============================================================
-export async function geocode(query) {
-  // Guard: don't query with an empty or whitespace-only string
-  if (!query || !query.trim()) return null;
-
-  // Build the URL — limit=1 means we only want the top result
-  // addressdetails=1 makes Nominatim return structured address components
-  const url = `${NOMINATIM}?q=${encodeURIComponent(query.trim())}&format=json&limit=1&addressdetails=1`;
-
-  const res = await fetch(url, {
-    headers: {
-      // Nominatim policy: every request must include a meaningful User-Agent
-      "Accept-Language": "en",
-      "User-Agent":      "RideWise/1.0 (ridewise.app)",
-    },
-  });
-
-  if (!res.ok) throw new Error(`Geocoding failed (HTTP ${res.status})`);
-
-  const data = await res.json();
-
-  // No results found → return null so the caller can show an error message
-  if (!data || !data.length) return null;
-
-  const first = data[0];
-  return {
-    name: first.display_name,          // Full readable address
-    lat:  parseFloat(first.lat),       // Latitude  (north-south)
-    lng:  parseFloat(first.lon),       // Longitude (east-west)
-  };
-}
-
-// ============================================================
-// GET ROUTE — calculate the fastest road route between two points
-//
-// INPUT:
-//   from = { lat, lng }   — start coordinate
-//   to   = { lat, lng }   — end coordinate
-//
-// OUTPUT:
-//   {
-//     coordinates: [[lng, lat], [lng, lat], ...],  ← GeoJSON order (lng first)
-//     distance: 150000,    ← metres (number)
-//     duration: 5400,      ← seconds (number)
-//     steps: [...]         ← parsed turn-by-turn maneuver steps
-//   }
-//   OR throws an Error if no route is found.
-//
-// NOTE ON COORDINATE ORDER:
-//   navigator.geolocation returns  { latitude, longitude }
-//   We store internally as         { lat, lng }
-//   OSRM API URL format:           {lng},{lat} (longitude first in the URL)
-//   OSRM JSON response (GeoJSON):  [lng, lat] (longitude first in the array)
-//   MapLibre expects:              [lng, lat]
-//   → We do NOT need to flip the OSRM output; it's already in the right order.
-// ============================================================
-export async function getRoute(from, to) {
-  // Guard: need both endpoints with valid coordinates
-  if (!from || !to) return null;
-
-  // OSRM URL format: /route/v1/driving/{lng1},{lat1};{lng2},{lat2}
-  // overview=full    → return the complete route geometry (not simplified)
-  // geometries=geojson → coordinates as [[lng,lat],...] array
-  // steps=true       → include turn-by-turn maneuver steps for navigation
-  const coords = `${from.lng},${from.lat};${to.lng},${to.lat}`;
-  const url = `${OSRM}/${coords}?overview=full&geometries=geojson&steps=true`;
-
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Routing request failed (HTTP ${res.status})`);
-
-  const data = await res.json();
-
-  // OSRM returns a "code" field: "Ok" means success; "NoRoute" means no path
-  if (data.code !== "Ok" || !data.routes || !data.routes.length) {
-    throw new Error("No road route found between these locations.");
-  }
-
-  const route = data.routes[0]; // The best route is always the first element
-
-  // Flatten all steps from all route legs into a single array
-  const rawSteps = route.legs?.flatMap(leg => leg.steps || []) || [];
-
-  return {
-    coordinates: route.geometry.coordinates, // [[lng, lat], ...]
-    distance:    route.distance,             // total metres
-    duration:    route.duration,             // total seconds
-    steps:       parseRouteSteps(rawSteps),  // UI-ready turn-by-turn steps
-  };
-}
-
-// ============================================================
-// PARSE ROUTE STEPS — convert raw OSRM step objects into
-// clean, UI-ready instruction objects.
-//
-// Each output step:
-//   {
-//     instruction: "Turn left onto Main Street",
-//     distance: 350,          ← metres for this step
-//     duration: 42,           ← seconds for this step
-//     icon: "fa-turn-left",   ← Font Awesome 6 icon class
-//     maneuverType: "turn",
-//     maneuverModifier: "left",
-//     location: [lng, lat],   ← coordinate where this maneuver starts
-//   }
-// ============================================================
-export function parseRouteSteps(rawSteps) {
-  return rawSteps.map(step => {
-    const maneuver = step.maneuver || {};
-    const type     = maneuver.type     || "";
-    const modifier = maneuver.modifier || "";
-    const name     = step.name || "";
-
-    return {
-      instruction:      buildInstruction(type, modifier, name),
-      distance:         step.distance  || 0,
-      duration:         step.duration  || 0,
-      icon:             getManeuverIcon(type, modifier),
-      maneuverType:     type,
-      maneuverModifier: modifier,
-      location:         maneuver.location || null,  // [lng, lat]
-    };
-  });
-}
-
-// ============================================================
-// BUILD INSTRUCTION — human-readable sentence from OSRM maneuver
-// ============================================================
-function buildInstruction(type, modifier, streetName) {
-  const on = streetName ? ` onto ${streetName}` : "";
-
-  switch (type) {
-    case "depart":
-      return streetName ? `Head on ${streetName}` : "Start your journey";
-    case "arrive":
-      return "You have arrived at your destination";
-    case "turn": {
-      const dir = modifier === "slight left"  ? "Slight left"
-                : modifier === "slight right" ? "Slight right"
-                : modifier === "sharp left"   ? "Sharp left"
-                : modifier === "sharp right"  ? "Sharp right"
-                : modifier === "left"         ? "Turn left"
-                : modifier === "right"        ? "Turn right"
-                : modifier === "uturn"        ? "Make a U-turn"
-                : "Turn";
-      return `${dir}${on}`;
-    }
-    case "new name":
-      return streetName ? `Continue onto ${streetName}` : "Continue";
-    case "merge":
-      return `Merge${modifier ? " " + modifier : ""}${on}`;
-    case "fork": {
-      const side = modifier.includes("left")  ? "left"
-                 : modifier.includes("right") ? "right" : "";
-      return side ? `Keep ${side}${on}` : `Stay on route${on}`;
-    }
-    case "end of road":
-      return modifier.includes("left")  ? `Turn left${on}`
-           : modifier.includes("right") ? `Turn right${on}` : `Continue${on}`;
-    case "roundabout":
-    case "rotary": {
-      const exit = type === "roundabout" ? undefined : undefined; // exit number in step.maneuver.exit
-      return exit ? `Take exit ${exit} from the roundabout${on}` : `Take the roundabout${on}`;
-    }
-    case "continue":
-      return `Continue straight${on}`;
-    case "on ramp":
-      return `Take the ramp${on}`;
-    case "off ramp":
-      return `Take the exit${on}`;
-    default:
-      return streetName ? `Continue on ${streetName}` : "Continue";
+export class RoutingError extends Error {
+  // code: "no-route"    → the servers answered: no road path exists
+  //       "unavailable" → no server could be reached in time
+  constructor(message, code) {
+    super(message);
+    this.name = "RoutingError";
+    this.code = code;
   }
 }
 
 // ============================================================
-// GET MANEUVER ICON — returns a Font Awesome 6 class for the step
+// GEO MATH
 // ============================================================
-export function getManeuverIcon(type, modifier = "") {
-  if (type === "arrive")                          return "fa-flag-checkered";
-  if (type === "depart")                          return "fa-location-dot";
-  if (type === "roundabout" || type === "rotary") return "fa-rotate-right";
-  if (type === "merge")                           return "fa-code-merge";
-  if (type === "on ramp")                         return "fa-arrow-up-right-from-square";
-  if (type === "off ramp")                        return "fa-arrow-turn-down";
-  if (type === "fork") {
-    return modifier.includes("left") ? "fa-turn-left" : "fa-turn-right";
-  }
-  if (type === "turn" || type === "end of road" || type === "new name") {
-    if (modifier === "uturn")        return "fa-rotate-left";
-    if (modifier === "sharp left")   return "fa-turn-left";
-    if (modifier === "left")         return "fa-turn-left";
-    if (modifier === "slight left")  return "fa-arrow-up-left";
-    if (modifier === "sharp right")  return "fa-turn-right";
-    if (modifier === "right")        return "fa-turn-right";
-    if (modifier === "slight right") return "fa-arrow-up-right";
-  }
-  return "fa-arrow-up"; // straight / continue / unknown
-}
 
-// ============================================================
-// HAVERSINE DISTANCE — straight-line distance between two points
-//
-// Uses the Haversine formula, which accounts for the Earth's curvature.
-// Accurate to within ~0.5% for distances under 1000 km.
-//
-// INPUT:
-//   lat1, lng1 — first point (decimal degrees)
-//   lat2, lng2 — second point (decimal degrees)
-//
-// OUTPUT:
-//   Distance in metres (number)
-//
-// USAGE:
-//   • RideMap.jsx uses this to find the closest route point to the user
-//   • Destination popup uses this for the "remaining km" display
-// ============================================================
+// Straight-line distance between two points, in metres (Haversine).
 export function haversineDistance(lat1, lng1, lat2, lng2) {
-  // Convert degrees to radians (the trig functions in JS use radians)
-  const toRad = deg => (deg * Math.PI) / 180;
-
-  const dLat = toRad(lat2 - lat1); // Δlatitude in radians
-  const dLng = toRad(lng2 - lng1); // Δlongitude in radians
-
-  // Haversine formula:
-  // a = sin²(Δlat/2) + cos(lat1)·cos(lat2)·sin²(Δlng/2)
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
   const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-    Math.sin(dLng / 2) * Math.sin(dLng / 2);
-
-  // c = 2·atan2(√a, √(1−a))   ← angular distance in radians
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return EARTH_RADIUS_M * c; // distance in metres
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return EARTH_RADIUS_M * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// ============================================================
-// BEARING BETWEEN — compass bearing from point A → point B
-//
-// Returns degrees 0–360 (0 = North, 90 = East, 180 = South, 270 = West)
-// Used to rotate the GPS marker arrow to face the direction of travel.
-// ============================================================
+// Compass bearing from A to B: 0 = north, 90 = east, 180 = south, 270 = west.
 export function bearingBetween(lat1, lng1, lat2, lng2) {
-  const toRad = deg => (deg * Math.PI) / 180;
-  const toDeg = rad => (rad * 180) / Math.PI;
-
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const toDeg = (rad) => (rad * 180) / Math.PI;
   const dLng = toRad(lng2 - lng1);
-  const y    = Math.sin(dLng) * Math.cos(toRad(lat2));
-  const x    =
+  const y = Math.sin(dLng) * Math.cos(toRad(lat2));
+  const x =
     Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
     Math.sin(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.cos(dLng);
-
   return (toDeg(Math.atan2(y, x)) + 360) % 360;
 }
 
 // ============================================================
-// FIND ACTIVE STEP — returns the index of the upcoming step
-// that is closest (in distance) to the user's current position.
-//
-// Used by the navigation panel to highlight the next maneuver.
+// FORMATTING
 // ============================================================
-export function findActiveStep(steps, userLat, userLng) {
-  if (!steps?.length || userLat == null || userLng == null) return 0;
 
-  let nearest = 0;
-  let minDist  = Infinity;
-
-  steps.forEach((step, i) => {
-    const loc = step.location; // [lng, lat]
-    if (!loc) return;
-    const d = haversineDistance(userLat, userLng, loc[1], loc[0]);
-    if (d < minDist) {
-      minDist  = d;
-      nearest  = i;
-    }
-  });
-
-  return nearest;
-}
-
-// ============================================================
-// FORMAT DISTANCE — meters → human-readable string
-//
-// Examples:  850    → "850 m"
-//            3500   → "3.5 km"
-//            150000 → "150.0 km"
-// ============================================================
+// 850 → "850 m" · 3500 → "3.5 km" · 150000 → "150 km"
 export function formatDistance(meters) {
-  if (meters == null) return "—";            // null / undefined → dash
-  if (meters < 1000)  return `${Math.round(meters)} m`;
-  return `${(meters / 1000).toFixed(1)} km`;
+  if (meters == null || !Number.isFinite(Number(meters))) return "—";
+  const m = Math.max(0, Number(meters));
+  if (m < 1000) return `${Math.round(m)} m`;
+  const km = m / 1000;
+  return km >= 100 ? `${Math.round(km)} km` : `${km.toFixed(1)} km`;
 }
 
-// ============================================================
-// FORMAT DURATION — seconds → human-readable string
-//
-// Examples:  45   → "45 min"
-//            3600 → "1 h"
-//            5400 → "1 h 30 min"
-// ============================================================
+// Distance to the next turn. Rounded the way navigation apps round it,
+// so the number counts down in calm steps instead of flickering by the
+// metre: 1.2 km · 450 m · 80 m · 20 m.
+export function formatManeuverDistance(meters) {
+  if (meters == null || !Number.isFinite(Number(meters))) return "";
+  const m = Math.max(0, Number(meters));
+  if (m >= 10_000) return `${Math.round(m / 1000)} km`;
+  if (m >= 1000) return `${(m / 1000).toFixed(1)} km`;
+  if (m >= 300) return `${Math.round(m / 50) * 50} m`;
+  if (m >= 30) return `${Math.round(m / 10) * 10} m`;
+  return `${Math.max(5, Math.round(m / 5) * 5)} m`;
+}
+
+// 45 → "1 min" · 600 → "10 min" · 5400 → "1 h 30 min"
 export function formatDuration(seconds) {
-  if (seconds == null) return "—";           // null / undefined → dash
-  const h = Math.floor(seconds / 3600);     // full hours
-  const m = Math.floor((seconds % 3600) / 60); // remaining minutes
+  if (seconds == null || !Number.isFinite(Number(seconds))) return "—";
+  const total = Math.max(0, Number(seconds));
+  if (total < 60) return "1 min";
+  const h = Math.floor(total / 3600);
+  const m = Math.round((total % 3600) / 60);
   if (h === 0) return `${m} min`;
   if (m === 0) return `${h} h`;
+  if (m === 60) return `${h + 1} h`;
   return `${h} h ${m} min`;
 }
 
-// ============================================================
-// FORMAT SPEED — m/s → km/h string
-// ============================================================
+// Was the distance of this ride measured while riding? (0 m counts: the
+// ride was tracked and nothing was ridden. Rides finished before tracking
+// existed — or closed by the server — carry no figure at all.)
+export function hasTrackedDistance(ride) {
+  return ride?.actualDistanceMeters != null && Number(ride.actualDistanceMeters) >= 0;
+}
+
+// Metres a ride really contributed to "distance ridden":
+//   tracked            → what was measured, even when that is 0
+//   completed, legacy  → its planned length (the best figure there is)
+//   active / cancelled → nothing yet
+export function rideRiddenMeters(ride) {
+  if (hasTrackedDistance(ride)) return Number(ride.actualDistanceMeters);
+  return ride?.status === "completed" ? Number(ride.distanceMeters) || 0 : 0;
+}
+
+// How long a ride took, in seconds — for lists and summaries.
+//   finished ride → start to end, when both are known and believable
+//   otherwise     → the planned riding time
+// A ride that was left running and closed much later (forgotten, or ended
+// automatically after two days) did not take that long to RIDE: past
+// 18 hours the planned time is the more honest figure.
+export function rideTimeSeconds(ride) {
+  const planned = Number(ride?.durationSeconds) > 0 ? Number(ride.durationSeconds) : null;
+  if (!ride || ride.status === "active") return planned;
+  const elapsed = (Date.parse(ride.endedAt) - Date.parse(ride.createdAt)) / 1000;
+  if (Number.isFinite(elapsed) && elapsed > 0 && elapsed <= 18 * 3600) return elapsed;
+  return planned;
+}
+
+// m/s → whole km/h as a string
 export function formatSpeed(mps) {
-  if (mps == null || mps < 0) return "0";
-  return Math.round(mps * 3.6).toString(); // convert m/s to km/h
+  if (mps == null || !Number.isFinite(Number(mps)) || mps < 0) return "0";
+  return Math.round(mps * 3.6).toString();
+}
+
+// Timestamp (ms) → local clock time, e.g. "4:35 PM"
+export function formatClock(ms) {
+  if (ms == null || !Number.isFinite(Number(ms))) return "—";
+  try {
+    return new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  } catch {
+    return "—";
+  }
+}
+
+// Distance as it should be SPOKEN: "300 metres", "1.5 kilometres"
+export function spokenDistance(meters) {
+  const m = Math.max(0, Number(meters) || 0);
+  if (m >= 1000) {
+    const km = m >= 10_000 ? Math.round(m / 1000) : Math.round(m / 100) / 10;
+    return `${km} ${km === 1 ? "kilometre" : "kilometres"}`;
+  }
+  const rounded = m >= 300 ? Math.round(m / 50) * 50 : Math.max(10, Math.round(m / 10) * 10);
+  return `${rounded} metres`;
+}
+
+// "Marina Beach, Chennai, Tamil Nadu, India" → "Marina Beach"
+export function shortPlaceName(name, fallback = "") {
+  const first = String(name || "").split(",")[0].trim();
+  return first || fallback;
+}
+
+// ============================================================
+// TURN-BY-TURN STEPS
+//
+// parseRouteSteps() turns raw OSRM steps into the objects RideWise
+// stores with a ride and shows in the navigation UI:
+//   {
+//     instruction       "Turn left onto Anna Salai"
+//     distance          metres ridden on this step (AFTER its maneuver)
+//     duration          seconds for this step
+//     maneuverType      OSRM maneuver type ("turn", "roundabout", …)
+//     maneuverModifier  OSRM modifier ("left", "slight right", …)
+//     name / ref        road name and number, when known
+//     exit              roundabout exit number, when known
+//     location          [lng, lat] where the maneuver happens
+//     icon              name in the RideWise icon family
+//   }
+// ============================================================
+export function parseRouteSteps(rawSteps) {
+  if (!Array.isArray(rawSteps)) return [];
+  return rawSteps.map((step) => {
+    const maneuver = step?.maneuver || {};
+    const parsed = {
+      distance: Number(step?.distance) || 0,
+      duration: Number(step?.duration) || 0,
+      maneuverType: maneuver.type || "",
+      maneuverModifier: maneuver.modifier || "",
+      name: step?.name || "",
+      ref: step?.ref || "",
+      exit: Number.isFinite(maneuver.exit) ? maneuver.exit : null,
+      location: Array.isArray(maneuver.location) ? maneuver.location : null,
+      bearingAfter: Number.isFinite(maneuver.bearing_after) ? maneuver.bearing_after : null,
+    };
+    parsed.instruction = buildInstruction(parsed);
+    parsed.icon = stepIconName(parsed);
+    return parsed;
+  });
+}
+
+const COMPASS = ["north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west"];
+const ORDINALS = ["", "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th", "10th"];
+
+function compassWord(bearing) {
+  const normalised = ((bearing % 360) + 360) % 360;
+  return COMPASS[Math.round(normalised / 45) % 8];
+}
+
+// "left" / "right" / "" from an OSRM modifier such as "slight left"
+function sideOf(modifier) {
+  const m = String(modifier || "");
+  if (m.includes("left")) return "left";
+  if (m.includes("right")) return "right";
+  return "";
+}
+
+// Road label: the name, plus the road number when it adds information.
+function roadLabel(name, ref) {
+  if (name && ref && !name.includes(ref)) return `${name} (${ref})`;
+  return name || ref || "";
+}
+
+function turnPhrase(modifier) {
+  switch (modifier) {
+    case "left":         return "Turn left";
+    case "right":        return "Turn right";
+    case "slight left":  return "Bear left";
+    case "slight right": return "Bear right";
+    case "sharp left":   return "Turn sharp left";
+    case "sharp right":  return "Turn sharp right";
+    case "uturn":        return "Make a U-turn";
+    default:             return "Continue straight";
+  }
+}
+
+// One readable sentence for a step.
+function buildInstruction({ maneuverType: type, maneuverModifier: modifier, name, ref, exit, bearingAfter }) {
+  const road = roadLabel(name, ref);
+  const onto = road ? ` onto ${road}` : "";
+  const on = road ? ` on ${road}` : "";
+  const side = sideOf(modifier);
+
+  switch (type) {
+    case "depart":
+      if (bearingAfter != null) return `Head ${compassWord(bearingAfter)}${on}`;
+      return road ? `Start on ${road}` : "Start riding";
+
+    case "arrive":
+      return side ? `Arrive at your destination, on the ${side}` : "Arrive at your destination";
+
+    case "turn":
+      return `${turnPhrase(modifier)}${onto}`;
+
+    case "new name":
+      return road ? `Continue onto ${road}` : "Continue straight";
+
+    case "continue":
+      if (modifier === "uturn") return road ? `Make a U-turn and continue on ${road}` : "Make a U-turn";
+      if (modifier === "left" || modifier === "right" || modifier?.startsWith("sharp")) {
+        return road ? `Turn ${side} to stay on ${road}` : `Turn ${side}`;
+      }
+      if (side) return road ? `Keep ${side} to stay on ${road}` : `Keep ${side}`;
+      return `Continue straight${on}`;
+
+    case "merge":
+      return `Merge${side ? ` ${side}` : ""}${onto}`;
+
+    case "on ramp":
+      return `Take the ramp${side ? ` on the ${side}` : ""}${onto}`;
+
+    case "off ramp":
+      return `Take the exit${side ? ` on the ${side}` : ""}${onto}`;
+
+    case "fork":
+      return `Keep ${side || "straight"} at the fork${onto}`;
+
+    case "end of road":
+      if (modifier === "uturn") return "At the end of the road, make a U-turn";
+      return `At the end of the road, turn ${side || "ahead"}${onto}`;
+
+    case "roundabout":
+    case "rotary":
+      return exit && ORDINALS[exit]
+        ? `At the roundabout, take the ${ORDINALS[exit]} exit${onto}`
+        : `Enter the roundabout${onto}`;
+
+    case "roundabout turn":
+      return side ? `At the roundabout, turn ${side}${onto}` : `At the roundabout, continue straight${onto}`;
+
+    case "exit roundabout":
+    case "exit rotary":
+      return `Exit the roundabout${onto}`;
+
+    default:
+      return road ? `Continue on ${road}` : "Continue";
+  }
+}
+
+// Which icon of the RideWise family draws this step.
+// Works for freshly parsed steps AND for steps stored by older versions
+// (which carry a Font Awesome class in `icon` and no reliable modifier).
+export function stepIconName(step) {
+  if (!step) return "maneuverStraight";
+  const type = step.maneuverType || "";
+  const modifier = String(step.maneuverModifier || "");
+  const legacy = String(step.icon || "");
+
+  if (type === "rejoin") return "maneuverMerge";
+  if (type === "arrive" || legacy.includes("flag")) return "maneuverArrive";
+  if (type === "depart" || legacy.includes("location-dot")) return "maneuverDepart";
+  if (type.includes("roundabout") || type.includes("rotary")) return "maneuverRoundabout";
+  if (type === "merge" || legacy.includes("merge")) return "maneuverMerge";
+  if (type === "fork") return sideOf(modifier) === "left" ? "maneuverKeepLeft" : "maneuverKeepRight";
+  if (type === "on ramp" || type === "off ramp") {
+    return sideOf(modifier) === "left" ? "maneuverSlightLeft" : "maneuverSlightRight";
+  }
+
+  if (modifier === "uturn" || legacy.includes("rotate-left")) return "maneuverUTurn";
+  if (modifier === "sharp left") return "maneuverSharpLeft";
+  if (modifier === "sharp right") return "maneuverSharpRight";
+  if (modifier === "slight left" || legacy.includes("up-left")) return "maneuverSlightLeft";
+  if (modifier === "slight right" || legacy.includes("up-right")) return "maneuverSlightRight";
+  if (modifier === "left" || legacy.includes("turn-left")) return "maneuverLeft";
+  if (modifier === "right" || legacy.includes("turn-right")) return "maneuverRight";
+  return "maneuverStraight";
+}
+
+// ============================================================
+// NETWORK HELPERS
+// ============================================================
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function abortError() {
+  const err = new Error("Request cancelled");
+  err.name = "AbortError";
+  return err;
+}
+
+// One politeness queue per service: requests START at least
+// MIN_REQUEST_GAP_MS apart. A higher `priority` jumps the line, so the
+// rider's own reroute never waits behind background lookups (the rejoin
+// lines drawn for other riders). A slow request does not hold up the
+// next one — only the start times are spaced.
+function createQueue() {
+  const waiting = [];
+  let pumping = false;
+  let lastStart = 0;
+
+  async function pump() {
+    if (pumping) return;
+    pumping = true;
+    while (waiting.length) {
+      const wait = lastStart + MIN_REQUEST_GAP_MS - Date.now();
+      if (wait > 0) await sleep(wait);
+
+      // Highest priority first; first-come-first-served within a priority.
+      let best = 0;
+      for (let i = 1; i < waiting.length; i++) {
+        if (waiting[i].priority > waiting[best].priority) best = i;
+      }
+      const job = waiting.splice(best, 1)[0];
+      if (job.signal?.aborted) { job.reject(abortError()); continue; }
+
+      lastStart = Date.now();
+      Promise.resolve().then(job.task).then(job.resolve, job.reject);
+    }
+    pumping = false;
+  }
+
+  return function enqueue(task, signal, priority = 1) {
+    return new Promise((resolve, reject) => {
+      waiting.push({ task, signal, priority, resolve, reject });
+      pump();
+    });
+  };
+}
+
+const routeQueue = createQueue();
+const geocodeQueue = createQueue();
+
+// fetch() that gives up after `ms` and also honours the caller's signal.
+// Resolves to { res } or { timedOut: true }; throws AbortError only when
+// the CALLER cancelled.
+async function fetchWithTimeout(url, { signal, ms, headers } = {}) {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, ms);
+  const onAbort = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener("abort", onAbort, { once: true });
+  }
+  try {
+    const res = await fetch(url, { signal: controller.signal, headers });
+    return { res };
+  } catch (err) {
+    if (signal?.aborted) throw abortError();
+    if (timedOut) return { timedOut: true };
+    return { failed: true, error: err };
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
+  }
+}
+
+// Convert one OSRM route into the RideWise shape.
+function toRoute(route) {
+  const rawSteps = route.legs?.flatMap((leg) => leg.steps || []) || [];
+  return {
+    coordinates: route.geometry?.coordinates || [], // [[lng, lat], ...]
+    distance: route.distance,                       // metres
+    duration: route.duration,                       // seconds
+    steps: parseRouteSteps(rawSteps),
+    summary: route.legs?.map((leg) => leg.summary).filter(Boolean).join(", ") || "",
+  };
+}
+
+// Index of the OSRM server that answered last — tried first next time.
+let preferredEndpoint = 0;
+
+// ============================================================
+// FETCH ROUTES — the low-level routing call
+//
+// from / to   { lat, lng }
+// options:
+//   alternatives  also return up to two alternative routes
+//   bearing       rider's heading in degrees — the start is matched to a
+//                 road going that way, so a reroute does not begin with
+//                 an instant U-turn when a way forward exists
+//   signal        AbortSignal to cancel the request
+//   priority      1 = the rider is waiting for it (default)
+//                 0 = background work that may wait its turn
+//
+// Resolves to an ARRAY of routes (best first).
+// Rejects with RoutingError ("no-route" | "unavailable") or AbortError.
+// ============================================================
+export function fetchRoutes(from, to, { alternatives = false, bearing = null, signal, priority = 1 } = {}) {
+  const valid = (p) => p && Number.isFinite(p.lat) && Number.isFinite(p.lng);
+  if (!valid(from) || !valid(to)) {
+    return Promise.reject(new RoutingError("A start and a destination are required.", "no-route"));
+  }
+
+  const coords = `${from.lng},${from.lat};${to.lng},${to.lat}`;
+  const base = `overview=full&geometries=geojson&steps=true${alternatives ? "&alternatives=true" : ""}`;
+  const withBearing = Number.isFinite(bearing)
+    ? `${base}&bearings=${Math.round(((bearing % 360) + 360) % 360)},60;&radiuses=80;unlimited`
+    : null;
+
+  return routeQueue(async () => {
+    const order = [preferredEndpoint, ...OSRM_ENDPOINTS.keys()].filter(
+      (value, index, list) => list.indexOf(value) === index,
+    );
+
+    for (const index of order) {
+      // With a heading first; without it when that finds no usable road.
+      for (const query of withBearing ? [withBearing, base] : [base]) {
+        const outcome = await fetchWithTimeout(`${OSRM_ENDPOINTS[index]}/${coords}?${query}`, {
+          signal,
+          ms: ROUTE_TIMEOUT_MS,
+        });
+        if (!outcome.res) break;                // network error / timeout → next server
+        if (!outcome.res.ok && outcome.res.status !== 400) break; // 429 / 5xx → next server
+
+        let data;
+        try { data = await outcome.res.json(); } catch { break; }
+
+        if (data?.code === "Ok" && data.routes?.length) {
+          preferredEndpoint = index;
+          return data.routes.map(toRoute);
+        }
+        // "NoRoute" / "NoSegment" is a real answer, not an outage. With a
+        // heading it may only mean "no road going that way" → fall through
+        // to the unconstrained query. Without one it is final: another
+        // server would say the same.
+        if (query === base) {
+          throw new RoutingError("No road route was found between these places.", "no-route");
+        }
+      }
+    }
+
+    throw new RoutingError(
+      "The routing service isn't responding. Check your connection and try again.",
+      "unavailable",
+    );
+  }, signal, priority);
+}
+
+// Best route between two points (or throws RoutingError).
+export async function getRoute(from, to, options = {}) {
+  const routes = await fetchRoutes(from, to, options);
+  return routes[0];
+}
+
+// ============================================================
+// SEARCH PLACES — typed text → places to choose from
+//
+//   searchPlaces("chennai central railway station", { near })
+//     → [{ label, name, detail, lat, lng, area }, …]   (best first, max `limit`)
+//
+//   name    the place itself          "Chennai Central Railway Station"
+//   detail  where it is               "Park Town, Chennai, Tamil Nadu"
+//   label   both, for saving/showing  "Chennai Central Railway Station, Park Town, …"
+//   area    true for a region (state, district) rather than a spot
+//
+// TWO SERVICES THAT COVER FOR EACH OTHER
+//   Photon     made for search-as-you-type: forgives typos and extra words
+//              ("marina bech", "… railway station") and, given `near`,
+//              lists nearby places first. Its public server is fast when
+//              healthy but has slow spells.
+//   Nominatim  dependable and strict: an exact name works, a typo finds
+//              nothing — which used to read as "this place does not exist".
+//
+//   Photon is asked first and gets a short head start. If it has not found
+//   anything by then (slow, down, or no match) Nominatim is asked as well
+//   and whichever finds something first is shown. After a failure Photon
+//   is left alone for a minute, so a slow spell costs one wait, not one
+//   per keystroke.
+//
+// `near` ({ lat, lng }) is optional and is rounded to about a kilometre
+// before it is sent: enough to rank nearby places first, without handing
+// the rider's exact position to a search service.
+//
+// Resolves to [] when nothing matches. Rejects (with a message that is
+// safe to show) only when NEITHER service could be reached — so the UI
+// can tell "no such place" apart from "no connection".
+// ============================================================
+const PHOTON_HEAD_START_MS = 1200;
+const PHOTON_REST_MS = 60_000;
+let photonRestUntil = 0;
+
+function uniqueParts(parts) {
+  const seen = new Set();
+  const kept = [];
+  for (const part of parts) {
+    const text = typeof part === "string" ? part.trim() : "";
+    if (!text || seen.has(text.toLowerCase())) continue;
+    seen.add(text.toLowerCase());
+    kept.push(text);
+  }
+  return kept;
+}
+
+function toPlace(nameParts, detailParts, lat, lng, area) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  const all = uniqueParts([...nameParts, ...detailParts]);
+  if (!all.length) return null;
+  const [name, ...rest] = all;
+  return { label: all.join(", "), name, detail: rest.join(", "), lat, lng, area: Boolean(area) };
+}
+
+function fromPhoton(feature) {
+  const p = feature?.properties || {};
+  const [lng, lat] = feature?.geometry?.coordinates || [];
+  const street = p.street ? [p.housenumber, p.street].filter(Boolean).join(" ") : "";
+  return toPlace(
+    [p.name || street],
+    [p.name ? street : "", p.district || p.locality, p.city || p.county, p.state, p.country],
+    lat, lng,
+    p.osm_key === "boundary",
+  );
+}
+
+function fromNominatim(item) {
+  // A full Nominatim name runs to eight or more parts ("…, Ward 59, Zone 5
+  // Royapuram, Chennai, Tamil Nadu, 600003, India"). Keep what a rider
+  // would say: the place, its street or area, the town, the state.
+  const parts = String(item?.display_name || "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part && !/^\d[\d\s-]*$/.test(part)); // no postcodes
+  const a = item?.address;
+  const detail = a
+    ? [
+        a.road || a.neighbourhood || a.suburb || a.city_district,
+        a.city || a.town || a.village || a.municipality || a.county,
+        a.state,
+        a.country,
+      ]
+    : parts.slice(1, 4);
+  return toPlace(
+    [item?.name || parts[0]], detail,
+    parseFloat(item?.lat), parseFloat(item?.lon),
+    item?.category === "boundary" || item?.class === "boundary",
+  );
+}
+
+const sameName = (a, b) => a.name.toLowerCase() === b.name.toLowerCase();
+
+// Tidy a raw result list:
+//   • the same label, or the same spot twice (within ~20 m) → keep the first
+//   • a region is listed AFTER the town of the same name. A region's centre
+//     point can be far from anywhere — the centre of the Puducherry
+//     territory lies 110 km from Pondicherry town — so the town is the
+//     better first suggestion and the better "best match".
+export function tidyPlaces(places, limit = places.length) {
+  const kept = [];
+  for (const place of places) {
+    const twin = kept.some((other) =>
+      other.label.toLowerCase() === place.label.toLowerCase() ||
+      (sameName(other, place) && haversineDistance(other.lat, other.lng, place.lat, place.lng) < 20));
+    if (!twin) kept.push(place);
+  }
+  for (let i = 0; i < kept.length; i++) {
+    if (!kept[i].area) continue;
+    const town = kept.findIndex((other, index) => index > i && !other.area && sameName(other, kept[i]));
+    if (town > i) kept.splice(i, 0, kept.splice(town, 1)[0]);
+  }
+  return kept.slice(0, limit);
+}
+
+// Each resolves to { answered, places } and never rejects.
+//   answered  false when the service could not be reached / read
+async function askPhoton(text, near, limit, signal) {
+  const params = new URLSearchParams({ q: text, limit: String(limit + 2), lang: "en" });
+  if (near && Number.isFinite(near.lat) && Number.isFinite(near.lng)) {
+    params.set("lat", near.lat.toFixed(2));
+    params.set("lon", near.lng.toFixed(2));
+  }
+  try {
+    const outcome = await fetchWithTimeout(`${PHOTON}?${params}`, { signal, ms: PLACE_SEARCH_TIMEOUT_MS });
+    if (!outcome.res?.ok) throw new Error("photon unavailable");
+    const data = await outcome.res.json();
+    return { answered: true, places: tidyPlaces((data?.features || []).map(fromPhoton).filter(Boolean), limit) };
+  } catch (err) {
+    if (err?.name !== "AbortError") photonRestUntil = Date.now() + PHOTON_REST_MS;
+    return { answered: false, places: [] };
+  }
+}
+
+async function askNominatim(text, limit, signal) {
+  const url = `${NOMINATIM}/search?q=${encodeURIComponent(text)}&format=jsonv2&addressdetails=1&limit=${limit + 2}`;
+  try {
+    const outcome = await geocodeQueue(
+      () => fetchWithTimeout(url, { signal, ms: GEOCODE_TIMEOUT_MS, headers: { "Accept-Language": "en" } }),
+      signal,
+    );
+    if (!outcome.res?.ok) throw new Error("nominatim unavailable");
+    const data = await outcome.res.json();
+    if (!Array.isArray(data)) throw new Error("nominatim unreadable");
+    return { answered: true, places: tidyPlaces(data.map(fromNominatim).filter(Boolean), limit) };
+  } catch {
+    return { answered: false, places: [] };
+  }
+}
+
+// The first ask that finds something wins; when none does, report whether
+// anybody answered at all.
+function firstWithPlaces(asks) {
+  return new Promise((resolve) => {
+    let pending = asks.length;
+    let answered = false;
+    for (const ask of asks) {
+      ask.then((outcome) => {
+        answered = answered || outcome.answered;
+        pending -= 1;
+        if (outcome.places.length) resolve({ answered: true, places: outcome.places });
+        else if (pending === 0) resolve({ answered, places: [] });
+      });
+    }
+  });
+}
+
+export async function searchPlaces(query, { near = null, limit = 6, signal } = {}) {
+  const text = String(query || "").trim();
+  if (text.length < 2) return [];
+
+  const asks = [];
+  if (Date.now() >= photonRestUntil) {
+    const photon = askPhoton(text, near, limit, signal);
+    asks.push(photon);
+    // Photon alone first: when it is healthy it answers within a moment.
+    const quick = await Promise.race([photon, sleep(PHOTON_HEAD_START_MS).then(() => null)]);
+    if (signal?.aborted) throw abortError();
+    if (quick?.places.length) return quick.places;
+  }
+
+  // Slow, resting, or nothing found → Nominatim joins in.
+  asks.push(askNominatim(text, limit, signal));
+  const outcome = await firstWithPlaces(asks);
+  if (signal?.aborted) throw abortError();
+
+  if (!outcome.answered) {
+    throw new Error("The place search isn't responding. Check your connection and try again.");
+  }
+  return outcome.places;
+}
+
+// ============================================================
+// GEOCODE — place name → { name, lat, lng } (null when not found)
+//
+// The best match of searchPlaces(). Used when the rider typed a place
+// and pressed "Next" without picking one of the suggestions.
+// ============================================================
+export async function geocode(query, { near = null, signal } = {}) {
+  const [best] = await searchPlaces(query, { near, limit: 5, signal });
+  return best ? { name: best.label, lat: best.lat, lng: best.lng } : null;
+}
+
+// ============================================================
+// REVERSE GEOCODE — coordinates → a short readable place name
+//
+// Used when a ride starts from "my current location", so the ride is
+// saved as "Anna Salai, Chennai → …" instead of "Start Location → …".
+// Never throws: resolves to null when the lookup fails.
+// ============================================================
+export async function reverseGeocode(lat, lng, { signal } = {}) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  const url = `${NOMINATIM}/reverse?lat=${lat}&lon=${lng}&format=jsonv2&zoom=17&addressdetails=1`;
+  try {
+    const outcome = await geocodeQueue(
+      () => fetchWithTimeout(url, { signal, ms: GEOCODE_TIMEOUT_MS, headers: { "Accept-Language": "en" } }),
+      signal,
+    );
+    if (!outcome.res?.ok) return null;
+    const data = await outcome.res.json();
+    const a = data?.address || {};
+    const near = a.road || a.pedestrian || a.neighbourhood || a.suburb || a.hamlet || "";
+    const town = a.city || a.town || a.village || a.municipality || a.county || a.state_district || "";
+    const label = [near, town].filter(Boolean).join(", ");
+    return label || shortPlaceName(data?.display_name) || null;
+  } catch {
+    return null;
+  }
 }

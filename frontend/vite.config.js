@@ -1,5 +1,5 @@
 import react from '@vitejs/plugin-react'
-import path from 'path'
+import { fileURLToPath } from 'node:url'
 import { defineConfig, loadEnv } from 'vite'
 
 // https://vite.dev/config/
@@ -15,7 +15,10 @@ export default defineConfig(({ mode }) => {
 
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, './src')
+        // The ES-module way to say "the src folder next to this file"
+        // (__dirname does not exist in ES modules; Vite warned about it
+        // on every start).
+        '@': fileURLToPath(new URL('./src', import.meta.url))
       }
     },
 

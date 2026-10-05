@@ -19,12 +19,14 @@
 // ============================================================
 
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../../context/AuthContext";
 import RideSetupFlow from "../ride/RideSetupFlow";
 import { getConnectionsFull } from "../../../services/ridersApi";
+import { shortPlaceName } from "../../../services/routingApi";
 import Button, { IconButton } from "../ui/Button";
 import Icon from "../ui/Icon";
-import { themes } from "../../hooks/useTheme";
+import { useTheme } from "../../hooks/useTheme";
 
 // Internal screen names
 const SCREEN = {
@@ -34,12 +36,21 @@ const SCREEN = {
   SETUP:   "setup",
 };
 
-export default function StartRideModal({ open, onClose, tc: tcProp, onRideCreated, onOpenHistory }) {
+// The sheet's content is mounted only while it is open, so every opening
+// starts on the first screen with a clean selection — no reset effect needed.
+export default function StartRideModal({ open, ...props }) {
+  if (!open) return null;
+  return <StartRideSheet {...props} />;
+}
+
+function StartRideSheet({ onClose, tc: tcProp, activeRide = null, onContinueRide, onRideCreated, onOpenHistory }) {
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   // Theme tokens. `tc` is normally passed in by Home, but resolving it here
   // as a fallback means a missing prop can never blank the screen.
-  const tc = tcProp || themes[localStorage.getItem("ridewise-theme")] || themes.dark;
+  const { tc: themeTc } = useTheme(user?.id);
+  const tc = tcProp || themeTc;
 
   // Which screen is currently shown inside the modal
   const [screen,   setScreen]   = useState(SCREEN.HOME);
@@ -47,18 +58,28 @@ export default function StartRideModal({ open, onClose, tc: tcProp, onRideCreate
   const [friends, setFriends] = useState([]);
   const [selectedRiders, setSelectedRiders] = useState([]);
   const [loadingFriends, setLoadingFriends] = useState(false);
+  const [friendsError, setFriendsError] = useState("");
 
-  // Reset to home screen whenever the modal is opened fresh
-  useEffect(() => {
-    if (open) setScreen(SCREEN.HOME);
-  }, [open]);
+  // The rider's connections, for the group-ride picker. A failed request
+  // is reported as such — it used to look exactly like "you have no riders".
+  const loadFriends = () => {
+    setLoadingFriends(true);
+    setFriendsError("");
+    getConnectionsFull()
+      .then((list) => setFriends(list || []))
+      .catch((err) => {
+        setFriends([]);
+        setFriendsError(err.message || "Couldn't load your riders. Please try again.");
+      })
+      .finally(() => setLoadingFriends(false));
+  };
 
   // Close on Escape key
   useEffect(() => {
     const handler = e => { if (e.key === "Escape") onClose(); };
-    if (open) document.addEventListener("keydown", handler);
+    document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [open, onClose]);
+  }, [onClose]);
 
   // Handler: ride successfully created in the setup wizard
   const handleRideCreated = (ride) => {
@@ -72,14 +93,12 @@ export default function StartRideModal({ open, onClose, tc: tcProp, onRideCreate
     onOpenHistory();   // Home.jsx will open the history panel
   };
 
-  if (!open) return null;
-
   // ---- Header labels per screen ----
   const headerLabel = {
-    [SCREEN.HOME]:  { icon: "ride",   title: "RideWise"          },
-    [SCREEN.TYPE]:  { icon: "route",  title: "Choose Ride Type"  },
-    [SCREEN.RIDERS]: { icon: "riders", title: "Select Riders" },
-    [SCREEN.SETUP]: { icon: "map",    title: rideType === "solo" ? "Solo Ride Setup" : "Group Ride Setup" },
+    [SCREEN.HOME]:  { icon: "ride",   title: "Rides"                },
+    [SCREEN.TYPE]:  { icon: "route",  title: "Who's riding?"        },
+    [SCREEN.RIDERS]: { icon: "riders", title: "Choose your riders"  },
+    [SCREEN.SETUP]: { icon: "map",    title: rideType === "solo" ? "Plan a solo ride" : "Plan a group ride" },
   }[screen];
 
   return (
@@ -134,9 +153,32 @@ export default function StartRideModal({ open, onClose, tc: tcProp, onRideCreate
             {screen === SCREEN.HOME && (
               <div className="flex flex-col gap-3">
 
+                {/* A ride is already running → getting back to it comes first */}
+                {activeRide && (
+                  <Button
+                    variant="accent"
+                    size="lg"
+                    full
+                    onClick={() => { onClose(); onContinueRide?.(); }}
+                    className="!h-auto w-full whitespace-normal py-4 text-left"
+                    tc={tc}
+                  >
+                    <span className="flex w-full items-center gap-4 whitespace-normal">
+                      <Icon name="navigate" size={22} />
+                      <span className="flex min-w-0 flex-1 flex-col gap-1">
+                        <span className="text-base font-semibold">Continue your ride</span>
+                        <span className="truncate text-xs font-normal opacity-80">
+                          To {shortPlaceName(activeRide.destinationName, "your destination")} — still in progress
+                        </span>
+                      </span>
+                      <Icon name="arrowRight" size={16} className="opacity-70" />
+                    </span>
+                  </Button>
+                )}
+
                 {/* NEW RIDE card — the main action of this screen */}
                 <Button
-                  variant="primary"
+                  variant={activeRide ? "secondary" : "primary"}
                   size="lg"
                   full
                   onClick={() => setScreen(SCREEN.TYPE)}
@@ -146,9 +188,9 @@ export default function StartRideModal({ open, onClose, tc: tcProp, onRideCreate
                   <span className="flex w-full items-center gap-4 whitespace-normal">
                     <Icon name="ride" size={22} />
                     <span className="flex min-w-0 flex-1 flex-col gap-1">
-                      <span className="text-base font-semibold">Start a New Ride</span>
+                      <span className="text-base font-semibold">Start a new ride</span>
                       <span className="text-xs font-normal opacity-70">
-                        Plan your route with geocoding + live map
+                        Pick a destination and get turn-by-turn directions
                       </span>
                     </span>
                     <Icon name="arrowRight" size={16} className="opacity-60" />
@@ -167,7 +209,7 @@ export default function StartRideModal({ open, onClose, tc: tcProp, onRideCreate
                   <span className="flex w-full items-center gap-4 whitespace-normal">
                     <Icon name="history" size={22} />
                     <span className="flex min-w-0 flex-1 flex-col gap-1">
-                      <span className="text-base font-semibold">Ride History</span>
+                      <span className="text-base font-semibold">Ride history</span>
                       <span className={`text-xs font-normal ${tc.sub}`}>
                         View, reopen or delete past rides
                       </span>
@@ -199,7 +241,7 @@ export default function StartRideModal({ open, onClose, tc: tcProp, onRideCreate
                   <span className="flex w-full items-center gap-4 whitespace-normal">
                     <Icon name="ride" size={22} />
                     <span className="flex min-w-0 flex-1 flex-col gap-1">
-                      <span className="text-base font-semibold">Solo Ride</span>
+                      <span className="text-base font-semibold">Solo ride</span>
                       <span className={`text-xs font-normal ${tc.sub}`}>
                         Just you. Plan your route and hit the road.
                       </span>
@@ -215,11 +257,7 @@ export default function StartRideModal({ open, onClose, tc: tcProp, onRideCreate
                   onClick={() => {
                     setRideType("group");
                     setSelectedRiders([]);
-                    setLoadingFriends(true);
-                    getConnectionsFull(user?.id).then(list => {
-                      setFriends(list || []);
-                      setLoadingFriends(false);
-                    }).catch(() => { setFriends([]); setLoadingFriends(false); });
+                    loadFriends();
                     setScreen(SCREEN.RIDERS);
                   }}
                   className="!h-auto w-full whitespace-normal py-4 text-left"
@@ -228,9 +266,9 @@ export default function StartRideModal({ open, onClose, tc: tcProp, onRideCreate
                   <span className="flex w-full items-center gap-4 whitespace-normal">
                     <Icon name="riders" size={22} />
                     <span className="flex min-w-0 flex-1 flex-col gap-1">
-                      <span className="text-base font-semibold">Group Ride</span>
+                      <span className="text-base font-semibold">Group ride</span>
                       <span className={`text-xs font-normal ${tc.sub}`}>
-                        Ride with friends. Live map for all members.
+                        Ride with others. Everyone sees the group on one live map.
                       </span>
                     </span>
                     <Icon name="arrowRight" size={16} className="opacity-60" />
@@ -246,40 +284,50 @@ export default function StartRideModal({ open, onClose, tc: tcProp, onRideCreate
               <div className="flex flex-col gap-3">
                 {/* Header text */}
                 <p className={`text-xs ${tc.sub}`}>
-                  Choose friends to ride with ({selectedRiders.length} selected)
+                  Pick the riders to invite. Each one gets a notification and can open the ride from it.
                 </p>
 
                 {/* Loading state */}
                 {loadingFriends && (
                   <div className={`py-8 text-center ${tc.sub}`}>
-                    <Icon name="spinner" size={24} className="rw-spin mb-2" />
-                    <p className="text-[13px]">Loading your friends...</p>
+                    <Icon name="spinner" size={24} className="rw-spin mx-auto mb-2 block" />
+                    <p className="text-[13px]">Loading your riders…</p>
                   </div>
                 )}
 
-                {/* No friends state */}
-                {!loadingFriends && friends.length === 0 && (
+                {/* Couldn't load — not the same thing as having no riders */}
+                {!loadingFriends && friendsError && (
+                  <div role="alert" className={`rounded-xl border px-4 py-6 text-center text-sm ${tc.dangerSoft}`}>
+                    <p className="mb-3">{friendsError}</p>
+                    <Button variant="secondary" size="sm" icon="refresh" onClick={loadFriends} tc={tc}>
+                      Try again
+                    </Button>
+                  </div>
+                )}
+
+                {/* No riders yet */}
+                {!loadingFriends && !friendsError && friends.length === 0 && (
                   <div className={`rounded-xl border px-4 py-8 text-center ${tc.card}`}>
                     <div className="mb-3 flex justify-center">
                       <Icon name="riders" size={28} className={tc.sub} />
                     </div>
-                    <p className="mb-2 text-[15px] font-semibold">No Friends Yet</p>
+                    <p className="mb-2 text-[15px] font-semibold">No riders yet</p>
                     <p className={`mb-4 text-xs ${tc.sub}`}>
-                      Add friends first to create a group ride
+                      Add the people you ride with first, then invite them here.
                     </p>
                     <Button
                       variant="primary"
                       icon="userPlus"
-                      onClick={() => { onClose(); window.location.href = "/riders"; }}
+                      onClick={() => { onClose(); navigate("/riders"); }}
                       tc={tc}
                     >
-                      Go to Riders
+                      Find riders
                     </Button>
                   </div>
                 )}
 
                 {/* Friends list with checkboxes */}
-                {!loadingFriends && friends.length > 0 && (
+                {!loadingFriends && !friendsError && friends.length > 0 && (
                   <>
                     {/* Select all toggle */}
                     <Button
@@ -293,7 +341,7 @@ export default function StartRideModal({ open, onClose, tc: tcProp, onRideCreate
                       className="self-start"
                       tc={tc}
                     >
-                      {selectedRiders.length === friends.length ? "Deselect All" : "Select All"}
+                      {selectedRiders.length === friends.length ? "Clear selection" : "Select all"}
                     </Button>
 
                     {/* Individual friend cards */}
@@ -353,7 +401,9 @@ export default function StartRideModal({ open, onClose, tc: tcProp, onRideCreate
                       disabled={selectedRiders.length === 0}
                       tc={tc}
                     >
-                      Continue with {selectedRiders.length} Rider{selectedRiders.length !== 1 ? "s" : ""}
+                      {selectedRiders.length === 0
+                        ? "Pick at least one rider"
+                        : `Continue with ${selectedRiders.length} ${selectedRiders.length === 1 ? "rider" : "riders"}`}
                     </Button>
                   </>
                 )}

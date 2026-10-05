@@ -1,90 +1,53 @@
 // ============================================================
-// 👥 ridersApi — Real API calls to the Spring Boot backend
+// ridersApi.js — rider search and connections
 //
-// All functions call /api/riders/* which is proxied by Vite
-// to http://localhost:8080 during development.
+// ENDPOINTS (RidersController.java):
+//   GET   /api/riders/search?query=      → searchRiders
+//   GET   /api/riders/nearby             → getNearRiders
+//   GET   /api/riders/connections        → getConnectionsFull
+//   POST  /api/riders/add    { riderId } → addRider
+//   POST  /api/riders/remove { riderId } → removeRider
 //
-// ENDPOINT MAP (from RidersController.java):
-//   GET  /api/riders/search?query=&userId=   → searchRiders
-//   GET  /api/riders/nearby?userId=          → getNearRiders
-//   GET  /api/riders/connections?userId=     → getConnectionsFull
-//   POST /api/riders/add    { userId, riderId } → addRider
-//   POST /api/riders/remove { userId, riderId } → removeRider
+// The backend always acts for the logged-in session, so no user id is
+// sent. Every function throws an ApiError carrying the server's message
+// on failure, so callers can show it.
 //
-// NOTES:
-//   - userId is a Long (number) — matches the backend DB id
-//   - Every function throws on non-2xx so callers can catch errors
+// A rider object: { id, username, email, address, distance? }
+//   distance (km) is present in "nearby" results only. Other riders'
+//   coordinates and phone numbers are never sent to the browser, and the
+//   email of a rider you are not connected with arrives only as a hint
+//   ("r•••@example.com").
 // ============================================================
 
-// ── Shared helper: parse response or throw a readable error ──
-async function handleResponse(res) {
-  if (res.ok) return res.json();
-  let msg = `Server error (${res.status})`;
-  try {
-    const body = await res.json();
-    if (body?.message) msg = body.message;
-    else if (typeof body === "string") msg = body;
-  } catch (_) {/* body wasn't JSON */}
-  throw new Error(msg);
-}
+import { apiJson, jsonBody } from "./http";
 
-// ── searchRiders(query, currentUserId) ──
-// Returns UserResponse[] — users whose username or email contains the query.
-export async function searchRiders(query, currentUserId) {
+const BASE = "/api/riders";
+
+// Riders whose username or email contains the query (top 20).
+export async function searchRiders(query) {
   const q = (query || "").trim();
   if (!q) return [];
-
-  const params = new URLSearchParams({ query: q, userId: currentUserId });
-  const res = await fetch(`/api/riders/search?${params}`);
-  return handleResponse(res); // its return the server status
+  return apiJson(`${BASE}/search?${new URLSearchParams({ query: q })}`);
 }
 
-// ── addRider(userId, riderId) ──
-// Returns { success: true/false }
-export async function addRider(userId, riderId) {
-  if (!userId || !riderId) return { success: false, error: "Missing IDs" };// is to avoid to add unknown rider not exist
-  if (userId === riderId)  return { success: false, error: "Cannot add yourself" }; //is to avoid to add myself
-
-  // add rider to the backend
-  const res = await fetch("/api/riders/add", {
-    method:  "POST",
-    headers: { "Content-Type": "application/json" },
-    body:    JSON.stringify({ userId, riderId }),
-  });
-  return handleResponse(res);
-  // Backend returns: { success: true } or { success: false }
+// Returns { success } — false when already connected.
+export async function addRider(riderId) {
+  return apiJson(`${BASE}/add`, jsonBody("POST", { riderId }));
 }
 
-// ── removeRider(userId, riderId) ──
-// Returns { success: true/false }
-export async function removeRider(userId, riderId) {
-  if (!userId || !riderId) return { success: false, error: "Missing IDs" };
-
-  const res = await fetch("/api/riders/remove", {
-    method:  "POST",
-    headers: { "Content-Type": "application/json" },
-    body:    JSON.stringify({ userId, riderId }),
-  });
-  return handleResponse(res);
+// Returns { success } — false when not connected.
+export async function removeRider(riderId) {
+  return apiJson(`${BASE}/remove`, jsonBody("POST", { riderId }));
 }
 
-// ── getConnectionsFull(userId) ──
-// Returns UserResponse[] — full user objects for all connections.
-export async function getConnectionsFull(userId) {
-  if (!userId) return [];
-  const params = new URLSearchParams({ userId });
-  const res = await fetch(`/api/riders/connections?${params}`);
-  return handleResponse(res);
+// Everyone the logged-in rider is connected with, by name.
+export async function getConnectionsFull() {
+  return apiJson(`${BASE}/connections`);
 }
 
-// ── getNearRiders(userId) ──
-// Returns UserResponse[] — riders within 50 km, sorted by distance.
-// The backend calculates distance using the user's stored lat/lng.
-export async function getNearRiders(userId) {
-  if (!userId) return [];
-  const params = new URLSearchParams({ userId });
-  const res = await fetch(`/api/riders/nearby?${params}`);
-  return handleResponse(res);
+// Riders within 50 km of MY saved location, nearest first.
+// Rejects with status 409 when no location has been saved yet — save one
+// with AuthContext's updateProfile({ lat, lng }) first.
+export async function getNearRiders() {
+  return apiJson(`${BASE}/nearby`);
 }
-// this two getconnetions and the getnerby function are mostly handle in the backend not in this frontend
-

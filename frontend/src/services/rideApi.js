@@ -1,362 +1,378 @@
 // ============================================================
-// 🛣️ rideApi.js — Ride data service
+// rideApi.js — ride data service
 //
-// All ride operations go through this file.
-// Talks to the Spring Boot backend at /api/rides.
-// Falls back to localStorage if the backend is unreachable
-// (so the UI still works during development without the server).
+// Every ride operation goes through this file and talks to the Spring
+// Boot backend at /api/rides (the Vite dev proxy / Cloudflare function
+// forwards /api to it).
 //
-// HOW TO USE:
-//   import { createRide, getUserRides, endRide, deleteRide } from "../services/rideApi";
+// OFFLINE BEHAVIOUR — and what it is NOT
+//   When the backend cannot be REACHED (no network, the free-tier server
+//   is asleep), rides are read from and written to localStorage so the
+//   app keeps working, and an "end ride" made offline is replayed when
+//   the server is back.
+//
+//   A fallback is used ONLY for "unreachable". When the server answers
+//   with a refusal (403 not your ride, 400 invalid, 409 …) that answer
+//   is the truth and is thrown to the caller with the server's message.
+//   The old helper treated every failure as "offline", so the UI said
+//   "Ride ended" / "Ride deleted" while the server had refused — and the
+//   ride reappeared on the next refresh.
+//
+// WHAT IS CACHED
+//   ridewise-rides-local   the ride LIST (lightweight rows, no route data)
+//   ridewise-ride-<id>     the full copy of an ACTIVE ride, route included,
+//                          so the map still opens offline
+//   ridewise-pending-ends  rides ended while offline, waiting to be sent
+//
+//   The list used to store every ride with its complete route geometry
+//   (tens to hundreds of KB each) and only ever grew, until it silently
+//   hit the browser's storage limit.
 // ============================================================
 
-// ---------------------------------------------------------------------------
-// BASE URL — change this if your backend runs on a different port
-// In Vite dev mode the proxy in vite.config.js rewrites /api → localhost:8080
-// ---------------------------------------------------------------------------
+import { ApiError, apiJson, isOffline, jsonBody } from "./http";
+
 const BASE = "/api/rides";
 
-// ---------------------------------------------------------------------------
-// LOCALSTORAGE FALLBACK KEY
-// Used when the backend is not running (dev convenience)
-// ---------------------------------------------------------------------------
-const LS_KEY = "ridewise-rides-local";// this is the name of the web Local Storage a key for the value of the web storage
+const LIST_KEY = "ridewise-rides-local";
+const DETAIL_PREFIX = "ridewise-ride-";
+const PENDING_ENDS_KEY = "ridewise-pending-ends";
 
-// ---------------------------------------------------------------------------
-// Helper: load rides from localStorage (used as fallback cache)
-// ---------------------------------------------------------------------------
-function lsLoad() {
-  try { return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); }
-  catch { return []; }
+// A ride created while offline lives only on this device.
+const isLocalRide = (rideId) => String(rideId).startsWith("local_");
+
+// ── localStorage helpers (never throw) ───────────────────────
+function readJson(key, fallback) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || "null");
+    return parsed ?? fallback;
+  } catch {
+    return fallback;
+  }
 }
 
-// ---------------------------------------------------------------------------
-// Helper: save rides to localStorage fallback cache
-// ---------------------------------------------------------------------------
-function lsSave(rides) {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(rides)); }
-  catch { /* storage quota exceeded — ignore */ }
+function writeJson(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // quota exceeded / storage unavailable — the cache is optional
+  }
 }
 
-// ---------------------------------------------------------------------------
-// Helper: call backend; if it fails, run the fallback function instead
-// This lets every function degrade gracefully when the backend is offline
-// ---------------------------------------------------------------------------
+function remove(key) {
+  try { localStorage.removeItem(key); } catch { /* ignore */ }
+}
+
+const loadList = () => {
+  const list = readJson(LIST_KEY, []);
+  return Array.isArray(list) ? list : [];
+};
+
+// A list row never carries the route blobs.
+function toSummary(ride) {
+  const summary = { ...ride, hasRoute: Boolean(ride.hasRoute ?? ride.routeCoordinates) };
+  delete summary.routeCoordinates;
+  delete summary.routeSteps;
+  return summary;
+}
+
+function upsertInList(ride) {
+  const list = loadList().filter((r) => String(r.id) !== String(ride.id));
+  // Local-only rides keep their route in the row — there is no server copy.
+  list.unshift(isLocalRide(ride.id) ? ride : toSummary(ride));
+  writeJson(LIST_KEY, list);
+}
+
+function cacheDetail(ride) {
+  if (!ride || ride.id == null) return;
+  if (ride.status === "active" && ride.routeCoordinates) writeJson(DETAIL_PREFIX + ride.id, ride);
+  else remove(DETAIL_PREFIX + ride.id);
+}
+
+// Drop full-ride copies of rides that are no longer active.
+function pruneDetails(activeIds) {
+  try {
+    const keep = new Set(activeIds.map((id) => DETAIL_PREFIX + id));
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(DETAIL_PREFIX) && !keep.has(key)) localStorage.removeItem(key);
+    }
+  } catch {
+    // storage unavailable
+  }
+}
+
+// Run the backend call; use the fallback ONLY when the backend is unreachable.
 async function withFallback(backendFn, fallbackFn) {
   try {
     return await backendFn();
   } catch (err) {
-    console.warn("Backend unreachable, using local fallback:", err.message);
-    return fallbackFn();
+    if (!isOffline(err)) throw err; // a real answer from the server
+    console.warn("[rideApi] Backend unreachable — using the local copy.");
+    return fallbackFn(err);
   }
 }
 
+// ── Rides ended while offline ────────────────────────────────
+// A measured distance is sent even when it is 0: "tracked, nothing ridden"
+// is different from "never tracked" (which the stats count at the planned
+// length). Only a missing / unusable figure is left out.
+const isMeasured = (meters) => Number.isFinite(meters) && meters >= 0;
+
+function statusBody(actualDistanceMeters) {
+  return {
+    status: "completed",
+    ...(isMeasured(actualDistanceMeters) ? { actualDistanceMeters } : {}),
+  };
+}
+
+// Send them now that the server answers. A ride the server refuses to end
+// (already ended, deleted, not ours) is simply dropped from the queue.
+async function flushPendingEnds() {
+  const pending = readJson(PENDING_ENDS_KEY, []);
+  if (!Array.isArray(pending) || !pending.length) return;
+
+  const stillWaiting = [];
+  for (const item of pending) {
+    try {
+      await apiJson(`${BASE}/${item.rideId}/status`, jsonBody("PATCH", statusBody(item.actualDistanceMeters)));
+    } catch (err) {
+      if (isOffline(err)) stillWaiting.push(item);
+    }
+  }
+  if (stillWaiting.length) writeJson(PENDING_ENDS_KEY, stillWaiting);
+  else remove(PENDING_ENDS_KEY);
+}
+
 // ============================================================
-// CREATE RIDE
-// POST /api/rides
-// rideData: { userId, fromName, fromLat, fromLng,
-//             destinationName, destinationLat, destinationLng,
-//             routeCoordinates (JSON string), distanceMeters,
-//             durationSeconds, rideType }
-// Returns the saved ride object with id + createdAt
+// CREATE RIDE — POST /api/rides
+// rideData: { fromName, fromLat, fromLng, destinationName, destinationLat,
+//             destinationLng, routeCoordinates (JSON string), routeSteps
+//             (JSON string), distanceMeters, durationSeconds, rideType,
+//             participantIds? }
+// Returns the saved ride (with id, status, createdAt and the route).
 // ============================================================
 export async function createRide(rideData) {
   return withFallback(
-    // ---- Try backend ----
     async () => {
-      const res = await fetch(BASE, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(rideData), // send all fields to backend
-      });
-      if (!res.ok) throw new Error(`Create ride failed: ${res.status}`);// res.status is the 
-      const saved = await res.json();
-      // Also add to local cache so getActiveRides works offline
-      const cached = lsLoad();// Here the cache variable get the isLoad function 
-      cached.push(saved);// here in that isLoad funtion I add new ride detail so that has the updated rides in the array
-      lsSave(cached);// Then in this line the cache is update in the in the isSave
-      return saved; //Then the saved is return
+      const saved = await apiJson(BASE, jsonBody("POST", rideData));
+      upsertInList(saved);
+      cacheDetail(saved);
+      return saved;
     },
-    // ---- Fallback: save to localStorage ---- if the backend is not feched then the local storage in the web Browser is used
-    () => {// this is a arrow funciton for the fallbackFn
+    () => {
+      // A group ride needs the server: the other riders must be invited.
+      if (rideData.rideType === "group") {
+        throw new ApiError("You're offline. A group ride needs a connection to invite your riders.", {
+          offline: true,
+        });
+      }
       const ride = {
         ...rideData,
-        id: "local_" + Date.now(),       // local-only id // its give the date of that ride created
-        status: "active",                // new rides start active
-        createdAt: new Date().toISOString(),// its convert that data into the standard text format for feature use 
-        endedAt: null,// for now at the create of tha ride the endedAt seems null
+        id: `local_${Date.now()}`,
+        status: "active",
+        createdAt: new Date().toISOString(),
+        endedAt: null,
       };
-      const cached = lsLoad();
-      cached.push(ride);
-      lsSave(cached);
+      upsertInList(ride);
       return ride;
-    }
+    },
   );
 }
 
 // ============================================================
-// GET ALL RIDES FOR A USER  (history — newest first)
-// GET /api/rides/user/{userId}
+// ALL RIDES FOR A USER (newest first) — GET /api/rides/user/{id}?summary=true
+//
+// Returns lightweight rows: everything except the route geometry and the
+// step list (each row has hasRoute instead). Open a ride with getRide()
+// to get its full route.
 // ============================================================
 export async function getUserRides(userId) {
   return withFallback(
     async () => {
-      const res = await fetch(`${BASE}/user/${userId}`);
-      if (!res.ok) throw new Error(`Get rides failed: ${res.status}`);
-      return res.json(); // array of RideResponse
-    },
-    () => {
-      // Fallback: filter local cache by userId
-      return lsLoad()
-        .filter(r => String(r.userId) === String(userId)) 
-        .reverse(); // newest first
-    }
-  );
-}
+      await flushPendingEnds();
+      const rides = await apiJson(`${BASE}/user/${userId}?summary=true`);
+      const list = Array.isArray(rides) ? rides : [];
 
-// ============================================================
-// GET ACTIVE RIDES FOR A USER
-// GET /api/rides/user/{userId}/active   
-// ============================================================
-export async function getActiveRides(userId) {
-  return withFallback(
-    async () => {
-      const res = await fetch(`${BASE}/user/${userId}/active`);
-      if (!res.ok) throw new Error(`Get active rides failed: ${res.status}`);
-      return res.json();
-    },
-    () => {
-      // Fallback: filter local cache for active rides
-      return lsLoad().filter(
-        r => String(r.userId) === String(userId) && r.status === "active"
+      // Cache = the server's list + rides that exist only on this device.
+      const localOnly = loadList().filter(
+        (r) => isLocalRide(r.id) && String(r.userId) === String(userId),
       );
-    }
-  );
-}
-
-// ============================================================
-// END A RIDE (change status to "completed")
-// PATCH /api/rides/{rideId}/status
-// Body: { status: "completed", userId, actualDistanceMeters }
-//   userId               — ride admin (backend enforces admin-only
-//                          ending for group rides)
-//   actualDistanceMeters — how far the rider REALLY rode (tracked live
-//                          in ActiveRideOverlay); optional
-// ============================================================
-export async function endRide(rideId, userId, actualDistanceMeters) {
-  // Only send the travelled distance when it's a usable number
-  const hasDistance =
-    Number.isFinite(actualDistanceMeters) && actualDistanceMeters > 0;
-
-  return withFallback(
-    async () => {
-      const res = await fetch(`${BASE}/${rideId}/status`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: "completed",                 // tell backend to mark complete
-          ...(userId != null ? { userId } : {}), // admin identity for group rides
-          ...(hasDistance ? { actualDistanceMeters } : {}),
-        }),
-      });
-      if (!res.ok) throw new Error(`End ride failed: ${res.status}`);
-      const updated = await res.json();
-      // Sync to local cache
-      const cached = lsLoad().map(r => String(r.id) === String(rideId) ? updated : r);
-      lsSave(cached);
-      return updated;
+      writeJson(LIST_KEY, [...localOnly, ...list.map(toSummary)]);
+      pruneDetails(list.filter((r) => r.status === "active").map((r) => r.id));
+      return [...localOnly, ...list];
     },
-    () => {
-      // Fallback: update local cache
-      const cached = lsLoad().map(r =>
-        String(r.id) === String(rideId)
-          ? {
-              ...r,
-              status: "completed",
-              endedAt: new Date().toISOString(),
-              ...(hasDistance ? { actualDistanceMeters } : {}),
-            }
-          : r
-      );
-      lsSave(cached);
-      return cached.find(r => String(r.id) === String(rideId));
-    }
+    () => loadList().filter((r) => String(r.userId) === String(userId)),
   );
 }
 
 // ============================================================
-// DELETE A RIDE PERMANENTLY
-// DELETE /api/rides/{rideId}
-// ============================================================
-export async function deleteRide(rideId) {
-  return withFallback(
-    async () => {
-      const res = await fetch(`${BASE}/${rideId}`, { method: "DELETE" });
-      if (!res.ok) throw new Error(`Delete ride failed: ${res.status}`);
-      // Remove from local cache too
-      lsSave(lsLoad().filter(r => String(r.id) !== String(rideId)));// in this code this will filter the id object
-    },
-    () => {
-      // Fallback: remove from local cache
-      lsSave(lsLoad().filter(r => String(r.id) !== String(rideId)));// Like that it also filter that array with remove of that id 
-    }
-  );
-}
-
-// ============================================================
-// GET A SINGLE RIDE BY ID
-// GET /api/rides/{rideId}
+// ONE RIDE, WITH ITS ROUTE — GET /api/rides/{rideId}
 // ============================================================
 export async function getRide(rideId) {
+  const cached = () =>
+    readJson(DETAIL_PREFIX + rideId, null) ||
+    loadList().find((r) => String(r.id) === String(rideId)) ||
+    null;
+
+  if (isLocalRide(rideId)) return cached();
+
   return withFallback(
     async () => {
-      const res = await fetch(`${BASE}/${rideId}`);// here its go the backend database and get the id
-      if (!res.ok) throw new Error(`Get ride failed: ${res.status}`);
-      return res.json();
+      const ride = await apiJson(`${BASE}/${rideId}`);
+      cacheDetail(ride);
+      return ride;
     },
-    () => lsLoad().find(r => String(r.id) === String(rideId)) || null // if its find the id then retrun, if not its return null
+    cached,
   );
 }
 
 // ============================================================
-// UPDATE USER LOCATION — store a GPS position update on the backend
-//
-// Called on every GPS tick while a ride is active.
-// The backend records position history so we can:
-//   • Show the traveled path in ride history
-//   • Support future route deviation detection
-//   • Support group ride live location sharing
-//
-// POST /api/rides/{rideId}/location
-// Body: { lat, lng, timestamp }
-//
-// This is "fire-and-forget" — if backend is unreachable we log and
-// silently skip. GPS dot and route trimming still work client-side.
+// IS THE RIDE STILL RUNNING? — GET /api/rides/{rideId}?summary=true
+// Used by group members to notice that the admin ended the ride.
+// Returns the status, "gone" when the ride no longer exists (or this
+// rider is no longer part of it), or null when it could not be checked.
 // ============================================================
-export async function updateUserLocation(rideId, lat, lng, userId, accuracy) {
-
+export async function getRideStatus(rideId) {
+  if (rideId == null || isLocalRide(rideId)) return null;
   try {
-    // Build the location update payload with an ISO timestamp
-    const payload = {
-      userId: userId || null,
-      lat,                                // decimal degrees (e.g. 13.0827)
-      lng,                                // decimal degrees (e.g. 80.2707)
-      ...(Number.isFinite(accuracy) ? { accuracy } : {}), // GPS accuracy (m)
-
-      timestamp: new Date().toISOString(), // when this fix was captured
-    };
-
-    const res = await fetch(`${BASE}/${rideId}/location`, {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify(payload),
-    });
-
-    // Log non-2xx responses but don't throw — this is non-critical
-    if (!res.ok) {
-      console.warn(`[rideApi] Location update returned HTTP ${res.status}`);
-    }
+    const ride = await apiJson(`${BASE}/${rideId}?summary=true`);
+    return ride?.status ?? null;
   } catch (err) {
-    // Backend offline or network error — silently continue.
-    // All client-side map features still work without this call.
-    console.warn("[rideApi] updateUserLocation skipped (backend unreachable):", err.message);
-  }
-}
-//This only post the lat, lan with the time and date
-
-// ============================================================
-// GROUP RIDE API FUNCTIONS
-// ============================================================
-
-// ============================================================
-// GET CURRENT LIVE LOCATIONS FOR A RIDE
-// GET /api/rides/{rideId}/live-locations
-//
-// Returns the latest known position of each member who has shared one.
-// Used when the map opens and as the polling fallback while the
-// WebSocket is not connected.
-//
-// RETURNS:
-//   [...]  → the server's current list (may legitimately be empty)
-//   null   → the request FAILED, so callers must keep what they already
-//            have instead of wiping every rider off the map
-// ============================================================
-export async function getLiveRideLocations(rideId) {
-  try {
-    const res = await fetch(`${BASE}/${rideId}/live-locations`);
-    if (!res.ok) throw new Error(`Get live locations failed: ${res.status}`);
-    return await res.json();
-  } catch (err) {
-    console.warn("[rideApi] getLiveRideLocations failed:", err.message);
+    if (err?.status === 404 || err?.status === 403) return "gone";
     return null;
   }
 }
 
 // ============================================================
-// STOP SHARING MY LIVE LOCATION
-// DELETE /api/rides/{rideId}/live-location
+// END A RIDE — PATCH /api/rides/{rideId}/status
+//   actualDistanceMeters  how far the rider REALLY rode (tracked live)
+// The backend allows this only for the ride's owner / the group admin.
+// ============================================================
+export async function endRide(rideId, actualDistanceMeters) {
+  const hasDistance = isMeasured(actualDistanceMeters);
+
+  const endLocally = () => {
+    const list = loadList().map((r) =>
+      String(r.id) === String(rideId)
+        ? {
+            ...r,
+            status: "completed",
+            endedAt: new Date().toISOString(),
+            ...(hasDistance ? { actualDistanceMeters } : {}),
+          }
+        : r,
+    );
+    writeJson(LIST_KEY, list);
+    remove(DETAIL_PREFIX + rideId);
+    return list.find((r) => String(r.id) === String(rideId)) || null;
+  };
+
+  if (isLocalRide(rideId)) return endLocally();
+
+  return withFallback(
+    async () => {
+      const updated = await apiJson(
+        `${BASE}/${rideId}/status`,
+        jsonBody("PATCH", statusBody(actualDistanceMeters)),
+      );
+      upsertInList(updated);
+      remove(DETAIL_PREFIX + rideId);
+      return updated;
+    },
+    () => {
+      // Offline: finish it on this device now, tell the server later.
+      const pending = readJson(PENDING_ENDS_KEY, []).filter(
+        (item) => String(item.rideId) !== String(rideId),
+      );
+      pending.push({ rideId, actualDistanceMeters: hasDistance ? actualDistanceMeters : null });
+      writeJson(PENDING_ENDS_KEY, pending);
+      return endLocally();
+    },
+  );
+}
+
+// ============================================================
+// DELETE A RIDE PERMANENTLY — DELETE /api/rides/{rideId}
+// Deleting needs the server (it is the only real copy), so there is no
+// offline fallback: an offline delete fails with a clear message.
+// ============================================================
+export async function deleteRide(rideId) {
+  if (!isLocalRide(rideId)) {
+    await apiJson(`${BASE}/${rideId}`, { method: "DELETE" });
+  }
+  writeJson(LIST_KEY, loadList().filter((r) => String(r.id) !== String(rideId)));
+  remove(DETAIL_PREFIX + rideId);
+}
+
+// ============================================================
+// PUBLISH MY POSITION (REST) — POST /api/rides/{rideId}/location
 //
-// Removes my single latest-location row and tells the rest of the group
-// to drop my marker. This is the REST twin of the WebSocket
-// {"type":"stop"} message, used whenever the socket is not connected.
-// Never throws — losing the clear only means the marker ages out.
+// The fallback for the live socket in a group ride. Fire-and-forget:
+// a lost update only means the marker is a tick older.
 // ============================================================
+export async function updateUserLocation(rideId, lat, lng, accuracy) {
+  if (rideId == null || isLocalRide(rideId)) return;
+  try {
+    await apiJson(`${BASE}/${rideId}/location`, jsonBody("POST", {
+      lat,
+      lng,
+      ...(Number.isFinite(accuracy) ? { accuracy } : {}),
+      timestamp: new Date().toISOString(),
+    }));
+  } catch (err) {
+    console.warn("[rideApi] Position update skipped:", err.message);
+  }
+}
+
+// ============================================================
+// GROUP RIDES
+// ============================================================
+
+// Current position of every member who is sharing one.
+//   [...]  → the server's list (may legitimately be empty)
+//   null   → the request FAILED: keep what is already on the map
+export async function getLiveRideLocations(rideId) {
+  if (rideId == null || isLocalRide(rideId)) return null;
+  try {
+    const list = await apiJson(`${BASE}/${rideId}/live-locations`);
+    return Array.isArray(list) ? list : [];
+  } catch (err) {
+    console.warn("[rideApi] Live positions unavailable:", err.message);
+    return null;
+  }
+}
+
+// Stop sharing my live position (the REST twin of the socket's "stop").
+// Never throws — losing it only means the marker ages out by itself.
 export async function clearLiveLocation(rideId) {
-  if (!rideId) return;
+  if (rideId == null || isLocalRide(rideId)) return;
   try {
-    const res = await fetch(`${BASE}/${rideId}/live-location`, { method: "DELETE" });
-    if (!res.ok) {
-      console.warn(`[rideApi] clearLiveLocation returned HTTP ${res.status}`);
-    }
+    await apiJson(`${BASE}/${rideId}/live-location`, { method: "DELETE" });
   } catch (err) {
-    console.warn("[rideApi] clearLiveLocation skipped (backend unreachable):", err.message);
+    console.warn("[rideApi] Could not clear the live position:", err.message);
   }
 }
 
+// Active riders of a group ride.
+//   [...]  → the list     null → the request failed (keep the current list)
 export async function getGroupRideParticipants(rideId) {
+  if (rideId == null || isLocalRide(rideId)) return null;
   try {
-    const res = await fetch(`${BASE}/${rideId}/participants`);
-    if (!res.ok) throw new Error(`Get participants failed: ${res.status}`);
-    return await res.json();
+    const list = await apiJson(`${BASE}/${rideId}/participants`);
+    return Array.isArray(list) ? list : [];
   } catch (err) {
-    console.warn("[rideApi] getGroupRideParticipants failed:", err.message);
-    return [];
+    console.warn("[rideApi] Riders list unavailable:", err.message);
+    return null;
   }
 }
 
-// ============================================================
-// UPDATE A PARTICIPANT'S STATUS (e.g. "left")
-// PATCH /api/rides/{rideId}/participants/{userId}/status
-// Body: { status, actorUserId } — actorUserId is the user performing
-// the action (a rider leaving marks themselves as "left").
-// ============================================================
-export async function updateParticipantStatus(rideId, userId, status, actorUserId) {
-  const res = await fetch(`${BASE}/${rideId}/participants/${userId}/status`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      status,
-      ...(actorUserId != null ? { actorUserId } : {}),
-    }),
-  });
-  if (!res.ok) throw new Error(`Update participant status failed: ${res.status}`);
-  return await res.json();
+// A member leaves a group ride. Throws with the server's message.
+export async function updateParticipantStatus(rideId, userId, status) {
+  return apiJson(`${BASE}/${rideId}/participants/${userId}/status`, jsonBody("PATCH", { status }));
 }
 
-// ============================================================
-// ADD A PARTICIPANT TO A LIVE GROUP RIDE (admin only)
-// POST /api/rides/{rideId}/participants
-// Body: { adminId, userId } — adminId must be the ride admin;
-// userId is the friend being added to the ride.
-// Returns the created RideParticipantResponse.
-// ============================================================
+// The admin adds a connected rider to a live group ride.
+// Throws with the server's message ("already in this ride", …).
 export async function addGroupRideParticipant(rideId, adminId, userId) {
-  const res = await fetch(`${BASE}/${rideId}/participants`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ adminId, userId }),
-  });
-  if (!res.ok) throw new Error(`Add participant failed: ${res.status}`);
-  return await res.json();
+  return apiJson(`${BASE}/${rideId}/participants`, jsonBody("POST", { adminId, userId }));
 }
-

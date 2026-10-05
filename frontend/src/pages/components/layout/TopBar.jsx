@@ -20,6 +20,27 @@ import Icon from "../ui/Icon";
 import { IconButton } from "../ui/Button";
 import { getNotifications, getUnreadCount, markAsRead, markAllAsRead } from "../../../services/notificationApi";
 
+// "just now" · "12 min ago" · "3 h ago" · "2 d ago" · "14 Sep"
+function timeAgo(iso, now) {
+  const then = Date.parse(iso);
+  if (!Number.isFinite(then)) return "";
+  const minutes = Math.max(0, Math.round((now - then) / 60_000));
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days} d ago`;
+  return new Date(then).toLocaleDateString([], { day: "numeric", month: "short" });
+}
+
+// One glyph per kind of notification
+const NOTIFICATION_ICON = {
+  group_ride_invite: "riders",
+  group_ride_ended: "finish",
+  group_ride_member_left: "leave",
+};
+
 export default function TopBar({
   theme,
   setTheme,
@@ -42,20 +63,32 @@ export default function TopBar({
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
 
+  // Unread count: now, every 30 s, and whenever the tab becomes visible
+  // again (a hidden tab does not need to poll).
   useEffect(() => {
-    if (!userId) return;
-    const fetchCount = () => getUnreadCount(userId).then(setUnreadCount).catch(() => {});
+    if (!userId) return undefined;
+    let cancelled = false;
+    const fetchCount = () => {
+      if (document.hidden) return;
+      getUnreadCount().then((count) => { if (!cancelled) setUnreadCount(count); });
+    };
     fetchCount();
     const interval = setInterval(fetchCount, 30000);
-    return () => clearInterval(interval);
+    document.addEventListener("visibilitychange", fetchCount);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", fetchCount);
+    };
   }, [userId]);
 
   const openNotifications = () => {
     setShowNotifDropdown(v => !v);
     if (!showNotifDropdown && userId) {
-      getNotifications(userId).then(list => {
-        setNotifications(list || []);
-      }).catch(() => {});
+      getNotifications().then((list) => {
+        const now = Date.now();
+        setNotifications((list || []).map((n) => ({ ...n, when: timeAgo(n.createdAt, now) })));
+      });
     }
   };
 
@@ -73,20 +106,25 @@ export default function TopBar({
       className={`fixed top-0 left-0 lg:left-64 right-0 z-30 border-b ${tc.divider} ${tc.bar} h-16`}
       style={{ paddingTop: "env(safe-area-inset-top)" }}
     >
-      <div className="flex items-center justify-between h-full px-4 md:px-6 gap-4">
+      <div className="flex items-center justify-between h-full px-4 md:px-6 gap-2 sm:gap-4">
 
-        {/* ── Mobile: Logo (desktop uses Sidebar logo) ─────── */}
-        <div className="lg:hidden flex items-center gap-2 shrink-0">
-          <div
-            className={`w-9 h-9 rounded-lg border flex items-center justify-center ${tc.button} cursor-pointer`}
-            onClick={() => navigate("/home")}
-          >
+        {/* ── Mobile: Logo (desktop uses Sidebar logo) ───────
+            The bar has to fit a 320 px phone: the wordmark is dropped on
+            the narrowest screens, and the profile button (further down)
+            only appears from 640 px — phones have the Account tab. */}
+        <button
+          type="button"
+          onClick={() => navigate("/home")}
+          aria-label="RideWise home"
+          className="lg:hidden flex items-center gap-2 shrink-0"
+        >
+          <span className={`w-9 h-9 rounded-lg border flex items-center justify-center ${tc.button}`}>
             <Icon name="ride" size={18} />
-          </div>
-          <span className="text-lg font-black cursor-pointer" onClick={() => navigate("/home")}>
+          </span>
+          <span className="hidden min-[400px]:inline text-lg font-black">
             Ride<span className="opacity-60">Wise</span>
           </span>
-        </div>
+        </button>
 
         {/* ── Desktop: Search bar ───────────────────────────── */}
         <div className="flex-1 max-w-2xl relative hidden md:block">
@@ -136,10 +174,11 @@ export default function TopBar({
           {startVoice && (
             <IconButton
               icon={voiceMode ? "micOff" : "mic"}
-              label="Voice search"
+              label={voiceMode
+                ? "Listening…"
+                : 'Voice commands: say "start", "history", "riders", "dark" or "light"'}
               variant={voiceMode ? "soft" : "secondary"}
               tc={tc}
-              title='Voice commands: "dark", "light", "start", "find"'
               onClick={startVoice}
             />
           )}
@@ -149,6 +188,8 @@ export default function TopBar({
             <button
               onClick={openNotifications}
               title="Notifications"
+              aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}
+              aria-expanded={showNotifDropdown}
               className={`relative w-10 h-10 rounded-full border flex items-center justify-center transition-colors ${
                 showNotifDropdown ? `${tc.navActive} ${tc.divider}` : tc.record
               }`}
@@ -192,7 +233,7 @@ export default function TopBar({
                   {notifications.length > 0 && (
                     <button
                       onClick={() => {
-                        markAllAsRead(userId);
+                        markAllAsRead();
                         setUnreadCount(0);
                         setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
                       }}
@@ -236,7 +277,7 @@ export default function TopBar({
                           <div className={`w-8 h-8 rounded-lg border flex items-center justify-center shrink-0 ${
                             n.type === "group_ride_invite" ? tc.accentSoft : `${tc.surface2} ${tc.divider}`
                           }`}>
-                            <Icon name={n.type === "group_ride_invite" ? "riders" : "bell"} size={14} />
+                            <Icon name={NOTIFICATION_ICON[n.type] || "bell"} size={14} />
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className={`font-bold text-[13px] mb-1 ${n.isRead ? tc.sub : tc.text}`}>
@@ -245,6 +286,9 @@ export default function TopBar({
                             <p className={`text-[11px] leading-snug ${tc.sub}`}>
                               {n.message}
                             </p>
+                            {n.when && (
+                              <p className={`mt-1 text-[10px] ${tc.sub} opacity-80`}>{n.when}</p>
+                            )}
                           </div>
                           {!n.isRead && (
                             <span className={`w-2 h-2 rounded-full bg-current shrink-0 mt-1 ${tc.accent}`} />
@@ -268,7 +312,8 @@ export default function TopBar({
             id="topbar-profile-btn"
             onClick={() => navigate("/account")}
             title="My profile"
-            className={`w-10 h-10 rounded-full border flex items-center justify-center font-bold text-sm transition-colors ${tc.button}`}
+            aria-label="My profile"
+            className={`hidden sm:flex w-10 h-10 rounded-full border items-center justify-center font-bold text-sm transition-colors ${tc.button}`}
           >
             {avatarLetter}
           </button>

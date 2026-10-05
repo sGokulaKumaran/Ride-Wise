@@ -16,9 +16,16 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
 
     List<Notification> findByUserIdOrderByCreatedAtDesc(Long userId);
 
-    List<Notification> findByUserIdAndIsReadFalse(Long userId);
+    // The bell shows the newest 50 — never an unbounded history.
+    List<Notification> findTop50ByUserIdOrderByCreatedAtDesc(Long userId);
 
     long countByUserIdAndIsReadFalse(Long userId);
+
+    // "Mark all as read" as one UPDATE (it used to load and save every row)
+    @Modifying
+    @Transactional
+    @Query("UPDATE Notification n SET n.isRead = true WHERE n.userId = :userId AND n.isRead = false")
+    int markAllRead(@Param("userId") Long userId);
 
     // ── Cleanup queries ──
 
@@ -38,4 +45,10 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     @Modifying
     @Transactional
     void deleteByUserId(Long userId);
+
+    // Delete the notifications that point at a ride which no longer exists
+    @Modifying
+    @Transactional
+    @Query("DELETE FROM Notification n WHERE n.rideId = :rideId")
+    int deleteByRideId(@Param("rideId") Long rideId);
 }

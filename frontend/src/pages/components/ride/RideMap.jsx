@@ -1,855 +1,290 @@
 // ============================================================
-// RideMap.jsx — Leaflet Map (react-leaflet)
+// RideMap.jsx — the Leaflet map for a ride
 //
-//   • MapContainer + TileLayer  → renders the map tiles
-//   • DynamicRouteLine          → draws the road-following polyline from
-//                                 stored OSRM coordinates; trims behind GPS
-//   • L.Marker                  → A (start) and B (destination) pins
-//   • Live GPS dot              → updates as myLocation changes
-//   • Tile switcher overlay     → change map style at runtime
+// This component only DRAWS. It makes no routing decisions and no
+// network calls of its own: where the rider is on the route, whether
+// they are off it and which way leads back all arrive ready-made in
+// the `nav` prop (pages/hooks/useNavigation.js → services/navigation.js).
+//
+// WHAT IT DRAWS
+//   • the basemap, in a style that follows the app theme by default
+//   • the route in three parts: ridden (grey) · ahead (blue) · and, when
+//     the rider is off it, the purple dashed way back plus the faded
+//     stretch that will be skipped
+//   • start and destination markers
+//   • the rider: position dot, heading arrow and GPS accuracy ring,
+//     gliding between fixes instead of jumping
+//   • the other riders of a group, with their own way back when they
+//     are off the route
+//   • the map controls
+//
+// PROPS
+//   ride            ride object (endpoints, names, stored route)
+//   nav             live navigation state — omit for a static preview
+//   isLive          true while navigating an active ride
+//   gpsState        GPS.* from locationService (greys the dot when lost)
+//   participants    group riders with { userId, lat, lng, color, … }
+//   riderLines      { userId: [[lat, lng], …] } ways back for those riders
+//   riderStatus     { userId: { offRoute, distance } }
+//   compact         small preview map: only the style switcher is shown
+//   padding         { top, bottom } pixels covered by the overlay's bars
+//   extraControls   extra buttons for the top-right control rail
+//   tc              theme classes (resolved here when omitted)
+//   ref             { panTo(lat, lng), followMe(), fitRoute() }
 // ============================================================
 
-import { useEffect, useRef, useState } from "react";
-import { MapContainer, TileLayer, useMap } from "react-leaflet";
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { MapContainer, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import "leaflet-rotate"; // enables map rotation (two-finger twist, shift+drag)
-import { parseRouteSteps } from "../../../services/routingApi";
-// NOTE: leaflet-routing-machine intentionally removed.
-// We draw polylines directly from stored OSRM coordinates (DynamicRouteLine)
-// so we don't need the routing-machine library at all.
-
-// Fix Leaflet marker icon (broken in Vite — same fix as demo)
-import markerIconPng   from "leaflet/dist/images/marker-icon.png";
-import markerShadowPng from "leaflet/dist/images/marker-shadow.png";
-
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconUrl:       markerIconPng,
-  shadowUrl:     markerShadowPng,
-  iconRetinaUrl: markerIconPng,
-});
-
-// ---------------------------------------------------------------------------
-// Tile options
-//
-// maxNativeZoom is the HIGHEST zoom the provider actually publishes tiles
-// for; maxZoom is how far the LAYER is allowed to be driven.
-//
-// WHY THIS MATTERS — "the last zoom level goes blank/grey":
-//   1. TileLayer's built-in default maxZoom is 18, and detectRetina drops it
-//      further (to 17). MapContainer, however, allows the map to reach 19.
-//      In GridLayer._setView(), a tileZoom above the layer's maxZoom sets
-//      tileZoom = undefined, and with tileZoom undefined Leaflet requests NO
-//      tiles at all — so the deepest zoom level(s) painted an empty pane.
-//      The layer's maxZoom is therefore always set to match the map's.
-//
-//   2. detectRetina makes Leaflet request tiles at (zoom + 1), i.e. z20 here,
-//      which no provider below publishes. Every one of those requests 404s.
-//      It stays OFF so the tile URL always matches a level that exists.
-//
-//   3. maxNativeZoom tells Leaflet where each source genuinely stops, so past
-//      that it upscales the deepest real tile instead of requesting a
-//      zoom level that doesn't exist.
-// ---------------------------------------------------------------------------
-const MAP_MAX_ZOOM = 19;
-
-const TILE_LAYERS = [
-  { label: " Default",   url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", attr: "© OpenStreetMap", maxNativeZoom: 19 },
-  { label: " Cycle",     url: "https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png", attr: "© CyclOSM", maxNativeZoom: 18 },
-  { label: " Dark",      url: "https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png", attr: "© Stadia", maxNativeZoom: 20 },
-  { label: " Satellite", url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", attr: "© ArcGIS", maxNativeZoom: 19 },
-  { label: " Terrain",   url: "https://tiles.stadiamaps.com/tiles/stamen_terrain/{z}/{x}/{y}{r}.png", attr: "© Stadia", maxNativeZoom: 20 },
-];
-
-// ---------------------------------------------------------------------------
-// Custom pin icons
-// ---------------------------------------------------------------------------
-const RIDER_COLORS = [
-  "#8b5cf6", // purple
-  "#14b8a6", // teal
-  "#f59e0b", // amber
-  "#ec4899", // pink
-  "#06b6d4", // cyan
-  "#10b981", // emerald
-  "#f43f5e", // rose
-  "#6366f1", // indigo
-  "#84cc16", // lime
-  "#e11d48", // crimson
-];
-
-function makeRiderIcon(color, letter, name) {
-  return L.divIcon({
-    className: "",
-    html: `<div style="display:flex;flex-direction:column;align-items:center;filter:drop-shadow(0 4px 6px rgba(0,0,0,0.4))">
-      <div style="position:relative;width:44px;height:44px;background:${color};border-radius:50%;border:2px solid #fff;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 0 ${color}66;animation:rw-rider-pulse 3s infinite">
-        <span style="font-size:14px;font-weight:900;color:#fff;font-family:system-ui">${letter}</span>
-      </div>
-      <div style="margin-top:4px;background:rgba(0,0,0,0.6);padding:2px 6px;border-radius:4px;color:#fff;font-size:11px;font-family:system-ui;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,0.8)">
-        ${name}
-      </div>
-    </div>`,
-    iconSize:    [44, 60],
-    iconAnchor:  [22, 30],
-    popupAnchor: [0, -30],
-  });
-}
-
-function makePinIcon(color, letter) {
-  return L.divIcon({
-    className: "",
-    html: `<div style="width:36px;height:44px;display:flex;flex-direction:column;align-items:center;filter:drop-shadow(0 4px 10px ${color}88)">
-      <div style="width:36px;height:36px;background:linear-gradient(145deg,${color},${color}cc);border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid #fff;display:flex;align-items:center;justify-content:center;box-sizing:border-box">
-        <span style="transform:rotate(45deg);font-size:14px;font-weight:900;color:#fff;line-height:1;font-family:system-ui">${letter}</span>
-      </div>
-    </div>`,
-    iconSize:    [36, 44],
-    iconAnchor:  [18, 44],
-    popupAnchor: [0, -44],
-  });
-}
-
-const ICON_A = makePinIcon("#22c55e", "A");
-const ICON_B = makePinIcon("#ef4444", "B");
-
-const GPS_ICON = L.divIcon({
-  className: "",
-  html: `<div style="position:relative;width:52px;height:52px;display:flex;align-items:center;justify-content:center">
-    <div style="position:absolute;inset:0;border-radius:50%;background:rgba(66,133,244,0.2);animation:rw-pulse 2.2s ease-out infinite"></div>
-    <div style="position:relative;z-index:2;width:20px;height:20px;background:linear-gradient(145deg,#60a5fa,#1d4ed8);border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 3px rgba(66,133,244,0.35),0 3px 12px rgba(66,133,244,0.75)"></div>
-  </div>`,
-  iconSize:    [52, 52],
-  iconAnchor:  [26, 26],
-  popupAnchor: [0, -28],
-});
+import "leaflet-rotate"; // map rotation plugin (kept loaded; see ENABLE_MAP_ROTATION)
+import Icon from "../ui/Icon";
+import { useAuth } from "../../../context/AuthContext";
+import { useTheme } from "../../hooks/useTheme";
+import { buildNavRoute, sliceRoute, routeLatLngs } from "../../../services/navigation";
+import {
+  formatDistance,
+  formatDuration,
+  haversineDistance,
+  shortPlaceName,
+} from "../../../services/routingApi";
+import { GPS, getLastKnownLocation, requestFreshFix } from "../../../services/locationService";
+import {
+  MAP_MAX_ZOOM,
+  MAP_STYLES,
+  MAP_STYLE_AUTO,
+  RIDER_COLORS,
+  ROUTE_COLORS,
+  loadMapStyleChoice,
+  resolveMapStyle,
+  routeWeight,
+  saveMapStyleChoice,
+} from "./mapStyles";
 
 // ===========================================================================
 // MAP ROTATION SWITCH
 //
 // Rotation (two-finger twist on touch, Shift+wheel on desktop) comes from the
 // `leaflet-rotate` plugin. It has an OPEN upstream bug — issue #43, "Rotate
-// mobile device path don't follow" — where vector layers (our route line and
-// its white outline) lag behind / drift off the roads while a rotate or zoom
-// gesture is in progress, while markers stay perfectly correct. The re-sync in
-// MapBehavior below counteracts it (it refreshes the vector renderer whenever
-// the map rotates / zooms / moves).
+// mobile device path don't follow" — where vector layers (the route lines)
+// lag behind / drift off the roads while a rotate or zoom gesture is in
+// progress, while markers stay perfectly correct. The re-sync in MapBehavior
+// below counteracts it.
 //
-// If the route line ever looks misaligned again, set this to `false`: rotation
-// is switched off everywhere (no twist, no Shift+wheel, nothing to desync) and
-// the route line is guaranteed to sit exactly on the roads. Panning, pinch
-// zoom, double-tap zoom and drag all keep working.
+// It stays `false`: rotation is switched off everywhere and the route line is
+// guaranteed to sit exactly on the roads. Panning, pinch zoom, double-tap
+// zoom and drag all keep working.
 // ===========================================================================
 const ENABLE_MAP_ROTATION = false;
 
-// Inject animation CSS
-if (typeof document !== "undefined" && !document.getElementById("rw-leaflet-css")) {
-  const s = document.createElement("style");
-  s.id = "rw-leaflet-css";
-  s.textContent = `
-    @keyframes rw-pulse { 0%{transform:scale(0.85);opacity:0.9} 60%{transform:scale(2.6);opacity:0} 100%{transform:scale(0.85);opacity:0} }
-    @keyframes rw-rider-pulse { 0%{box-shadow:0 0 0 0 rgba(255,255,255,0.4)} 70%{box-shadow:0 0 0 10px rgba(255,255,255,0)} 100%{box-shadow:0 0 0 0 rgba(255,255,255,0)} }
-    .leaflet-container { width:100%; height:100%; -webkit-tap-highlight-color: transparent; }
-    /* Hide Leaflet controls at the top (zoom buttons, default rotate compass) */
-    .leaflet-top { display: none !important; }
-    /* Push Leaflet controls (attribution) up so they clear the stats bar. */
-    .leaflet-bottom { bottom: calc(var(--rw-bottom-bar-h, 140px) + 8px) !important; }
-    /* Make sure our custom overlay controls are always clickable and on top */
-    .rw-custom-control { z-index: 9999 !important; pointer-events: auto !important; }
-    /* Compass needle transition */
-    .rw-compass-needle { transition: transform 0.25s ease-out; }
-    /* ── Tile rendering artifact fixes ── */
-    .leaflet-tile-container img.leaflet-tile {
-      mix-blend-mode: plus-lighter;
-    }
-    .leaflet-fade-anim .leaflet-tile {
-      will-change: opacity;
-    }
-    /* ── GPU compositing for smoother mobile transforms ── */
-    .leaflet-map-pane,
-    .leaflet-tile-pane,
-    .leaflet-overlay-pane {
-      will-change: transform;
-    }
-    /* ── Canvas renderer: keep crisp on retina displays ── */
-    .leaflet-canvas-container canvas {
-      image-rendering: -webkit-optimize-contrast;
-    }
-    /* ── Prevent touch delay / tap highlight on mobile ── */
-    .leaflet-container * {
-      -webkit-tap-highlight-color: transparent;
-    }
-  `;
-  document.head.appendChild(s);
-}
-
-// ── Camera-follow tuning (see the GPS dot effect below) ──────────────
+// ── Camera-follow tuning ─────────────────────────────────────
 // Ignore GPS jitter: only pan when the rider actually moved, or when the map
-// has drifted far enough that they would walk off screen.
-const FOLLOW_MIN_MOVE_M  = 5;    // metres of real movement before re-centring
-const FOLLOW_MAX_DRIFT_PX = 45;  // px the rider may drift from the centre
-const FOLLOW_ZOOM        = 16;   // zoom applied once, when following starts
+// has drifted far enough that they would leave the visible area.
+const FOLLOW_MIN_MOVE_M = 5;     // metres of real movement before re-centring
+const FOLLOW_MAX_DRIFT_PX = 45;  // px the rider may drift from their spot
+const FOLLOW_ZOOM = 16;          // zoom applied once, when following starts
+const GLIDE_MS = 900;            // the position dot glides between fixes
 
-// ===========================================================================
-// DynamicRouteLine — Smart route drawing:
-//   • ON-ROUTE  (within 300m of saved path) → trims polyline behind GPS
-//   • OFF-ROUTE (more than 300m away)       → fetches fresh OSRM road route
-//                                             from current GPS to destination
-// ===========================================================================
+// World boundary — no panning past the edges of the real world.
+const WORLD_BOUNDS = L.latLngBounds(L.latLng(-85, -180), L.latLng(85, 180));
 
-// How far (metres) the GPS must be from the saved route before we reroute
-const OFF_ROUTE_THRESHOLD_M = 300;
-// Only call OSRM reroute again if GPS moved more than this since last call
-const REROUTE_DEBOUNCE_M    = 150;
-// OSRM endpoint (same as routingApi.js)
-const OSRM_BASE = "https://router.project-osrm.org/route/v1/driving";
+// Tile styles whose provider refused to serve us during this visit; their
+// key-less fallback is used straight away the next time they are picked.
+const brokenStyles = new Set();
 
-// Haversine distance in metres (self-contained — no external import needed)
-function getDistance(lat1, lon1, lat2, lon2) {
-  const R  = 6371e3;
-  const p1 = lat1 * Math.PI / 180;
-  const p2 = lat2 * Math.PI / 180;
-  const dp = (lat2 - lat1) * Math.PI / 180;
-  const dl = (lon2 - lon1) * Math.PI / 180;
-  const a  = Math.sin(dp/2)**2 + Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-}
-
-// Draw (or redraw) a two-layer polyline (white outline + blue fill)
-function drawPolyline(map, routeRef, coords) {
-  if (routeRef.current) { map.removeLayer(routeRef.current); }
-  const outline = L.polyline(coords, { color: "#ffffff", weight: 20, opacity: 0.9 });
-  const inline  = L.polyline(coords, { color: "#4285F4", weight: 12, opacity: 1.0 });
-  routeRef.current = L.layerGroup([outline, inline]).addTo(map);
-}
-
-// Draw (or redraw) a two-layer polyline (white outline + purple dashed fill)
-// Used for off-route "rejoin" lines that guide a rider back to the main route.
-function drawRejoinPolyline(map, ref, coords, color = "#8b5cf6") {
-  if (ref.current) { map.removeLayer(ref.current); }
-  if (!coords || coords.length < 2) return;
-  const outline = L.polyline(coords, { color: "#ffffff", weight: 16, opacity: 0.7 });
-  const inline  = L.polyline(coords, { color, weight: 8, opacity: 0.9, dashArray: "12 8" });
-  ref.current = L.layerGroup([outline, inline]).addTo(map);
-}
-
-function DynamicRouteLine({ ride, myLocation, isLive, onRouteStatus }) {
-  const map = useMap();
-
-  // Refs — we use refs (not state) to avoid re-render loops
-  const routeRef              = useRef(null); // blue main route layer group
-  const rejoinRef             = useRef(null); // purple rejoin layer group
-  const reroutedRef           = useRef(null); // cached off-route OSRM rejoin coords
-  const rejoinStepsRef        = useRef(null); // cached rejoin turn-by-turn steps
-  const lastReroutePos        = useRef(null); // GPS position of last OSRM call
-  const isFetchingRef         = useRef(false);// guard against concurrent fetches
-
-  useEffect(() => {
-    if (!map || !ride?.routeCoordinates) return;
-
-    // ── 1. Parse the saved OSRM coordinates ──────────────────────────────
-    let savedCoords; // [[lat,lng], ...] for Leaflet
-    try {
-      const raw = typeof ride.routeCoordinates === "string"
-        ? JSON.parse(ride.routeCoordinates)
-        : ride.routeCoordinates;
-      // OSRM stores [lng, lat] — flip to Leaflet's [lat, lng]
-      savedCoords = raw.map(pt => [pt[1], pt[0]]);
-    } catch (e) {
-      console.error("[DynamicRouteLine] Failed to parse routeCoordinates:", e);
-      return;
-    }
-
-    // ── 2. Non-live / no GPS → draw full saved route, clear any rejoin ───
-    if (!isLive || !myLocation?.lat) {
-      drawPolyline(map, routeRef, savedCoords);
-      if (rejoinRef.current) { map.removeLayer(rejoinRef.current); rejoinRef.current = null; }
-      rejoinStepsRef.current = null;
-      if (onRouteStatus) onRouteStatus({ isOffRoute: false, rejoinSteps: null, rejoinDistance: null });
-      return;
-    }
-
-    // ── 3. Find the closest point on the saved route to current GPS ───────
-    let minDist      = Infinity;
-    let closestIndex = 0;
-    for (let i = 0; i < savedCoords.length; i++) {
-      const d = getDistance(myLocation.lat, myLocation.lng, savedCoords[i][0], savedCoords[i][1]);
-      if (d < minDist) { minDist = d; closestIndex = i; }
-    }
-
-    // ── 4. ON-ROUTE: trim the saved polyline behind GPS, clear purple ─────
-    if (minDist <= OFF_ROUTE_THRESHOLD_M) {
-      // Clear any cached reroute — we're back on the original path
-      reroutedRef.current    = null;
-      lastReroutePos.current = null;
-      rejoinStepsRef.current = null;
-
-      // Remove purple rejoin line
-      if (rejoinRef.current) { map.removeLayer(rejoinRef.current); rejoinRef.current = null; }
-
-      // Slice off everything behind us; add exact GPS as first point
-      const trimmed = [
-        [myLocation.lat, myLocation.lng],
-        ...savedCoords.slice(closestIndex),
-      ];
-      drawPolyline(map, routeRef, trimmed);
-      if (onRouteStatus) onRouteStatus({ isOffRoute: false, rejoinSteps: null, rejoinDistance: null });
-      return;
-    }
-
-    // ── 5. OFF-ROUTE: draw remaining main route as blue ───────────────────
-    const remainingBlue = savedCoords.slice(closestIndex);
-    drawPolyline(map, routeRef, remainingBlue);
-
-    // ── 6. OFF-ROUTE: draw cached rejoin (purple) while fetching new one ──
-    if (reroutedRef.current) {
-      drawRejoinPolyline(map, rejoinRef, reroutedRef.current);
-    }
-
-    // Report off-route status with cached steps (or null if first time)
-    if (onRouteStatus) onRouteStatus({ isOffRoute: true, rejoinSteps: rejoinStepsRef.current, rejoinDistance: minDist });
-
-    // ── 7. OFF-ROUTE: debounce — only call OSRM if moved enough ──────────
-    const lastPos = lastReroutePos.current;
-    const movedSinceLastReroute = !lastPos
-      || getDistance(myLocation.lat, myLocation.lng, lastPos.lat, lastPos.lng) > REROUTE_DEBOUNCE_M;
-
-    if (!movedSinceLastReroute || isFetchingRef.current) return;
-
-    // ── 8. OFF-ROUTE: fetch road route from GPS → nearest main route point ─
-    isFetchingRef.current  = true;
-    lastReroutePos.current = { lat: myLocation.lat, lng: myLocation.lng };
-
-    const joinLat = savedCoords[closestIndex][0];
-    const joinLng = savedCoords[closestIndex][1];
-    const url = `${OSRM_BASE}/${myLocation.lng},${myLocation.lat};${joinLng},${joinLat}?overview=full&geometries=geojson&steps=true`;
-
-    fetch(url)
-      .then(r => r.json())
-      .then(data => {
-        if (data.code === "Ok" && data.routes?.[0]) {
-          const route = data.routes[0];
-          // Flip [lng,lat] → [lat,lng] for Leaflet
-          const newCoords = route.geometry.coordinates.map(pt => [pt[1], pt[0]]);
-          reroutedRef.current = newCoords;
-          drawRejoinPolyline(map, rejoinRef, newCoords);
-
-          // Parse rejoin turn-by-turn steps for the navigation bar
-          const rawSteps = route.legs?.flatMap(leg => leg.steps || []) || [];
-          const parsed = parseRouteSteps(rawSteps);
-          // Override the last step's instruction to say "rejoin" instead of "arrive"
-          if (parsed.length > 0) {
-            const last = parsed[parsed.length - 1];
-            if (last.maneuverType === "arrive") {
-              last.instruction = "Rejoin the main route";
-            }
-          }
-          rejoinStepsRef.current = parsed;
-          if (onRouteStatus) onRouteStatus({ isOffRoute: true, rejoinSteps: parsed, rejoinDistance: route.distance || minDist });
-        }
-      })
-      .catch(err => {
-        console.warn("[DynamicRouteLine] Rejoin route fetch failed:", err.message);
-        // Fallback: draw straight purple line from GPS → nearest main route point
-        const fallback = [
-          [myLocation.lat, myLocation.lng],
-          savedCoords[closestIndex],
-        ];
-        drawRejoinPolyline(map, rejoinRef, fallback);
-        if (onRouteStatus) onRouteStatus({ isOffRoute: true, rejoinSteps: null, rejoinDistance: minDist });
-      })
-      .finally(() => { isFetchingRef.current = false; });
-
-  }, [map, ride?.routeCoordinates, ride?.destinationLat, ride?.destinationLng, isLive, myLocation?.lat, myLocation?.lng, onRouteStatus]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (routeRef.current) { map?.removeLayer(routeRef.current); }
-      if (rejoinRef.current) { map?.removeLayer(rejoinRef.current); }
-    };
-  }, [map]);
-
-  return null;
-}
-
-// ===========================================================================
-// RiderRejoinLines — Purple dashed lines for off-route GROUP RIDERS
+// ---------------------------------------------------------------------------
+// LEAFLET 1.9 — closing a map with canvas-drawn lines
 //
-// For each participant (not self) whose GPS is >300m from the main route,
-// fetches an OSRM road route from their position to the nearest point on
-// the main route and draws it as a purple dashed polyline.
-// The line disappears when the rider gets back on route.
-// ===========================================================================
-function RiderRejoinLines({ participants, currentUserId, routeCoordinates }) {
-  const map = useMap();
-  const linesRef    = useRef({});  // userId → L.layerGroup
-  const lastPosRef  = useRef({});  // userId → { lat, lng } of last OSRM call
-  const fetchingRef = useRef({});  // userId → boolean
+// map.remove() takes its layers away one by one. A line that is removed
+// AFTER the canvas renderer itself still asks that renderer to repaint; the
+// renderer no longer has a canvas, and the next animation frame threw
+// "Cannot read properties of undefined (reading 'save')" — once for every
+// map that was closed. A renderer without a canvas has nothing to repaint.
+// ---------------------------------------------------------------------------
+const redrawCanvas = L.Canvas.prototype._redraw;
+if (!redrawCanvas.rwGuarded) {
+  L.Canvas.prototype._redraw = function redrawIfAlive() {
+    if (!this._ctx) { this._redrawRequest = null; return; }
+    redrawCanvas.call(this);
+  };
+  L.Canvas.prototype._redraw.rwGuarded = true; // survives hot reloads without double wrapping
+}
 
-  useEffect(() => {
-    if (!map || !routeCoordinates || !participants?.length) return;
+// ---------------------------------------------------------------------------
+// Text that goes into Leaflet popups / marker HTML is built as a string, so
+// anything that came from a user or a geocoder MUST be escaped. Place names
+// are stored with a ride and shown to every member of a group ride — without
+// this, a crafted name would run as script in a friend's browser.
+// ---------------------------------------------------------------------------
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]
+  ));
+}
 
-    // Parse saved route coords
-    let savedCoords;
-    try {
-      const raw = typeof routeCoordinates === "string"
-        ? JSON.parse(routeCoordinates) : routeCoordinates;
-      savedCoords = raw.map(pt => [pt[1], pt[0]]); // flip to [lat, lng]
-    } catch { return; }
+// ---------------------------------------------------------------------------
+// Marker artwork
+// ---------------------------------------------------------------------------
+const START_ICON = L.divIcon({
+  className: "",
+  html: '<div class="rw-start"></div>',
+  iconSize: [22, 22],
+  iconAnchor: [11, 11],
+  popupAnchor: [0, -12],
+});
 
-    const activeIds = new Set();
+const DESTINATION_ICON = L.divIcon({
+  className: "",
+  html: `<svg class="rw-destination" width="32" height="40" viewBox="0 0 32 40" aria-hidden="true">
+    <path d="M16 38.5S29 26.6 29 15.5a13 13 0 1 0-26 0C3 26.6 16 38.5 16 38.5Z"
+      fill="#111827" stroke="#fff" stroke-width="2.5" stroke-linejoin="round"/>
+    <circle cx="16" cy="15.5" r="4.6" fill="#fff"/>
+  </svg>`,
+  iconSize: [32, 40],
+  iconAnchor: [16, 39],
+  popupAnchor: [0, -38],
+});
 
-    // Stagger OSRM fetches to avoid rate-limiting
-    let fetchDelay = 0;
+const MERGE_ICON = L.divIcon({
+  className: "",
+  html: '<div class="rw-merge"></div>',
+  iconSize: [16, 16],
+  iconAnchor: [8, 8],
+});
 
-    participants.forEach(p => {
-      // Skip self — DynamicRouteLine handles the current user's rejoin line
-      if (String(p.userId) === String(currentUserId)) return;
-      // No GPS fix → skip (no line to draw)
-      if (!p.lat || !p.lng) return;
+const PUCK_ICON = L.divIcon({
+  className: "",
+  html: `<div class="rw-puck rw-puck--no-heading">
+    <div class="rw-puck__halo"></div>
+    <div class="rw-puck__pulse"></div>
+    <div class="rw-puck__cone"><svg viewBox="0 0 44 44" aria-hidden="true"><path d="M22 2.5 28.5 14.5h-13Z"/></svg></div>
+    <div class="rw-puck__dot"></div>
+  </div>`,
+  iconSize: [44, 44],
+  iconAnchor: [22, 22],
+  popupAnchor: [0, -16],
+});
 
-      const key = String(p.userId);
-      activeIds.add(key);
+function riderIcon(color, letter, name, offRoute) {
+  return L.divIcon({
+    className: "",
+    html: `<div class="rw-rider${offRoute ? " rw-rider--off" : ""}" style="--rw-rider:${escapeHtml(color)}">
+      <div class="rw-rider__dot">${escapeHtml(letter)}</div>
+      <div class="rw-rider__name">${escapeHtml(name)}</div>
+    </div>`,
+    iconSize: [44, 58],
+    iconAnchor: [22, 20],
+    popupAnchor: [0, -22],
+  });
+}
 
-      // Find distance to nearest main route point
-      let minDist = Infinity;
-      let closestIdx = 0;
-      for (let i = 0; i < savedCoords.length; i++) {
-        const d = getDistance(p.lat, p.lng, savedCoords[i][0], savedCoords[i][1]);
-        if (d < minDist) { minDist = d; closestIdx = i; }
-      }
+// ---------------------------------------------------------------------------
+// Map CSS (injected once)
+// ---------------------------------------------------------------------------
+if (typeof document !== "undefined" && !document.getElementById("rw-map-css")) {
+  const style = document.createElement("style");
+  style.id = "rw-map-css";
+  style.textContent = `
+    .leaflet-container { width:100%; height:100%; background:#E5E7EB; font:inherit; -webkit-tap-highlight-color:transparent; }
+    .rw-map--dark .leaflet-container { background:#15171C; }
+    /* Leaflet's own controls are not used — RideWise draws its own. */
+    .leaflet-top, .leaflet-bottom { display:none !important; }
 
-      // ON-ROUTE: remove any existing purple line for this rider
-      if (minDist <= OFF_ROUTE_THRESHOLD_M) {
-        if (linesRef.current[key]) {
-          map.removeLayer(linesRef.current[key]);
-          delete linesRef.current[key];
-          delete lastPosRef.current[key];
-        }
-        return;
-      }
+    /* ── Tile rendering artifact fixes ── */
+    .leaflet-tile-container img.leaflet-tile { mix-blend-mode: plus-lighter; }
+    .leaflet-fade-anim .leaflet-tile { will-change: opacity; }
+    /* ── GPU compositing for smoother mobile transforms ── */
+    .leaflet-map-pane, .leaflet-tile-pane, .leaflet-overlay-pane { will-change: transform; }
+    /* ── Canvas renderer: keep crisp on retina displays ── */
+    .leaflet-canvas-container canvas { image-rendering: -webkit-optimize-contrast; }
+    .leaflet-container * { -webkit-tap-highlight-color: transparent; }
 
-      // OFF-ROUTE: check if rider moved enough to warrant a new OSRM fetch
-      const last = lastPosRef.current[key];
-      const moved = !last || getDistance(p.lat, p.lng, last.lat, last.lng) > REROUTE_DEBOUNCE_M;
-      if (!moved || fetchingRef.current[key]) return;
+    /* A dark map made from the standard tiles (fallback for the Dark style) */
+    .rw-tiles-invert .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.92); }
 
-      fetchingRef.current[key] = true;
-      lastPosRef.current[key] = { lat: p.lat, lng: p.lng };
+    /* ── Start / destination / merge markers ── */
+    .rw-start { width:22px; height:22px; border-radius:50%; background:#fff; border:6px solid #111827;
+      box-sizing:border-box; box-shadow:0 0 0 2px #fff, 0 2px 6px rgba(0,0,0,0.35); }
+    .rw-destination { display:block; filter:drop-shadow(0 2px 3px rgba(0,0,0,0.35)); }
+    .rw-merge { width:16px; height:16px; border-radius:50%; background:#fff; border:4px solid var(--rw-rejoin,#7C3AED);
+      box-sizing:border-box; box-shadow:0 1px 4px rgba(0,0,0,0.35); }
 
-      const joinLat = savedCoords[closestIdx][0];
-      const joinLng = savedCoords[closestIdx][1];
-      const url = `${OSRM_BASE}/${p.lng},${p.lat};${joinLng},${joinLat}?overview=full&geometries=geojson`;
-      const riderColor = p.color || "#8b5cf6";
+    /* ── The rider ── */
+    .rw-puck { position:relative; width:44px; height:44px; }
+    .rw-puck__halo { position:absolute; left:50%; top:50%; width:0; height:0; border-radius:50%;
+      transform:translate(-50%,-50%); background:var(--rw-puck-soft,rgba(47,111,237,0.14));
+      border:1px solid var(--rw-puck-line,rgba(47,111,237,0.32)); box-sizing:border-box; pointer-events:none; }
+    .rw-puck__pulse { position:absolute; inset:9px; border-radius:50%; background:var(--rw-puck,#2F6FED);
+      opacity:0.35; animation:rw-pulse 2.4s ease-out infinite; }
+    .rw-puck__cone { position:absolute; inset:0; transform:rotate(var(--rw-heading,0deg)); transition:transform 0.5s ease-out; }
+    .rw-puck__cone svg { display:block; width:44px; height:44px; fill:var(--rw-puck,#2F6FED); }
+    .rw-puck__dot { position:absolute; left:13px; top:13px; width:18px; height:18px; border-radius:50%;
+      background:var(--rw-puck,#2F6FED); border:3px solid #fff; box-sizing:border-box;
+      box-shadow:0 1px 5px rgba(0,0,0,0.4); }
+    .rw-puck--no-heading .rw-puck__cone { display:none; }
+    .rw-puck--stale .rw-puck__dot, .rw-puck--stale .rw-puck__cone svg { background:#9CA3AF; fill:#9CA3AF; }
+    .rw-puck--stale .rw-puck__pulse { display:none; }
+    @keyframes rw-pulse { 0% { transform:scale(0.9); opacity:0.4; } 70%,100% { transform:scale(2.4); opacity:0; } }
 
-      // Stagger fetches by 200ms per rider to avoid OSRM rate limits
-      const delay = fetchDelay;
-      fetchDelay += 200;
+    /* ── Other riders ── */
+    .rw-rider { display:flex; flex-direction:column; align-items:center; width:44px; }
+    .rw-rider__dot { width:36px; height:36px; border-radius:50%; background:var(--rw-rider,#8B5CF6); color:#fff;
+      border:2.5px solid #fff; box-sizing:border-box; display:flex; align-items:center; justify-content:center;
+      font:700 14px/1 Inter,system-ui,sans-serif; box-shadow:0 2px 6px rgba(0,0,0,0.4); }
+    .rw-rider--off .rw-rider__dot { outline:2px dashed var(--rw-rider,#8B5CF6); outline-offset:2px; }
+    .rw-rider__name { margin-top:5px; max-width:96px; padding:2px 7px; border-radius:999px; background:rgba(17,24,39,0.86);
+      color:#fff; font:600 11px/1.3 Inter,system-ui,sans-serif; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-      setTimeout(() => {
-        fetch(url)
-          .then(r => r.json())
-          .then(data => {
-            if (data.code === "Ok" && data.routes?.[0]) {
-              const coords = data.routes[0].geometry.coordinates.map(pt => [pt[1], pt[0]]);
-              if (linesRef.current[key]) map.removeLayer(linesRef.current[key]);
-              const outline = L.polyline(coords, { color: "#ffffff", weight: 14, opacity: 0.6 });
-              const inline  = L.polyline(coords, { color: riderColor, weight: 7, opacity: 0.85, dashArray: "10 6" });
-              linesRef.current[key] = L.layerGroup([outline, inline]).addTo(map);
-            }
-          })
-          .catch(() => {
-            // Fallback: straight line from rider → nearest route point
-            if (linesRef.current[key]) map.removeLayer(linesRef.current[key]);
-            const fallback = [[p.lat, p.lng], savedCoords[closestIdx]];
-            const outline = L.polyline(fallback, { color: "#ffffff", weight: 14, opacity: 0.6 });
-            const inline  = L.polyline(fallback, { color: riderColor, weight: 7, opacity: 0.85, dashArray: "10 6" });
-            linesRef.current[key] = L.layerGroup([outline, inline]).addTo(map);
-          })
-          .finally(() => { fetchingRef.current[key] = false; });
-      }, delay);
-    });
+    /* ── Popups ── */
+    .rw-popup .leaflet-popup-content-wrapper { border-radius:12px; box-shadow:0 6px 24px rgba(0,0,0,0.22);
+      background:#fff; color:#111113; border:1px solid #E4E4E7; }
+    .rw-popup .leaflet-popup-content { margin:10px 12px; font:500 13px/1.4 Inter,system-ui,sans-serif; }
+    .rw-popup .leaflet-popup-tip { background:#fff; }
+    .rw-map--dark .rw-popup .leaflet-popup-content-wrapper { background:#141416; color:#F4F4F5; border-color:#26262B; }
+    .rw-map--dark .rw-popup .leaflet-popup-tip { background:#141416; }
+    .rw-popup a.leaflet-popup-close-button { color:inherit; opacity:0.55; }
+    .rw-popup__title { font-weight:700; font-size:14px; }
+    .rw-popup__meta { margin-top:2px; font-size:12px; opacity:0.68; }
+    .rw-popup__stats { display:flex; gap:14px; margin-top:8px; padding-top:8px; border-top:1px solid rgba(128,128,128,0.25); }
+    .rw-popup__stats b { display:block; font-size:14px; }
+    .rw-popup__stats span { font-size:10px; letter-spacing:0.06em; text-transform:uppercase; opacity:0.6; }
 
-    // Clean up lines for riders who left or are no longer in participants
-    Object.keys(linesRef.current).forEach(key => {
-      if (!activeIds.has(key)) {
-        map.removeLayer(linesRef.current[key]);
-        delete linesRef.current[key];
-        delete lastPosRef.current[key];
-      }
-    });
-  }, [map, participants, currentUserId, routeCoordinates]);
-
-  // Cleanup all on unmount
-  useEffect(() => {
-    return () => {
-      Object.values(linesRef.current).forEach(layer => {
-        try { map?.removeLayer(layer); } catch {}
-      });
-      linesRef.current = {};
-    };
-  }, [map]);
-
-  return null;
+    /* Compass needle */
+    .rw-compass-needle { transition: transform 0.25s ease-out; }
+    /* Zoom buttons are for mouse users; touch users pinch. */
+    @media (hover: none), (pointer: coarse) { .rw-pointer-only { display:none !important; } }
+  `;
+  document.head.appendChild(style);
 }
 
 // ===========================================================================
-// MapInternals — all hook-based components inside MapContainer
-// ===========================================================================
-function MapInternals({ ride, myLocation, isLive, tileLayerRef, activeTileIdx, participants = [], currentUserId = null }) {
-  const map = useMap();
-  const markerARef = useRef(null);
-  const markerBRef = useRef(null);
-  const gpsDotRef  = useRef(null);
-  // Camera-follow state. `followRef` = "keep the map centred on me?".
-  // It starts ON (navigation mode) and is switched OFF by the rider the moment
-  // they touch the map, and back ON only when they press the re-center button.
-  const followRef  = useRef(true);
-  const lastFollowPosRef = useRef(null);   // last position we centred on
-  const didInitialZoomRef = useRef(false); // one-time navigation zoom per ride
-  const riderMarkersRef = useRef({});
-
-  // ── Group Rider Markers ──
-  // Real live positions: a member's marker is created on first fix, moved as
-  // new fixes arrive, and removed when they leave or their position goes
-  // stale (ActiveRideOverlay passes lat/lng = null in that case).
-  //
-  // Each marker is keyed by `userId`. When a rider's appearance changes
-  // (color, username) the old marker is destroyed and a fresh one is placed,
-  // so the icon always matches the panel.
-  const riderMetaRef = useRef({}); // userId → { color, username } last used
-
-  useEffect(() => {
-    if (!map) return;
-    
-    const currentMarkerIds = new Set();
-    
-    participants.forEach((p, index) => {
-      // Skip self — the blue GPS dot already shows my position
-      if (p.userId === currentUserId) return;
-      // No coordinates → rider is stale/unavailable, skip (marker will be removed below)
-      if (!p.lat || !p.lng) return;
-      
-      const key = String(p.userId);
-      currentMarkerIds.add(key);
-
-      const color = p.color || RIDER_COLORS[index % RIDER_COLORS.length];
-      const letter = p.avatarLetter || (p.username ? p.username.charAt(0).toUpperCase() : "?");
-      const name = p.username || "Rider";
-
-      // Check if the marker's visual identity changed (color or name)
-      const prevMeta = riderMetaRef.current[key];
-      const metaChanged = prevMeta && (prevMeta.color !== color || prevMeta.name !== name);
-
-      // If appearance changed, destroy the old marker so a fresh icon is created
-      if (metaChanged && riderMarkersRef.current[key]) {
-        riderMarkersRef.current[key].remove();
-        delete riderMarkersRef.current[key];
-      }
-      
-      if (riderMarkersRef.current[key]) {
-        // Existing marker — smoothly move it to the newest position
-        riderMarkersRef.current[key].setLatLng([p.lat, p.lng]);
-      } else {
-        // New marker — create with the rider's icon and popup
-        const icon = makeRiderIcon(color, letter, name);
-        
-        const marker = L.marker([p.lat, p.lng], {
-          icon,
-          zIndexOffset: 500,
-          interactive: true,
-        }).addTo(map);
-        
-        marker.bindPopup(`
-          <div style="font-family:system-ui;text-align:center;padding:2px 0">
-            <div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:4px">
-              <span style="width:24px;height:24px;border-radius:50%;background:${color};display:inline-flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:11px">${letter}</span>
-              <strong style="font-size:13px">${name}</strong>
-            </div>
-            <span style="font-size:11px;color:#666;font-weight:600">${p.role === "admin" ? " Ride Admin" : " Rider"}</span>
-          </div>
-        `);
-        
-        riderMarkersRef.current[key] = marker;
-      }
-
-      // Record the visual identity for the next render cycle
-      riderMetaRef.current[key] = { color, name };
-    });
-    
-    // Remove markers for participants no longer in the list (left / went stale)
-    Object.keys(riderMarkersRef.current).forEach(key => {
-      if (!currentMarkerIds.has(key)) {
-        riderMarkersRef.current[key].remove();
-        delete riderMarkersRef.current[key];
-        delete riderMetaRef.current[key];
-      }
-    });
-    
-  }, [map, participants, currentUserId]);
-
-  // Cleanup all rider markers on unmount
-  useEffect(() => {
-    return () => {
-      Object.values(riderMarkersRef.current).forEach(m => m.remove());
-      riderMarkersRef.current = {};
-    };
-  }, []);
-
-  // Store tile layer ref
-  useEffect(() => {
-    if (!map) return;
-    map.eachLayer(l => { if (l instanceof L.TileLayer) tileLayerRef.current = l; });
-  }, [map, activeTileIdx]); // re-check when tile changes
-
-  // ====================================================================
-  // FOLLOW MODE — released by the rider, re-armed only by the re-center button
-  //
-  // BUG FIXED ("rubber band"): the map used to snap back to the rider
-  // forever, even while the rider tried to pan away.
-  //   • follow was ONLY switched off by a `dragstart` event;
-  //   • but Leaflet silently refuses to start a drag while the map pane
-  //     carries the `leaflet-zoom-anim` class (see Draggable._onDown), and
-  //     our old follow code forced a zoom animation on every GPS tick — so
-  //     drags kept being dropped, `dragstart` never fired, and follow was
-  //     never released;
-  //   • a drag that began on the GPS dot (an interactive marker) also never
-  //     reached Leaflet's drag handler.
-  //
-  // Listening to the RAW pointer/wheel events on the map container fixes all
-  // of that: the very first touch, scroll or double-tap releases follow,
-  // no matter what Leaflet decides to do with that gesture.
-  //
-  // Listeners sit on `map.getContainer()` — NOT on the outer wrapper — so our
-  // own on-map buttons (re-center, map style, compass) never release follow.
-  // ====================================================================
-  useEffect(() => {
-    if (!map) return;
-    const container = map.getContainer();
-    const release = () => {
-      followRef.current = false;
-      lastFollowPosRef.current = null;
-    };
-
-    container.addEventListener("pointerdown", release, { passive: true });
-    container.addEventListener("touchstart",  release, { passive: true });
-    container.addEventListener("wheel",       release, { passive: true });
-    container.addEventListener("dblclick",    release);
-    map.on("dragstart", release);            // second safety net
-
-    return () => {
-      container.removeEventListener("pointerdown", release);
-      container.removeEventListener("touchstart",  release);
-      container.removeEventListener("wheel",       release);
-      container.removeEventListener("dblclick",    release);
-      map.off("dragstart", release);
-    };
-  }, [map]);
-
-  // ====================================================================
-  // CAMERA REQUESTS — three different intents, three different events
-  //
-  //   rw-follow-me → the rider PRESSED the re-center button:
-  //                  switch follow back ON and snap to their position.
-  //   rw-pan-to    → someone tapped a rider in the group panel:
-  //                  look at that rider ONCE, follow stays as it is.
-  //   rw-recenter  → a position update arrived (cached fix / fresh hardware
-  //                  fix / restored position). This one must NEVER re-arm
-  //                  follow by itself, which is what used to yank the map
-  //                  back to the rider seconds AFTER they had panned away
-  //                  (`getCurrentPosition` can answer up to 15s later).
-  // ====================================================================
-  useEffect(() => {
-    if (!map) return;
-
-    const panToPoint = (lat, lng) =>
-      map.setView([lat, lng], map.getZoom(), { animate: true, duration: 0.5 });
-
-    const handleFollowMe = () => {
-      followRef.current = true;          // explicit rider request
-      lastFollowPosRef.current = null;
-      if (myLocation?.lat) panToPoint(myLocation.lat, myLocation.lng);
-    };
-
-    const handlePanTo = (e) => {
-      const { lat, lng } = e.detail || {};
-      if (typeof lat === "number" && typeof lng === "number") panToPoint(lat, lng);
-    };
-
-    const handleRecenter = (e) => {
-      if (!followRef.current) return;    // rider is exploring → hands off
-      const { lat, lng } = e.detail || {};
-      if (typeof lat === "number" && typeof lng === "number") panToPoint(lat, lng);
-    };
-
-    window.addEventListener("rw-follow-me", handleFollowMe);
-    window.addEventListener("rw-pan-to",    handlePanTo);
-    window.addEventListener("rw-recenter",  handleRecenter);
-    return () => {
-      window.removeEventListener("rw-follow-me", handleFollowMe);
-      window.removeEventListener("rw-pan-to",    handlePanTo);
-      window.removeEventListener("rw-recenter",  handleRecenter);
-    };
-  }, [map, myLocation?.lat, myLocation?.lng]);
-
-  // A marker (start)
-  useEffect(() => {
-    if (!map || !ride?.fromLat) return;
-    const ll   = [ride.fromLat, ride.fromLng];
-    const name = (ride.fromName || "Start").split(",")[0];
-    if (markerARef.current) {
-      markerARef.current.setLatLng(ll);
-    } else {
-      markerARef.current = L.marker(ll, { icon: ICON_A })
-        .addTo(map)
-        .bindPopup(`<div style="font-family:system-ui;padding:4px 0;min-width:130px">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-            <span style="background:#22c55e;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:900">A</span>
-            <strong style="color:#111;font-size:14px">${name}</strong>
-          </div>
-          <span style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:50px;padding:2px 8px;font-size:11px;color:#166534;font-weight:600">
-            ${ride.rideType === "solo" ? " Solo Ride" : " Group Ride"}
-          </span>
-        </div>`);
-    }
-    return () => { markerARef.current?.remove(); markerARef.current = null; };
-  }, [map, ride?.fromLat, ride?.fromLng]); // eslint-disable-line
-
-  // B marker (destination)
-  useEffect(() => {
-    if (!map || !ride?.destinationLat) return;
-    const ll   = [ride.destinationLat, ride.destinationLng];
-    const name = (ride.destinationName || "Destination").split(",")[0];
-    const dist = ride.distanceMeters
-      ? ride.distanceMeters >= 1000
-        ? (ride.distanceMeters / 1000).toFixed(1) + " km"
-        : Math.round(ride.distanceMeters) + " m"
-      : "—";
-    const eta = ride.durationSeconds
-      ? ride.durationSeconds >= 3600
-        ? Math.floor(ride.durationSeconds / 3600) + "h " + Math.floor((ride.durationSeconds % 3600) / 60) + "m"
-        : Math.round(ride.durationSeconds / 60) + " min"
-      : "—";
-
-    if (markerBRef.current) {
-      markerBRef.current.setLatLng(ll);
-    } else {
-      markerBRef.current = L.marker(ll, { icon: ICON_B })
-        .addTo(map)
-        .bindPopup(`<div style="font-family:system-ui;padding:4px 0;min-width:160px">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-            <span style="background:#ef4444;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:900">B</span>
-            <strong style="color:#111;font-size:14px">${name}</strong>
-          </div>
-          <div style="display:flex;gap:14px;padding-top:4px;border-top:1px solid #f0f0f0">
-            <div style="text-align:center">
-              <div style="font-size:16px;font-weight:900;color:#ef4444">${dist}</div>
-              <div style="font-size:9px;color:#999;text-transform:uppercase">Distance</div>
-            </div>
-            <div style="width:1px;background:#f0f0f0"></div>
-            <div style="text-align:center">
-              <div style="font-size:16px;font-weight:900;color:#333">${eta}</div>
-              <div style="font-size:9px;color:#999;text-transform:uppercase">ETA</div>
-            </div>
-          </div>
-        </div>`);
-    }
-    return () => { markerBRef.current?.remove(); markerBRef.current = null; };
-  }, [map, ride?.destinationLat, ride?.destinationLng]); // eslint-disable-line
-
-  // GPS dot (live position)
-  // NOT draggable: the dot always shows the rider's REAL GPS fix. Dragging
-  // it used to fire a fake "simulate-gps" position, which could publish an
-  // invented location to the rider's group (requirement 9).
-  useEffect(() => {
-    if (!map || !myLocation?.lat) return;
-    const ll = [myLocation.lat, myLocation.lng];
-       if (gpsDotRef.current) {
-      gpsDotRef.current.setLatLng(ll);
-    } else {
-      gpsDotRef.current = L.marker(ll, {
-        icon: GPS_ICON,
-        zIndexOffset: 1000,
-        interactive: true,
-      })
-      .addTo(map)
-      .bindPopup("<div style='font-family:system-ui;font-size:13px;font-weight:700'> You are here</div>");
-    }
-    // ── Camera follow (only while the rider has not taken the map) ──
-    // See the FOLLOW MODE block above for the full "rubber band" story.
-    //   • one navigation zoom (FOLLOW_ZOOM) when follow starts, so the map
-    //     still opens at street level — the rider's own zoom is never
-    //     overridden afterwards;
-    //   • pan-only animation: same zoom => Leaflet takes the pan path and the
-    //     map pane never gets `leaflet-zoom-anim`, the class that silently
-    //     blocks dragging;
-    //   • GPS jitter is ignored — pan only after real movement, or once the
-    //     rider has drifted too far from the centre of the screen.
-    if (!isLive || !followRef.current) return;
-
-    const driftPx = map.getSize().divideBy(2)
-      .distanceTo(map.latLngToContainerPoint(ll));   // rotation-aware
-    const movedM = lastFollowPosRef.current
-      ? getDistance(lastFollowPosRef.current[0], lastFollowPosRef.current[1], ll[0], ll[1])
-      : Infinity;
-
-    if (!didInitialZoomRef.current) {
-      didInitialZoomRef.current = true;
-      lastFollowPosRef.current = ll;
-      map.setView(ll, Math.max(map.getZoom(), FOLLOW_ZOOM), { animate: true, duration: 0.6 });
-      return;
-    }
-
-    if (movedM >= FOLLOW_MIN_MOVE_M || driftPx > FOLLOW_MAX_DRIFT_PX) {
-      lastFollowPosRef.current = ll;
-      map.setView(ll, map.getZoom(), { animate: true, duration: 0.4 });
-    }
-
-    return () => { gpsDotRef.current?.remove(); gpsDotRef.current = null; };
-  }, [map, myLocation?.lat, myLocation?.lng, isLive]); // eslint-disable-line
-
-  return null;
-}
-
-// ===========================================================================
-// MapBehavior — enforces Google Maps-like constraints from inside the map
+// MapBehavior — keeps vector layers aligned and reports the map bearing
 //
-//   • Listens to `rotate` events from leaflet-rotate and reports the
-//     current bearing (degrees) to the parent via onBearingChange().
-//   • Re-applies maxBounds after rotation so the map can't drift past
-//     the world boundary when the user spins it.
+// leaflet-rotate has an OPEN upstream bug (issue #43): during gestures,
+// Leaflet's renderer skips updates (_animatingZoom guard), so vectors drift.
+// Two strategies keep the route line glued to the roads:
+//   A) Event-based: re-sync on rotate / zoomend / moveend / resize
+//   B) RAF-based: during ACTIVE touch/pointer gestures, force the renderer
+//      to update every frame.
 // ===========================================================================
 function MapBehavior({ onBearingChange }) {
   const map = useMap();
 
-  // ====================================================================
-  // VECTOR RE-SYNC — keeps the route line glued to the map
-  //
-  // leaflet-rotate has an OPEN upstream bug (issue #43): during gestures,
-  // Leaflet's renderer skips updates (_animatingZoom guard), so vectors
-  // drift. We use TWO strategies:
-  //   A) Event-based: fire on rotate/zoomend/moveend/resize
-  //   B) RAF-based: during ACTIVE touch/pointer gestures, run a
-  //      requestAnimationFrame loop that forces renderer._update()
-  //      every frame, keeping vectors aligned in real-time.
-  // ====================================================================
   useEffect(() => {
-    if (!map) return;
+    if (!map) return undefined;
 
     const realignVectors = () => {
-      // Force the map's default renderer (Canvas or SVG) to re-sync
       const renderer = map._renderer;
       if (renderer && typeof renderer._update === "function") {
-        try { renderer._update(); }
-        catch (err) { /* silent — no-op when nothing drifts */ }
+        try { renderer._update(); } catch { /* nothing to re-sync */ }
       }
     };
 
     // ── A) Event-based re-sync (fires on gesture completion) ──
-    map.on("rotate",  realignVectors);
+    map.on("rotate", realignVectors);
     map.on("zoomend", realignVectors);
     map.on("moveend", realignVectors);
-    map.on("resize",  realignVectors);
+    map.on("resize", realignVectors);
 
     // ── B) RAF-based mid-gesture re-sync (fires every frame) ──
     let rafId = null;
@@ -857,63 +292,45 @@ function MapBehavior({ onBearingChange }) {
 
     const rafLoop = () => {
       realignVectors();
-      if (gestureActive > 0) {
-        rafId = requestAnimationFrame(rafLoop);
-      } else {
-        rafId = null;
-      }
+      rafId = gestureActive > 0 ? requestAnimationFrame(rafLoop) : null;
     };
-
     const startGestureSync = () => {
-      gestureActive++;
-      if (!rafId) {
-        rafId = requestAnimationFrame(rafLoop);
-      }
+      gestureActive += 1;
+      if (!rafId) rafId = requestAnimationFrame(rafLoop);
     };
-
     const stopGestureSync = () => {
       gestureActive = Math.max(0, gestureActive - 1);
-      if (gestureActive === 0) {
-        // One final re-sync after the gesture ends
-        realignVectors();
-      }
+      if (gestureActive === 0) realignVectors(); // one final re-sync
     };
 
     const container = map.getContainer();
-    container.addEventListener("touchstart",  startGestureSync, { passive: true });
-    container.addEventListener("touchend",    stopGestureSync,  { passive: true });
-    container.addEventListener("touchcancel", stopGestureSync,  { passive: true });
+    container.addEventListener("touchstart", startGestureSync, { passive: true });
+    container.addEventListener("touchend", stopGestureSync, { passive: true });
+    container.addEventListener("touchcancel", stopGestureSync, { passive: true });
     container.addEventListener("pointerdown", startGestureSync, { passive: true });
-    container.addEventListener("pointerup",   stopGestureSync,  { passive: true });
-    container.addEventListener("pointercancel",stopGestureSync,  { passive: true });
+    container.addEventListener("pointerup", stopGestureSync, { passive: true });
+    container.addEventListener("pointercancel", stopGestureSync, { passive: true });
 
     return () => {
-      map.off("rotate",  realignVectors);
+      map.off("rotate", realignVectors);
       map.off("zoomend", realignVectors);
       map.off("moveend", realignVectors);
-      map.off("resize",  realignVectors);
-      container.removeEventListener("touchstart",   startGestureSync);
-      container.removeEventListener("touchend",     stopGestureSync);
-      container.removeEventListener("touchcancel",  stopGestureSync);
-      container.removeEventListener("pointerdown",  startGestureSync);
-      container.removeEventListener("pointerup",    stopGestureSync);
-      container.removeEventListener("pointercancel",stopGestureSync);
+      map.off("resize", realignVectors);
+      container.removeEventListener("touchstart", startGestureSync);
+      container.removeEventListener("touchend", stopGestureSync);
+      container.removeEventListener("touchcancel", stopGestureSync);
+      container.removeEventListener("pointerdown", startGestureSync);
+      container.removeEventListener("pointerup", stopGestureSync);
+      container.removeEventListener("pointercancel", stopGestureSync);
       if (rafId) cancelAnimationFrame(rafId);
     };
   }, [map]);
 
-  // ====================================================================
-  // MIDDLE-CLICK ROTATION — Google Earth-style desktop control
-  //
-  // Hold middle mouse button and drag horizontally to rotate the map.
-  // Sensitivity: 0.5° per pixel of horizontal mouse movement.
-  // Only activates when ENABLE_MAP_ROTATION is true.
-  // ====================================================================
+  // MIDDLE-CLICK ROTATION — only when ENABLE_MAP_ROTATION is true.
   useEffect(() => {
-    if (!map || !ENABLE_MAP_ROTATION) return;
-    if (typeof map.setBearing !== "function") return;
+    if (!map || !ENABLE_MAP_ROTATION || typeof map.setBearing !== "function") return undefined;
 
-    let isRotating = false;
+    let rotating = false;
     let startX = 0;
     let startBearing = 0;
 
@@ -921,38 +338,28 @@ function MapBehavior({ onBearingChange }) {
       if (e.button !== 1) return; // middle click only
       e.preventDefault();
       e.stopPropagation();
-      isRotating = true;
+      rotating = true;
       startX = e.clientX;
       startBearing = typeof map.getBearing === "function" ? map.getBearing() : 0;
       map.getContainer().style.cursor = "grabbing";
     };
-
     const onMouseMove = (e) => {
-      if (!isRotating) return;
+      if (!rotating) return;
       e.preventDefault();
-      const dx = e.clientX - startX;
-      const newBearing = startBearing + dx * 0.5;
-      map.setBearing(newBearing);
+      map.setBearing(startBearing + (e.clientX - startX) * 0.5);
     };
-
     const onMouseUp = (e) => {
-      if (!isRotating) return;
-      if (e.button !== 1) return;
-      isRotating = false;
+      if (!rotating || e.button !== 1) return;
+      rotating = false;
       map.getContainer().style.cursor = "";
     };
-
-    // Prevent the default middle-click auto-scroll behavior
-    const preventAutoScroll = (e) => {
-      if (e.button === 1) e.preventDefault();
-    };
+    const preventAutoScroll = (e) => { if (e.button === 1) e.preventDefault(); };
 
     const container = map.getContainer();
     container.addEventListener("mousedown", onMouseDown);
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
     container.addEventListener("auxclick", preventAutoScroll);
-
     return () => {
       container.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("mousemove", onMouseMove);
@@ -961,108 +368,697 @@ function MapBehavior({ onBearingChange }) {
     };
   }, [map]);
 
-  // ====================================================================
-  // BEARING TRACKING — report rotation to parent + compass reset
-  // ====================================================================
+  // BEARING TRACKING — report rotation to the parent
   useEffect(() => {
-    if (!map) return;
-
+    if (!map) return undefined;
     const handleRotate = () => {
-      const b = typeof map.getBearing === "function" ? map.getBearing() : 0;
-      onBearingChange(Math.round(b * 10) / 10);
+      const bearing = typeof map.getBearing === "function" ? map.getBearing() : 0;
+      onBearingChange(Math.round(bearing * 10) / 10);
     };
-
-    const handleResetBearing = () => {
-      if (typeof map.setBearing === "function") {
-        map.setBearing(0);
-      }
-    };
-
     map.on("rotate", handleRotate);
-    window.addEventListener("rw-reset-bearing", handleResetBearing);
-    handleRotate();
-
-    return () => {
-      map.off("rotate", handleRotate);
-      window.removeEventListener("rw-reset-bearing", handleResetBearing);
-    };
+    return () => map.off("rotate", handleRotate);
   }, [map, onBearingChange]);
 
   return null;
 }
 
 // ===========================================================================
-// RideMap — exported component (same props as before, no parent changes)
-//
-// Google Maps-like behavior:
-//   • minZoom 3  / maxZoom 19 — prevents zooming to planet or pixel level
-//   • maxBounds  — hard world boundary, no infinite horizontal scroll
-//   • rotate     — two-finger twist on touch, Shift+drag on desktop
-//   • compass    — shows current bearing, click to snap back to north
+// RideMap
 // ===========================================================================
+export default function RideMap({
+  ride,
+  nav = null,
+  isLive = false,
+  gpsState = GPS.OK,
+  participants = [],
+  currentUserId = null,
+  riderLines = null,
+  riderStatus = null,
+  compact = false,
+  padding = null,
+  extraControls = null,
+  tc: tcProp,
+  ref,
+}) {
+  const { user } = useAuth();
+  const { tc: themeTc } = useTheme(user?.id);
+  const tc = tcProp || themeTc;
 
-// World boundary — prevent panning past the edges of the real world.
-// The slight overshoot (±2° lat, ±Infinity lng is NOT used) keeps the
-// map from snapping awkwardly when a route is near the antimeridian.
-const WORLD_BOUNDS = L.latLngBounds(
-  L.latLng(-85, -180),
-  L.latLng(85, 180),
-);
+  const wrapperRef = useRef(null);
+  const [map, setMap] = useState(null);           // the Leaflet map instance
+  const [bearing, setBearing] = useState(0);
+  const [following, setFollowing] = useState(isLive);
+  const [showStyles, setShowStyles] = useState(false);
+  const [styleChoice, setStyleChoice] = useState(loadMapStyleChoice);
+  const [fallbackFor, setFallbackFor] = useState(null);
 
-export default function RideMap({ ride, myLocation, isLive = false, participants = [], currentUserId = null, onRouteStatus }) {
-  const tileLayerRef  = useRef(null);
-  const [showTiles,   setShowTiles]  = useState(false);
-  const [activeTile,  setActiveTile] = useState(0);
-  const [bearing,     setBearing]    = useState(0); // current map rotation in degrees
+  // ── Basemap ────────────────────────────────────────────────
+  const styleDef = resolveMapStyle(styleChoice, tc.isDark);
+  const usingFallback =
+    Boolean(styleDef.fallback) && (fallbackFor === styleDef.id || brokenStyles.has(styleDef.id));
+  const tiles = usingFallback ? { ...styleDef, ...styleDef.fallback } : styleDef;
+  const palette = ROUTE_COLORS[styleDef.dark ? "dark" : "light"];
 
-  const from = ride?.fromLat        ? { lat: ride.fromLat,        lng: ride.fromLng }        : null;
-  const center = from ? [from.lat, from.lng] : [13.0827, 80.2707];
+  // ── Route geometry ─────────────────────────────────────────
+  // Live: the navigation hook already indexed it. Preview: index it here.
+  const navRoute = nav?.route ?? null;
+  const previewRoute = useMemo(
+    () => (navRoute ? null : buildNavRoute(ride?.routeCoordinates, null)),
+    [navRoute, ride?.routeCoordinates],
+  );
+  const route = navRoute ?? previewRoute;
 
-  const switchTile = (i) => {
-    setActiveTile(i);
-    setShowTiles(false);
-    if (tileLayerRef.current) {
-      const layer = TILE_LAYERS[i];
-      const tl = tileLayerRef.current;
-      // maxNativeZoom is per-provider — carry it across with the URL, then
-      // redraw so Leaflet re-clamps the tile zoom to the new source's limit.
-      tl.options.maxNativeZoom = layer.maxNativeZoom;
-      tl.setUrl(layer.url);
-      tl.redraw();
+  const position = isLive ? nav?.position ?? null : null;
+  const heading = isLive ? nav?.heading ?? null : null;
+
+  // ── Latest values for callbacks that must not change identity ──
+  const live = useRef({ nav, route, position, padding, ride });
+  useEffect(() => {
+    live.current = { nav, route, position, padding, ride };
+  });
+
+  const followRef = useRef(isLive);          // "keep the map centred on me?"
+  const lastFollowRef = useRef(null);        // last position the camera centred on
+  const zoomedInRef = useRef(false);         // one-time navigation zoom per map
+  const fittedRef = useRef(null);            // what the initial "fit route" was done for
+
+  const setFollow = useCallback((value) => {
+    followRef.current = value;
+    if (!value) lastFollowRef.current = null;
+    setFollowing(value);
+  }, []);
+
+  // ====================================================================
+  // CAMERA
+  // ====================================================================
+
+  // Where the map centre must be so that `lat,lng` appears in the middle of
+  // the area NOT covered by the overlay's top and bottom bars.
+  const centerFor = useCallback((lat, lng, zoom) => {
+    const pad = live.current.padding;
+    const shift = ((pad?.bottom ?? 0) - (pad?.top ?? 0)) / 2;
+    if (!map || !shift) return L.latLng(lat, lng);
+    return map.unproject(map.project([lat, lng], zoom).add([0, shift]), zoom);
+  }, [map]);
+
+  // Show the rest of the trip: what is still ahead, the way back when off
+  // the route, and the rider.
+  const fitRoute = useCallback(({ animate = true, release = true } = {}) => {
+    if (!map) return;
+    const { nav: currentNav, route: currentRoute, position: here, padding: pad, ride: currentRide } = live.current;
+
+    const points = [];
+    if (currentRoute) {
+      const from = isLive && currentNav?.progress != null ? currentNav.progress : 0;
+      const ahead = sliceRoute(currentRoute, from, currentRoute.total);
+      points.push(...(ahead.length ? ahead : routeLatLngs(currentRoute)));
+    } else {
+      if (Number.isFinite(currentRide?.fromLat)) points.push([currentRide.fromLat, currentRide.fromLng]);
+      if (Number.isFinite(currentRide?.destinationLat)) {
+        points.push([currentRide.destinationLat, currentRide.destinationLng]);
+      }
     }
+    if (isLive && currentNav?.rejoin?.line) points.push(...currentNav.rejoin.line);
+    if (isLive && here) points.push([here.lat, here.lng]);
+    if (!points.length) return;
+
+    if (release) setFollow(false);
+    const top = pad?.top ?? 0;
+    const bottom = pad?.bottom ?? 0;
+    const margin = compact ? 22 : 36;
+    map.fitBounds(L.latLngBounds(points), {
+      paddingTopLeft: [margin, top + margin],
+      paddingBottomRight: [compact ? margin : margin + 36, bottom + margin],
+      maxZoom: 17,
+      animate,
+    });
+  }, [map, isLive, compact, setFollow]);
+
+  // Re-arm follow mode and jump to the rider (the re-center button).
+  const followMe = useCallback(() => {
+    if (!map) return;
+    setFollow(true);
+    const here = live.current.position ?? getLastKnownLocation();
+    if (here) {
+      const zoom = Math.max(map.getZoom(), FOLLOW_ZOOM);
+      lastFollowRef.current = [here.lat, here.lng];
+      map.setView(centerFor(here.lat, here.lng, zoom), zoom, { animate: true, duration: 0.5 });
+    }
+    // Also ask the hardware for a brand-new fix; it reaches the map through
+    // the normal position stream, which only moves the camera while follow
+    // is still on — so it can never yank the map back after the rider pans.
+    requestFreshFix();
+  }, [map, centerFor, setFollow]);
+
+  // Look at a place once (a rider in the group panel). Follow is released.
+  const panTo = useCallback((lat, lng) => {
+    if (!map || !Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    setFollow(false);
+    map.setView([lat, lng], Math.max(map.getZoom(), 14), { animate: true, duration: 0.5 });
+  }, [map, setFollow]);
+
+  useImperativeHandle(ref, () => ({ panTo, followMe, fitRoute }), [panTo, followMe, fitRoute]);
+
+  // ── Keep the map sized to its container ──
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!map || !wrapper || typeof ResizeObserver === "undefined") return undefined;
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => map.invalidateSize({ pan: false }));
+    });
+    observer.observe(wrapper);
+    return () => { observer.disconnect(); cancelAnimationFrame(frame); };
+  }, [map]);
+
+  // ── First view: the whole route ──
+  // (Preview maps used to open at zoom 12 on the start point, so a long
+  // route was mostly off screen.)
+  const fitKey = route ?? `${ride?.fromLat},${ride?.fromLng}|${ride?.destinationLat},${ride?.destinationLng}`;
+  useEffect(() => {
+    if (!map || fittedRef.current === fitKey) return;
+    fittedRef.current = fitKey;
+    if (isLive && live.current.position) return; // already following the rider
+    map.invalidateSize({ pan: false });
+    fitRoute({ animate: false, release: false });
+    // A live ride shows the overview only until the rider's position is
+    // known: the next fix zooms in on them again. (Without this, a route
+    // that finished loading AFTER the first fix left the map zoomed out
+    // on the whole trip while "following".)
+    zoomedInRef.current = false;
+  }, [map, fitKey, isLive, fitRoute]);
+
+  // ====================================================================
+  // FOLLOW MODE — released by the rider, re-armed only by the re-center button
+  //
+  // Listening to the RAW pointer/wheel events on the map container releases
+  // follow on the very first touch, scroll or double-tap, no matter what
+  // Leaflet decides to do with that gesture. (A `dragstart`-only listener
+  // missed drags that Leaflet silently refused — the "rubber band" bug.)
+  //
+  // Listeners sit on `map.getContainer()` — NOT on the outer wrapper — so
+  // RideWise's own on-map buttons never release follow.
+  // ====================================================================
+  useEffect(() => {
+    if (!map) return undefined;
+    const container = map.getContainer();
+    const release = () => { if (followRef.current) setFollow(false); };
+
+    container.addEventListener("pointerdown", release, { passive: true });
+    container.addEventListener("touchstart", release, { passive: true });
+    container.addEventListener("wheel", release, { passive: true });
+    container.addEventListener("dblclick", release);
+    map.on("dragstart", release); // second safety net
+    return () => {
+      container.removeEventListener("pointerdown", release);
+      container.removeEventListener("touchstart", release);
+      container.removeEventListener("wheel", release);
+      container.removeEventListener("dblclick", release);
+      map.off("dragstart", release);
+    };
+  }, [map, setFollow]);
+
+  // ── Follow the rider ──
+  //   • one navigation zoom when follow starts — the rider's own zoom is
+  //     never overridden afterwards;
+  //   • pan-only afterwards: same zoom ⇒ Leaflet takes the pan path and the
+  //     map pane never gets `leaflet-zoom-anim`, the class that silently
+  //     blocks dragging;
+  //   • GPS jitter is ignored.
+  const lat = position?.lat;
+  const lng = position?.lng;
+  useEffect(() => {
+    if (!map || !isLive || lat == null || lng == null || !followRef.current) return;
+
+    if (!zoomedInRef.current) {
+      zoomedInRef.current = true;
+      lastFollowRef.current = [lat, lng];
+      const zoom = Math.max(map.getZoom(), FOLLOW_ZOOM);
+      map.setView(centerFor(lat, lng, zoom), zoom, { animate: true, duration: 0.6 });
+      return;
+    }
+
+    const zoom = map.getZoom();
+    const target = centerFor(lat, lng, zoom);
+    const driftPx = map.getSize().divideBy(2).distanceTo(map.latLngToContainerPoint(target));
+    const last = lastFollowRef.current;
+    const movedM = last ? haversineDistance(last[0], last[1], lat, lng) : Infinity;
+
+    if (movedM >= FOLLOW_MIN_MOVE_M || driftPx > FOLLOW_MAX_DRIFT_PX) {
+      lastFollowRef.current = [lat, lng];
+      map.setView(target, zoom, { animate: true, duration: 0.8, easeLinearity: 1 });
+    }
+  }, [map, isLive, lat, lng, centerFor]);
+
+  // ====================================================================
+  // BASEMAP TILES
+  // ====================================================================
+  useEffect(() => {
+    if (!map) return undefined;
+
+    const layer = L.tileLayer(tiles.url, {
+      noWrap: true,               // no tile repetition at the world's edges
+      updateWhenZooming: false,   // don't reload tiles mid-zoom animation
+      keepBuffer: 4,              // keep 4 rows of off-screen tiles loaded
+      // maxZoom MUST match the map's maxZoom. Leaflet's TileLayer default is
+      // 18 while the map allows 19; anything past the layer limit makes
+      // GridLayer request zero tiles, which blanked the deepest zoom level.
+      // (detectRetina stays OFF: it asks for zoom + 1, which nobody serves.)
+      maxZoom: MAP_MAX_ZOOM,
+      maxNativeZoom: tiles.maxNativeZoom,
+    });
+
+    // The provider refuses us (no tile loaded, several failed) → switch to
+    // this style's key-less fallback instead of leaving the map blank.
+    let loaded = 0;
+    let failed = 0;
+    layer.on("tileload", () => { loaded += 1; });
+    layer.on("tileerror", () => {
+      failed += 1;
+      if (!usingFallback && styleDef.fallback && loaded === 0 && failed >= 3) {
+        brokenStyles.add(styleDef.id);
+        setFallbackFor(styleDef.id);
+      }
+    });
+
+    layer.addTo(map);
+    const container = map.getContainer();
+    container.classList.toggle("rw-tiles-invert", Boolean(tiles.invert));
+    return () => {
+      map.removeLayer(layer);
+      container.classList.remove("rw-tiles-invert");
+    };
+  }, [map, tiles.url, tiles.maxNativeZoom, tiles.invert, styleDef.id, styleDef.fallback, usingFallback]);
+
+  const chooseStyle = (choice) => {
+    setStyleChoice(choice);
+    saveMapStyleChoice(choice);
+    setShowStyles(false);
   };
 
-  return (
-    <div style={{ position: "absolute", inset: 0 }}>
+  // ====================================================================
+  // ROUTE LINES
+  //
+  // Six persistent polylines, updated in place (the old code destroyed and
+  // re-created every line on each GPS tick). Bottom to top:
+  //   passed · skipped · route casing · route · rejoin casing · rejoin
+  // ====================================================================
+  const linesRef = useRef(null);
+  useEffect(() => {
+    if (!map) return undefined;
+    const make = () => L.polyline([], {
+      interactive: false, // never intercept taps meant for the map
+      lineCap: "round",
+      lineJoin: "round",
+    }).addTo(map);
 
+    const lines = {
+      passed: make(),
+      skipped: make(),
+      casing: make(),
+      route: make(),
+      rejoinCasing: make(),
+      rejoin: make(),
+    };
+    linesRef.current = lines;
+    return () => {
+      Object.values(lines).forEach((line) => map.removeLayer(line));
+      linesRef.current = null;
+    };
+  }, [map]);
+
+  // Colours follow the basemap; widths follow the zoom.
+  useEffect(() => {
+    const lines = linesRef.current;
+    if (!map || !lines) return undefined;
+
+    const restyle = () => {
+      const width = routeWeight(map.getZoom());
+      lines.casing.setStyle({ color: palette.casing, weight: width + 4, opacity: 0.95 });
+      lines.route.setStyle({ color: palette.route, weight: width, opacity: 1 });
+      lines.passed.setStyle({ color: palette.passed, weight: Math.max(3, width - 3), opacity: 0.8 });
+      lines.skipped.setStyle({ color: palette.route, weight: Math.max(3, width - 2), opacity: 0.32 });
+      lines.rejoinCasing.setStyle({ color: palette.casing, weight: width + 3, opacity: 0.9 });
+      lines.rejoin.setStyle({
+        color: palette.rejoin,
+        weight: Math.max(4, width - 1),
+        opacity: 1,
+        dashArray: `${width + 2} ${width + 7}`,
+      });
+    };
+    restyle();
+    map.on("zoomend", restyle);
+    return () => map.off("zoomend", restyle);
+  }, [map, palette]);
+
+  // Geometry.
+  const status = isLive ? nav?.status ?? "locating" : "preview";
+  const progress = isLive ? nav?.progress ?? null : null;
+  const mergeProgress = isLive ? nav?.mergeProgress ?? null : null;
+  const rejoinLine = isLive ? nav?.rejoin?.line ?? null : null;
+  const fromLat = ride?.fromLat;
+  const fromLng = ride?.fromLng;
+  const destLat = ride?.destinationLat;
+  const destLng = ride?.destinationLng;
+  const routePending = Boolean(ride?.routePending);
+
+  useEffect(() => {
+    const lines = linesRef.current;
+    if (!map || !lines) return;
+
+    let passed = [];
+    let skipped = [];
+    let ahead = [];
+    let rejoin = [];
+
+    if (!route) {
+      // No stored geometry (older rides): a plain line between the endpoints
+      // so the map still shows where the ride went. Not while the real
+      // route is still on its way, though.
+      if (!routePending && [fromLat, fromLng, destLat, destLng].every(Number.isFinite)) {
+        ahead = [[fromLat, fromLng], [destLat, destLng]];
+      }
+    } else if (status === "preview" || status === "locating") {
+      ahead = routeLatLngs(route);
+    } else if (status === "arrived") {
+      passed = routeLatLngs(route);
+    } else {
+      const done = progress ?? 0;
+      passed = sliceRoute(route, 0, done);
+      if (status === "off-route") {
+        const merge = Math.max(done, mergeProgress ?? done);
+        skipped = sliceRoute(route, done, merge);
+        ahead = sliceRoute(route, merge, route.total);
+        rejoin = rejoinLine ?? [];
+      } else {
+        ahead = sliceRoute(route, done, route.total);
+      }
+    }
+
+    lines.passed.setLatLngs(passed);
+    lines.skipped.setLatLngs(skipped);
+    lines.casing.setLatLngs(ahead);
+    lines.route.setLatLngs(ahead);
+    lines.rejoinCasing.setLatLngs(rejoin);
+    lines.rejoin.setLatLngs(rejoin);
+    // A missing route is drawn dashed: it is a guide, not the real road.
+    lines.route.setStyle({ dashArray: route ? null : "2 12" });
+    lines.casing.setStyle({ opacity: route ? 0.95 : 0 });
+  }, [map, route, status, progress, mergeProgress, rejoinLine, fromLat, fromLng, destLat, destLng, routePending]);
+
+  // Where the way back meets the route.
+  const mergePoint = isLive && status === "off-route" ? nav?.rejoin?.mergePoint ?? null : null;
+  const mergeLat = mergePoint?.lat;
+  const mergeLng = mergePoint?.lng;
+  useEffect(() => {
+    if (!map || mergeLat == null || mergeLng == null) return undefined;
+    const marker = L.marker([mergeLat, mergeLng], {
+      icon: MERGE_ICON,
+      interactive: false,
+      keyboard: false,
+      zIndexOffset: 300,
+    }).addTo(map);
+    return () => marker.remove();
+  }, [map, mergeLat, mergeLng]);
+
+  // ====================================================================
+  // START + DESTINATION MARKERS
+  // ====================================================================
+  const fromName = shortPlaceName(ride?.fromName, "Start");
+  const destName = shortPlaceName(ride?.destinationName, "Destination");
+  const rideType = ride?.rideType;
+  const plannedDistance = ride?.distanceMeters;
+  const plannedDuration = ride?.durationSeconds;
+
+  useEffect(() => {
+    if (!map || !Number.isFinite(fromLat) || !Number.isFinite(fromLng)) return undefined;
+    const marker = L.marker([fromLat, fromLng], { icon: START_ICON, keyboard: false, zIndexOffset: 200 })
+      .addTo(map)
+      .bindPopup(
+        `<div class="rw-popup__title">${escapeHtml(fromName)}</div>
+         <div class="rw-popup__meta">Start${rideType ? ` · ${escapeHtml(rideType === "group" ? "Group ride" : "Solo ride")}` : ""}</div>`,
+        { className: "rw-popup" },
+      );
+    return () => marker.remove();
+  }, [map, fromLat, fromLng, fromName, rideType]);
+
+  useEffect(() => {
+    if (!map || !Number.isFinite(destLat) || !Number.isFinite(destLng)) return undefined;
+    const marker = L.marker([destLat, destLng], { icon: DESTINATION_ICON, keyboard: false, zIndexOffset: 250 })
+      .addTo(map)
+      .bindPopup(
+        `<div class="rw-popup__title">${escapeHtml(destName)}</div>
+         <div class="rw-popup__meta">Destination</div>
+         <div class="rw-popup__stats">
+           <div><b>${escapeHtml(formatDistance(plannedDistance))}</b><span>Route</span></div>
+           <div><b>${escapeHtml(formatDuration(plannedDuration))}</b><span>Ride time</span></div>
+         </div>`,
+        { className: "rw-popup" },
+      );
+    return () => marker.remove();
+  }, [map, destLat, destLng, destName, plannedDistance, plannedDuration]);
+
+  // ====================================================================
+  // THE RIDER — position dot, heading arrow, accuracy ring
+  //
+  // The dot always shows the rider's REAL GPS fix (never a snapped or
+  // invented position) and is not draggable.
+  // ====================================================================
+  const puckRef = useRef(null); // { marker, frame }
+  useEffect(() => {
+    if (!map || !isLive) return undefined;
+    const puck = { marker: null, frame: 0 };
+    puckRef.current = puck;
+    return () => {
+      cancelAnimationFrame(puck.frame);
+      puck.marker?.remove();
+      puckRef.current = null;
+    };
+  }, [map, isLive]);
+
+  // Move it — gliding from the previous fix to the new one.
+  useEffect(() => {
+    const puck = puckRef.current;
+    if (!map || !puck || lat == null || lng == null) return;
+
+    if (!puck.marker) {
+      puck.marker = L.marker([lat, lng], { icon: PUCK_ICON, zIndexOffset: 1000, keyboard: false })
+        .addTo(map)
+        .bindPopup('<div class="rw-popup__title">You are here</div>', { className: "rw-popup" });
+      return;
+    }
+
+    cancelAnimationFrame(puck.frame);
+    const from = puck.marker.getLatLng();
+    const reduceMotion = document.documentElement.classList.contains("rw-reduce-motion");
+    const far = haversineDistance(from.lat, from.lng, lat, lng) > 400; // a jump, not a glide
+    if (reduceMotion || far) {
+      puck.marker.setLatLng([lat, lng]);
+      return;
+    }
+
+    const startedAt = performance.now();
+    const step = (now) => {
+      const k = Math.min(1, (now - startedAt) / GLIDE_MS);
+      puck.marker?.setLatLng([from.lat + (lat - from.lat) * k, from.lng + (lng - from.lng) * k]);
+      if (k < 1) puck.frame = requestAnimationFrame(step);
+    };
+    puck.frame = requestAnimationFrame(step);
+  }, [map, lat, lng]);
+
+  // Heading arrow, GPS-lost state, accuracy ring and colours.
+  const accuracy = position?.accuracy ?? null;
+  const gpsLost = gpsState === GPS.LOST || gpsState === GPS.DENIED;
+  useEffect(() => {
+    const puck = puckRef.current;
+    const element = puck?.marker?.getElement()?.querySelector(".rw-puck");
+    if (!map || !element || lat == null) return undefined;
+
+    element.style.setProperty("--rw-puck", palette.puck);
+    element.classList.toggle("rw-puck--stale", gpsLost);
+    element.classList.toggle("rw-puck--no-heading", !Number.isFinite(heading));
+    if (Number.isFinite(heading)) element.style.setProperty("--rw-heading", `${heading}deg`);
+
+    // The accuracy ring is a DOM element sized in pixels, so resizing it
+    // never forces the route canvas to redraw.
+    const halo = element.querySelector(".rw-puck__halo");
+    const sizeHalo = () => {
+      if (!halo) return;
+      const metresPerPixel =
+        (40_075_016.686 * Math.cos((lat * Math.PI) / 180)) / 2 ** (map.getZoom() + 8);
+      const diameter = Number.isFinite(accuracy) ? (accuracy * 2) / metresPerPixel : 0;
+      const shown = diameter >= 30 ? Math.min(diameter, 720) : 0; // tiny ring = good fix, no clutter
+      halo.style.width = `${shown}px`;
+      halo.style.height = `${shown}px`;
+    };
+    sizeHalo();
+    map.on("zoomend", sizeHalo);
+    return () => map.off("zoomend", sizeHalo);
+  }, [map, lat, lng, heading, accuracy, gpsLost, palette]);
+
+  // ====================================================================
+  // GROUP RIDERS — markers
+  //
+  // A member's marker is created on their first fix, moved as new fixes
+  // arrive, and removed when they leave or their position goes stale
+  // (the overlay passes lat/lng = null then). No position is ever invented.
+  // ====================================================================
+  const riderMarkersRef = useRef(new Map()); // userId → { marker, signature }
+  useEffect(() => {
+    if (!map) return;
+    const markers = riderMarkersRef.current;
+    const seen = new Set();
+
+    participants.forEach((rider, index) => {
+      if (String(rider.userId) === String(currentUserId)) return; // my own dot shows me
+      if (!Number.isFinite(rider.lat) || !Number.isFinite(rider.lng)) return;
+
+      const id = String(rider.userId);
+      seen.add(id);
+
+      const color = rider.color || RIDER_COLORS[index % RIDER_COLORS.length];
+      const name = rider.username || "Rider";
+      const letter = rider.avatarLetter || name.charAt(0).toUpperCase();
+      const info = riderStatus?.[id];
+      const offRoute = Boolean(info?.offRoute);
+      const signature = `${color}|${name}|${letter}|${offRoute}|${rider.role}`;
+
+      let entry = markers.get(id);
+      if (entry && entry.signature !== signature) {
+        entry.marker.remove();
+        markers.delete(id);
+        entry = null;
+      }
+
+      if (entry) {
+        entry.marker.setLatLng([rider.lat, rider.lng]);
+      } else {
+        const marker = L.marker([rider.lat, rider.lng], {
+          icon: riderIcon(color, letter, name, offRoute),
+          zIndexOffset: 500,
+          keyboard: false,
+        }).addTo(map);
+        marker.bindPopup(
+          `<div class="rw-popup__title">${escapeHtml(name)}</div>
+           <div class="rw-popup__meta">${rider.role === "admin" ? "Ride admin" : "Rider"}${
+             offRoute ? ` · ${escapeHtml(formatDistance(info.distance))} off the route` : " · on the route"
+           }</div>`,
+          { className: "rw-popup" },
+        );
+        markers.set(id, { marker, signature });
+      }
+    });
+
+    // Riders no longer in the list (left / went stale)
+    for (const [id, entry] of markers) {
+      if (!seen.has(id)) {
+        entry.marker.remove();
+        markers.delete(id);
+      }
+    }
+  }, [map, participants, currentUserId, riderStatus]);
+
+  useEffect(() => {
+    const markers = riderMarkersRef.current;
+    return () => {
+      markers.forEach((entry) => entry.marker.remove());
+      markers.clear();
+    };
+  }, [map]);
+
+  // ── GROUP RIDERS — their way back to the route (dashed, their colour) ──
+  const riderLinesRef = useRef(new Map()); // userId → { casing, line }
+  useEffect(() => {
+    if (!map) return;
+    const drawn = riderLinesRef.current;
+    const wanted = riderLines || {};
+    const width = Math.max(3, routeWeight(map.getZoom()) - 3);
+
+    for (const [id, points] of Object.entries(wanted)) {
+      if (!Array.isArray(points) || points.length < 2) continue;
+      const index = participants.findIndex((rider) => String(rider.userId) === id);
+      const color = participants[index]?.color || RIDER_COLORS[Math.max(0, index) % RIDER_COLORS.length];
+
+      let entry = drawn.get(id);
+      if (!entry) {
+        const options = { interactive: false, lineCap: "round", lineJoin: "round" };
+        entry = {
+          casing: L.polyline(points, options).addTo(map),
+          line: L.polyline(points, options).addTo(map),
+        };
+        drawn.set(id, entry);
+      } else {
+        entry.casing.setLatLngs(points);
+        entry.line.setLatLngs(points);
+      }
+      entry.casing.setStyle({ color: palette.casing, weight: width + 3, opacity: 0.7 });
+      entry.line.setStyle({ color, weight: width, opacity: 0.95, dashArray: `${width + 1} ${width + 6}` });
+    }
+
+    for (const [id, entry] of drawn) {
+      if (!Array.isArray(wanted[id]) || wanted[id].length < 2) {
+        map.removeLayer(entry.casing);
+        map.removeLayer(entry.line);
+        drawn.delete(id);
+      }
+    }
+  }, [map, riderLines, participants, palette]);
+
+  useEffect(() => {
+    const drawn = riderLinesRef.current;
+    return () => {
+      drawn.forEach((entry) => { entry.casing.remove(); entry.line.remove(); });
+      drawn.clear();
+    };
+  }, [map]);
+
+  // ====================================================================
+  // RENDER
+  // ====================================================================
+  const initialCenter = Number.isFinite(fromLat) && Number.isFinite(fromLng)
+    ? [fromLat, fromLng]
+    : [13.0827, 80.2707];
+
+  const top = (padding?.top ?? 0) + 12;
+  const bottom = (padding?.bottom ?? 0) + 12;
+  const control =
+    `border rounded-full flex items-center justify-center transition-colors ${tc.mapControl}`;
+  const controlSize = compact ? "h-9 w-9" : "h-11 w-11";
+  const selectedStyleId = styleChoice === MAP_STYLE_AUTO ? MAP_STYLE_AUTO : styleDef.id;
+
+  return (
+    <div
+      ref={wrapperRef}
+      className={styleDef.dark ? "rw-map--dark" : "rw-map--light"}
+      style={{ position: "absolute", inset: 0, "--rw-rejoin": palette.rejoin }}
+    >
       <MapContainer
-        attributionControl={false /* hides the built-in OpenStreetMap attribution box */}
-        center={center}
+        ref={setMap}
+        attributionControl={false /* credit is shown in RideWise's own line below */}
+        zoomControl={false}
+        center={initialCenter}
         zoom={12}
         scrollWheelZoom
-        /* ── Zoom limits (Google Maps-like) ──
-           MAP_MAX_ZOOM is shared with the TileLayer below, so the deepest zoom
-           the map allows is always one the tiles can actually paint. */
+        /* ── Zoom limits ── MAP_MAX_ZOOM is shared with the tile layer, so the
+           deepest zoom the map allows is always one the tiles can paint. */
         minZoom={3}
         maxZoom={MAP_MAX_ZOOM}
-        /* ── Integer zoom snapping — prevents fractional zoom tile artifacts ── */
+        /* Integer zoom snapping — prevents fractional-zoom tile artifacts */
         zoomSnap={1}
         zoomDelta={1}
-        /* ── World boundary — no infinite scroll ── */
+        /* World boundary — no infinite scroll */
         maxBounds={WORLD_BOUNDS}
-        maxBoundsViscosity={1.0}  /* hard wall — map springs back immediately */
-        /* ── Canvas renderer — GPU-accelerated, no SVG drift on mobile ── */
+        maxBoundsViscosity={1.0}
+        /* Canvas renderer — GPU-accelerated, no SVG drift on mobile */
         renderer={L.canvas({ padding: 0.5 })}
-        /* ── Rotation (leaflet-rotate plugin) ──
-              Individual switches mirror ENABLE_MAP_ROTATION so the whole
-              feature can be turned off from one place (see the constant at
-              the top of this file + the vector re-sync in MapBehavior). */
+        /* Rotation (leaflet-rotate) — all switches mirror ENABLE_MAP_ROTATION */
         rotate={ENABLE_MAP_ROTATION}
-        touchRotate={ENABLE_MAP_ROTATION}   /* two-finger twist on mobile */
-        shiftKeyRotate={ENABLE_MAP_ROTATION} /* Shift+wheel on desktop */
-        rotateControl={false}    /* we render our own compass */
+        touchRotate={ENABLE_MAP_ROTATION}
+        shiftKeyRotate={ENABLE_MAP_ROTATION}
+        rotateControl={false}
         bearing={0}
-        /* ── Mobile gesture tuning (Google Maps-like feel) ── */
+        /* Mobile gesture tuning */
         inertiaDeceleration={2000}
         inertiaMaxSpeed={1500}
         bounceAtZoomLimits={false}
@@ -1071,159 +1067,157 @@ export default function RideMap({ ride, myLocation, isLive = false, participants
         wheelPxPerZoomLevel={120}
         style={{ width: "100%", height: "100%" }}
       >
-        <TileLayer
-          url={TILE_LAYERS[0].url}
-          attribution={TILE_LAYERS[0].attr}
-          noWrap={true}           /* prevents tile repetition at the edges */
-          /* detectRetina OFF on purpose — see the TILE_LAYERS comment. It asks
-             for (zoom + 1) tiles, which none of these providers publish. */
-          updateWhenZooming={false} /* don't reload tiles mid-zoom animation */
-          keepBuffer={4}          /* keep 4 rows of off-screen tiles loaded */
-          /* maxZoom MUST match the map's maxZoom. Leaflet's TileLayer default
-             is 18 (17 with detectRetina) while the map allows 19; anything past
-             the layer limit makes GridLayer request zero tiles, which is what
-             blanked the deepest zoom level. */
-          maxZoom={MAP_MAX_ZOOM}
-          /* Where this provider genuinely stops publishing. Beyond it Leaflet
-             upscales the deepest real tile instead of 404ing. */
-          maxNativeZoom={TILE_LAYERS[0].maxNativeZoom}
-        />
-
-        {/* Dynamic Route line — trims based on myLocation; draws purple rejoin when off-route */}
-        <DynamicRouteLine ride={ride} myLocation={myLocation} isLive={isLive} onRouteStatus={onRouteStatus} />
-
-        {/* Purple rejoin lines for off-route group riders */}
-        {participants.length > 0 && (
-          <RiderRejoinLines
-            participants={participants}
-            currentUserId={currentUserId}
-            routeCoordinates={ride?.routeCoordinates}
-          />
-        )}
-
-        {/* Track bearing changes from the map and push to parent state */}
         <MapBehavior onBearingChange={setBearing} />
-
-        {/* Markers + GPS dot + tile ref capture */}
-        <MapInternals
-          ride={ride}
-          myLocation={myLocation}
-          isLive={isLive}
-          tileLayerRef={tileLayerRef}
-          activeTileIdx={activeTile}
-          participants={participants}
-          currentUserId={currentUserId}
-        />
       </MapContainer>
 
-      {/* ── Tile switcher (overlay, outside MapContainer so pointer events work) ── */}
-      <div className="rw-custom-control" style={{ position: "absolute", top: "110px", left: "10px", zIndex: 9999 }}>
-        <button
-          title="Switch map style"
-          onClick={() => setShowTiles(v => !v)}
-          style={{
-            width: "40px", height: "40px", borderRadius: "8px",
-            background: "rgba(255,255,255,0.95)",
-            border: "2px solid rgba(200,200,200,0.6)",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
-            cursor: "pointer", fontSize: "15px",
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}
-        >🗺️</button>
+      {/* ── Top-right rail: map style · extras from the overlay · zoom ── */}
+      <div
+        className="absolute z-[1000] flex flex-col items-end gap-2"
+        style={{ top: `${top}px`, right: "12px" }}
+      >
+        <div className="relative">
+          <button
+            type="button"
+            title="Map style"
+            aria-label="Map style"
+            aria-expanded={showStyles}
+            onClick={() => setShowStyles((open) => !open)}
+            className={`${control} ${controlSize}`}
+          >
+            <Icon name="layers" size={compact ? 16 : 19} />
+          </button>
 
-        {showTiles && (
-          <div style={{
-            position: "absolute", top: 0, left: "42px",
-            background: "rgba(15,15,26,0.96)",
-            backdropFilter: "blur(16px)",
-            border: "1px solid rgba(255,255,255,0.1)",
-            borderRadius: "12px", padding: "4px 0",
-            minWidth: "175px",
-            boxShadow: "0 4px 24px rgba(0,0,0,0.55)",
-          }}>
-            {TILE_LAYERS.map((t, i) => (
-              <button key={i} onClick={() => switchTile(i)} style={{
-                width: "100%", padding: "9px 16px",
-                background: "transparent", border: "none",
-                borderBottom: i < TILE_LAYERS.length - 1 ? "1px solid rgba(255,255,255,0.06)" : "none",
-                color: "white", cursor: "pointer",
-                textAlign: "left", fontSize: "13px",
-                fontWeight: activeTile === i ? 700 : 400,
-                display: "flex", alignItems: "center", gap: "8px",
-              }}
-              onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.07)"}
-              onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+          {showStyles && (
+            <>
+              {/* click-away layer */}
+              <div className="fixed inset-0 z-[1]" onClick={() => setShowStyles(false)} />
+              <div
+                role="menu"
+                className={`absolute right-0 z-[2] mt-2 w-56 overflow-hidden rounded-xl border py-1 shadow-lg ${tc.card} ${tc.text}`}
               >
-                <span style={{ flex: 1 }}>{t.label}</span>
-                {activeTile === i && <span style={{ color: "#f97316", fontWeight: 900 }}>✓</span>}
-              </button>
-            ))}
+                <p className={`px-3.5 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider ${tc.sub}`}>
+                  Map style
+                </p>
+                {[{ id: MAP_STYLE_AUTO, label: "Automatic", hint: "Matches your theme" }, ...MAP_STYLES].map((option) => {
+                  const selected = selectedStyleId === option.id;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={selected}
+                      onClick={() => chooseStyle(option.id)}
+                      className={`flex w-full items-center gap-3 px-3.5 py-2 text-left transition-colors ${
+                        selected ? tc.navActive : tc.cardHover
+                      }`}
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-semibold">{option.label}</span>
+                        <span className={`block truncate text-xs ${tc.sub}`}>{option.hint}</span>
+                      </span>
+                      {selected && <Icon name="check" size={16} />}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+
+        {!compact && extraControls}
+
+        {!compact && (
+          <div className={`rw-pointer-only flex flex-col overflow-hidden rounded-full border ${tc.mapControl}`}>
+            <button
+              type="button"
+              title="Zoom in"
+              aria-label="Zoom in"
+              onClick={() => map?.zoomIn()}
+              className={`flex h-10 w-11 items-center justify-center transition-colors ${tc.cardHover}`}
+            >
+              <Icon name="plus" size={18} />
+            </button>
+            <span className={`mx-2 h-px ${tc.hairline}`} />
+            <button
+              type="button"
+              title="Zoom out"
+              aria-label="Zoom out"
+              onClick={() => map?.zoomOut()}
+              className={`flex h-10 w-11 items-center justify-center transition-colors ${tc.cardHover}`}
+            >
+              <Icon name="minus" size={18} />
+            </button>
           </div>
+        )}
+
+        {/* Compass — only when the map is rotated; tap to face north again */}
+        {bearing !== 0 && (
+          <button
+            type="button"
+            title="Face north"
+            aria-label="Face north"
+            onClick={() => map?.setBearing?.(0)}
+            className={`${control} ${controlSize}`}
+          >
+            <span className="rw-compass-needle flex" style={{ transform: `rotate(${-bearing}deg)` }}>
+              <Icon name="compass" size={19} />
+            </span>
+          </button>
         )}
       </div>
 
-      {/* ── Compass button — only visible when the map is rotated ── */}
-      {bearing !== 0 && (
-        <button
-          className="rw-custom-control"
-          title={`Map rotated ${Math.abs(Math.round(bearing))}° — click to reset to north`}
-          onClick={() => {
-            // Reset bearing to 0 (north-up). We dispatch a custom event that
-            // MapBehavior picks up, since we can't call useMap() from here.
-            window.dispatchEvent(new CustomEvent("rw-reset-bearing"));
-          }}
-          style={{
-            position: "absolute", top: "158px", left: "10px", zIndex: 9999,
-            width: "40px", height: "40px", borderRadius: "8px",
-            background: "rgba(255,255,255,0.95)",
-            border: "2px solid rgba(200,200,200,0.6)",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
-            cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            padding: 0,
-          }}
+      {/* ── Bottom-right: whole route · re-center (live rides) ── */}
+      {isLive && !compact && (
+        <div
+          className="absolute z-[1000] flex flex-col items-end gap-2"
+          style={{ bottom: `${bottom}px`, right: "12px" }}
         >
-          {/* SVG compass needle — rotates opposite to map bearing */}
-          <svg
-            className="rw-compass-needle"
-            width="22" height="22" viewBox="0 0 24 24"
-            style={{ transform: `rotate(${-bearing}deg)` }}
+          <button
+            type="button"
+            title="Show the whole route"
+            aria-label="Show the whole route"
+            onClick={() => fitRoute()}
+            className={`${control} ${controlSize}`}
           >
-            {/* North pointer (red) */}
-            <polygon points="12,2 15,12 12,10 9,12" fill="#ef4444" />
-            {/* South pointer (grey) */}
-            <polygon points="12,22 15,12 12,14 9,12" fill="#9ca3af" />
-          </svg>
-        </button>
+            <Icon name="overview" size={19} />
+          </button>
+
+          {following ? (
+            <button
+              type="button"
+              title="Following your position"
+              aria-label="Following your position"
+              aria-pressed="true"
+              onClick={followMe}
+              className={`${control} ${controlSize} ${tc.accent}`}
+            >
+              <Icon name="navigate" size={19} />
+            </button>
+          ) : (
+            // The map is no longer following → say so, with a labelled button
+            <button
+              type="button"
+              onClick={followMe}
+              className={`flex h-11 items-center gap-2 rounded-full border px-4 text-sm font-semibold shadow-sm transition-colors ${tc.btnAccent}`}
+            >
+              <Icon name="recenter" size={18} />
+              Re-center
+            </button>
+          )}
+        </div>
       )}
 
-       {/* ── Re-center button (live rides only) ── */}
-      {isLive && myLocation?.lat && (
-        <button
-          className="rw-custom-control"
-          title="Re-center on your location"
-          onClick={() => {
-            // Re-arm camera-follow and snap instantly (rw-follow-me), THEN ask
-            // the hardware for a fresh fix (resume-real-gps → rw-recenter).
-            // The fresh fix can no longer drag the camera back if the rider
-            // touched the map in the meantime — rw-recenter only moves the
-            // camera while follow is still switched on.
-            window.dispatchEvent(new Event("rw-follow-me"));
-            window.dispatchEvent(new Event("resume-real-gps"));
-          }}
-          style={{
-            position: "absolute", bottom: "calc(var(--rw-bottom-bar-h, 140px) + 16px)", left: "10px", zIndex: 9999,
-            width: "46px", height: "46px", borderRadius: "13px",
-            background: "rgba(255,255,255,0.95)",
-            border: "2px solid rgba(66,133,244,0.6)",
-            color: "#4285F4", cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: "18px", boxShadow: "0 2px 16px rgba(0,0,0,0.2)",
-          }}
-        >
-          <i className="fa fa-location-crosshairs" />
-        </button>
-      )}
+      {/* ── Map data credit (required by the tile providers' terms) ── */}
+      <div
+        className="pointer-events-none absolute left-2 z-[999] rounded px-1.5 py-0.5 text-[10px] leading-tight"
+        style={{
+          bottom: `${(padding?.bottom ?? 0) + 4}px`,
+          background: styleDef.dark ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.75)",
+          color: styleDef.dark ? "rgba(255,255,255,0.8)" : "rgba(0,0,0,0.7)",
+        }}
+      >
+        {tiles.credit}
+      </div>
     </div>
   );
 }

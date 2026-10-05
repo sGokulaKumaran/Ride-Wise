@@ -1,102 +1,158 @@
 // ============================================================
-// 🔐 AuthContext — Global authentication state manager
+// AuthContext — who is logged in, for the whole app
 //
-// BACKEND CONNECTED:
-//   signup       → POST /api/auth/signup
-//   login        → POST /api/auth/login
-//   updateProfile → PATCH /api/auth/profile/{userId}
+// BACKEND
+//   signup         POST  /api/auth/signup
+//   login          POST  /api/auth/login
+//   restore        GET   /api/auth/me        (on app load)
+//   updateProfile  PATCH /api/auth/profile/{userId}
+//   logout         POST  /api/auth/logout
 //
-// SESSION PERSISTENCE:
-//   The UserResponse returned by the backend is saved to
-//   localStorage so the user stays logged in on refresh.
-//   The actual source-of-truth for credentials lives in the
-//   backend H2 / PostgreSQL database.
+// THE SESSION lives on the server (an HttpOnly cookie the browser sends
+// by itself). localStorage only keeps a copy of the user object so the
+// app can start while the server is waking up.
 //
-// NOTES:
-//   - user.id is now a Long (number) from the backend — no more
-//     "u_<timestamp>_<random>" string IDs.
-//   - Passwords are BCrypt-hashed on the backend; we never store
-//     them in localStorage.
+// "REMEMBER ME"
+//   ticked   → localStorage "ridewise-remember-me": a new browser session
+//              restores the login
+//   unticked → only sessionStorage marks the tab as logged in, so closing
+//              the browser ends the login on this device
+//
+// SESSION LOST WHILE USING THE APP
+//   Any API call that comes back 401 (session expired, or the account
+//   was suspended) raises AUTH_EXPIRED_EVENT. This provider clears the
+//   login and the route guards send the rider to the login page —
+//   instead of leaving them on a page where every request fails silently.
 // ============================================================
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { AUTH_EXPIRED_EVENT, apiFetch, apiJson, isOffline, jsonBody } from "../services/http";
 
 const AuthContext = createContext(null);
 
 // ── Custom hook used by every component that needs auth ──
+// (the provider and its hook belong together in this file)
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth must be used within <AuthProvider>");
   return ctx;
 }
 
-// ── Helper: throw a readable error from a non-2xx response ──
-async function handleResponse(res) {
-  if (res.ok) return res.json();
-  // Try to parse a message from the backend error body
-  let msg = `Server error (${res.status})`;
+const SESSION_EXPIRED_FLAG = "ridewise-session-expired";
+
+function rememberUser(user) {
+  localStorage.setItem("ridewise-user", JSON.stringify(user));
+  localStorage.setItem("ridewise-authenticated", "true");
+  localStorage.setItem("ridewise-onboarded", user?.username ? "true" : "false");
+}
+
+function forgetUser() {
+  localStorage.removeItem("ridewise-user");
+  localStorage.removeItem("ridewise-authenticated");
+  localStorage.removeItem("ridewise-onboarded");
+  sessionStorage.removeItem("ridewise-session-active");
+}
+
+function cachedUser() {
   try {
-    const body = await res.json();
-    if (body?.message) msg = body.message;
-    else if (typeof body === "string") msg = body;
-    } catch (_) {
-      // body wasn't JSON — keep the generic message
+    const user = JSON.parse(localStorage.getItem("ridewise-user") || "null");
+    return user && user.id != null ? user : null;
+  } catch {
+    return null;
+  }
+}
+
+// Ride data cached for offline use belongs to the account that created
+// it — it must not be left behind for the next person on this device.
+function clearRideCaches() {
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i);
+      if (
+        key &&
+        (key === "ridewise-rides-local" ||
+          key === "ridewise-pending-ends" ||
+          key.startsWith("ridewise-ride-") ||
+          key.startsWith("ridewise-nav-"))
+      ) {
+        localStorage.removeItem(key);
+      }
     }
-  throw new Error(msg);
+  } catch {
+    // storage unavailable
+  }
+}
+
+// Is there a login worth restoring? "Remember me", or a browser session
+// that is still open.
+function hasRestorableLogin() {
+  try {
+    return (
+      localStorage.getItem("ridewise-remember-me") === "true" ||
+      sessionStorage.getItem("ridewise-session-active") === "true"
+    );
+  } catch {
+    return false;
+  }
 }
 
 export function AuthProvider({ children }) {
-  // ── STATE ──
-  const [user,             setUser]             = useState(null);
-  const [isAuthenticated,  setIsAuthenticated]  = useState(false);
-  const [isFullyOnboarded, setIsFullyOnboarded] = useState(false);
-  const [loading,          setLoading]          = useState(true);
+  const [user,            setUser]            = useState(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  // "loading" = still asking the server who is logged in. When there is
+  // nothing to restore, the app can show the login page straight away.
+  const [loading,         setLoading]         = useState(hasRestorableLogin);
 
-  // ── RESTORE SESSION FROM THE SERVER ON APP LOAD ──
-  // If Remember Me was not opted-in, closing the browser / session requires logging in again.
-  // sessionStorage.getItem("ridewise-session-active") indicates whether this tab/browser session is active.
+  const isFullyOnboarded = Boolean(user?.username);
+
+  const applyUser = useCallback((next) => {
+    rememberUser(next);
+    sessionStorage.setItem("ridewise-session-active", "true");
+    setUser(next);
+    setIsAuthenticated(true);
+  }, []);
+
+  const clearUser = useCallback(() => {
+    forgetUser();
+    setUser(null);
+    setIsAuthenticated(false);
+  }, []);
+
+  // ── RESTORE THE SESSION ON APP LOAD ──
   useEffect(() => {
     let cancelled = false;
 
+    // Neither "Remember me" nor an open browser session → login required.
+    // Only stale leftovers need removing; the state already says "signed out".
+    if (!hasRestorableLogin()) {
+      forgetUser();
+      return undefined;
+    }
+
     const restore = async () => {
-      const isRemembered = localStorage.getItem("ridewise-remember-me") === "true";
-      const isSessionActive = sessionStorage.getItem("ridewise-session-active") === "true";
-
-      // If neither "Remember Me" is enabled nor is this an active browser session, require login.
-      if (!isRemembered && !isSessionActive) {
-        // Clean up any stale auth credentials from localStorage
-        localStorage.removeItem("ridewise-user");
-        localStorage.removeItem("ridewise-authenticated");
-        localStorage.removeItem("ridewise-onboarded");
-        setUser(null);
-        setIsAuthenticated(false);
-        setIsFullyOnboarded(false);
-        setLoading(false);
-        return;
-      }
-
       try {
-        const res = await fetch("/api/auth/me", { credentials: "include" });
-        if (!res.ok) throw new Error("Not authenticated");
-        const serverUser = await res.json();
+        const serverUser = await apiJson("/api/auth/me");
+        if (!cancelled) applyUser(serverUser);
+      } catch (err) {
         if (cancelled) return;
-
-        sessionStorage.setItem("ridewise-session-active", "true");
-        localStorage.setItem("ridewise-user", JSON.stringify(serverUser));
-        localStorage.setItem("ridewise-authenticated", "true");
-        localStorage.setItem("ridewise-onboarded", serverUser.username ? "true" : "false");
-        setUser(serverUser);
-        setIsAuthenticated(true);
-        setIsFullyOnboarded(Boolean(serverUser.username));
-      } catch (_) {
-        if (cancelled) return;
-        sessionStorage.removeItem("ridewise-session-active");
-        localStorage.removeItem("ridewise-user");
-        localStorage.removeItem("ridewise-authenticated");
-        localStorage.removeItem("ridewise-onboarded");
-        setUser(null);
-        setIsAuthenticated(false);
-        setIsFullyOnboarded(false);
+        // The server could not be REACHED (asleep / no network): start with
+        // the saved copy of the user. Ride data falls back to its local
+        // cache, and a real "not logged in" answer later still signs out.
+        const saved = isOffline(err) ? cachedUser() : null;
+        if (saved) {
+          setUser(saved);
+          setIsAuthenticated(true);
+        } else {
+          // The server answered "not logged in" although this browser
+          // remembered a login: the session ran out, or was ended. The
+          // login page says so instead of appearing without a word.
+          if (err?.status === 401 && cachedUser()) {
+            try { sessionStorage.setItem(SESSION_EXPIRED_FLAG, "true"); } catch { /* ignore */ }
+          }
+          clearRideCaches();
+          clearUser();
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -104,127 +160,77 @@ export function AuthProvider({ children }) {
 
     restore();
     return () => { cancelled = true; };
-  }, []);
+  }, [applyUser, clearUser]);
 
-  // ── SIGNUP — POST /api/auth/signup ──
+  // ── SESSION LOST (401 from any API call) ──
+  useEffect(() => {
+    const onExpired = () => {
+      if (!localStorage.getItem("ridewise-authenticated")) return; // already signed out
+      sessionStorage.setItem(SESSION_EXPIRED_FLAG, "true"); // the login page explains why
+      clearRideCaches();
+      clearUser();
+    };
+    window.addEventListener(AUTH_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired);
+  }, [clearUser]);
+
+  // ── SIGNUP ──
   const signup = async (email, password) => {
     if (!email || !password) throw new Error("Email and password are required.");
     if (password.length < 6)  throw new Error("Password must be at least 6 characters.");
-    
-    //Its awake the backend of the signup controller in the authController
-    const res = await fetch("/api/auth/signup", {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body:    JSON.stringify({ email: email.trim().toLowerCase(), password }),
-    });
 
-    const newUser = await handleResponse(res);
-    // newUser is a UserResponse: { id, email, username, mobile, address, lat, lng, createdAt }
-
-    sessionStorage.setItem("ridewise-session-active", "true");
-    localStorage.setItem("ridewise-user", JSON.stringify(newUser));
-    localStorage.setItem("ridewise-authenticated", "true");
-    localStorage.setItem("ridewise-onboarded", "false");
-
-    setUser(newUser);
-    setIsAuthenticated(true);
-    setIsFullyOnboarded(false);
-
+    const newUser = await apiJson(
+      "/api/auth/signup",
+      jsonBody("POST", { email: email.trim().toLowerCase(), password }),
+    );
+    localStorage.removeItem("ridewise-remember-me");
+    applyUser(newUser);
     return newUser;
   };
 
-  // ── LOGIN — POST /api/auth/login ──
+  // ── LOGIN ──
   const login = async (email, password, rememberMe = false) => {
     if (!email || !password) throw new Error("Email and password are required.");
 
-    const res = await fetch("/api/auth/login", {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body:    JSON.stringify({ email: email.trim().toLowerCase(), password }),
-    });
-
-    const loggedInUser = await handleResponse(res);
-
-    if (rememberMe) {
-      localStorage.setItem("ridewise-remember-me", "true");
-    } else {
-      localStorage.removeItem("ridewise-remember-me");
-    }
-    sessionStorage.setItem("ridewise-session-active", "true");
-
-    localStorage.setItem("ridewise-user",          JSON.stringify(loggedInUser));
-    localStorage.setItem("ridewise-authenticated", "true");
-    localStorage.setItem("ridewise-onboarded",     loggedInUser.username ? "true" : "false");
-
-    setUser(loggedInUser);
-    setIsAuthenticated(true);
-    setIsFullyOnboarded(Boolean(loggedInUser.username));
-
-    return loggedInUser;
+    const loggedIn = await apiJson(
+      "/api/auth/login",
+      jsonBody("POST", { email: email.trim().toLowerCase(), password }),
+    );
+    if (rememberMe) localStorage.setItem("ridewise-remember-me", "true");
+    else localStorage.removeItem("ridewise-remember-me");
+    applyUser(loggedIn);
+    return loggedIn;
   };
 
-  // ── UPDATE PROFILE — PATCH /api/auth/profile/{userId} ──
+  // ── UPDATE PROFILE ──
+  // patch: { username?, mobile?, address?, lat?, lng? }
   const updateProfile = async (patch) => {
-    if (!user) throw new Error("Not logged in");// for safty check
+    if (!user) throw new Error("You're not logged in.");
 
-    const res = await fetch(`/api/auth/profile/${user.id}`, {
-      method:  "PATCH",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body:    JSON.stringify(patch),
-      // patch can include: { username, mobile, address }
-    });
-
-    const updated = await handleResponse(res);
-    // Merge: keep anything the backend echoed back, fall back to local copy
+    const updated = await apiJson(`/api/auth/profile/${user.id}`, jsonBody("PATCH", patch));
     const merged = { ...user, ...updated };
-
-    localStorage.setItem("ridewise-user", JSON.stringify(merged));
+    rememberUser(merged);
     setUser(merged);
-
-    // Mark as onboarded if username was just set
-    if (patch.username && patch.username.trim()) {
-      localStorage.setItem("ridewise-onboarded", "true");
-      setIsFullyOnboarded(true);
-    }
-
     return merged;
   };
 
   // ── LOGOUT ──
   const logout = async () => {
     try {
-      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
-    } catch (_) {
-      // Still clear local state if the network request fails
+      await apiFetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      // Clear this device even when the server cannot be reached.
     }
 
-    // NOTE: per-user theme ("ridewise-theme-<id>") and settings
-    // ("ridewise-settings-<id>") are INTENTIONALLY kept — they are
-    // device-level preferences, not session data. Wiping them on logout
-    // made the app forget the user's theme/settings every time.
-    // ("ridewise-rides-local-<id>" was never written by rideApi — removed.)
-    localStorage.removeItem("ridewise-rides-local"); // shared dev ride cache
+    // The per-user theme ("ridewise-theme-<id>") and settings
+    // ("ridewise-settings-<id>") are kept on purpose — they are device
+    // preferences, not session data.
     localStorage.removeItem("ridewise-remember-me");
-    sessionStorage.removeItem("ridewise-session-active");
-    localStorage.removeItem("ridewise-user");
-    localStorage.removeItem("ridewise-authenticated");
-    localStorage.removeItem("ridewise-onboarded");
-
-    setUser(null);
-    setIsAuthenticated(false);
-    setIsFullyOnboarded(false);
+    clearRideCaches();
+    clearUser();
   };
 
-  // ── COMPUTED: avatar letter ──
-  const avatarLetter =
-    (user?.username?.[0] || user?.email?.[0] || "R").toUpperCase();
-    // first its check the username if not then its check email
-    //even that also not then its use R default value
-
-  // ── COMPUTED: admin role check ──
+  const avatarLetter = (user?.username?.[0] || user?.email?.[0] || "R").toUpperCase();
   const isAdmin = user?.role === "ADMIN";
 
   return (

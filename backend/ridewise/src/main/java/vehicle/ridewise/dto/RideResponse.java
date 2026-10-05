@@ -26,6 +26,52 @@ public class RideResponse { // Define class
     private java.util.List<RideParticipantResponse> participants;
     private String creatorUsername;
 
+    // True when the ride has stored route geometry. Lets a list row say
+    // "a route exists" without carrying the (large) geometry itself.
+    private Boolean hasRoute;
+
+    public RideResponse() { // Default constructor (Jackson + from())
+    }
+
+    // ── SUMMARY constructor ──────────────────────────────────
+    // Used by RideRepository's list queries (JPQL "SELECT new …"), which
+    // select every column EXCEPT route_coordinates and route_steps. Those
+    // two TEXT columns are tens to hundreds of KB per ride; leaving them
+    // out is what keeps the ride list light for the database, the network
+    // and the phone.
+    public RideResponse(Long id, Long userId,
+                        String fromName, Double fromLat, Double fromLng,
+                        String destinationName, Double destinationLat, Double destinationLng,
+                        Double distanceMeters, Double durationSeconds, Double actualDistanceMeters,
+                        String rideType, String status,
+                        LocalDateTime createdAt, LocalDateTime endedAt,
+                        Boolean hasRoute) {
+        this.id = id;
+        this.userId = userId;
+        this.fromName = fromName;
+        this.fromLat = fromLat;
+        this.fromLng = fromLng;
+        this.destinationName = destinationName;
+        this.destinationLat = destinationLat;
+        this.destinationLng = destinationLng;
+        this.distanceMeters = distanceMeters;
+        this.durationSeconds = durationSeconds;
+        this.actualDistanceMeters = actualDistanceMeters;
+        this.rideType = rideType;
+        this.status = status;
+        this.createdAt = createdAt;
+        this.endedAt = endedAt;
+        this.hasRoute = hasRoute;
+    }
+
+    // The same lightweight shape, built from a loaded entity.
+    public static RideResponse summaryOf(Ride ride) {
+        RideResponse res = from(ride);
+        res.setRouteCoordinates(null);
+        res.setRouteSteps(null);
+        return res;
+    }
+
     public static RideResponse from(Ride ride) { // Static factory method
         RideResponse res = new RideResponse(); // Create response instance
         res.setId(ride.getId()); // Set ID
@@ -45,8 +91,17 @@ public class RideResponse { // Define class
         res.setStatus(ride.getStatus()); // Set Status
         res.setCreatedAt(ride.getCreatedAt()); // Set Created At
         res.setEndedAt(ride.getEndedAt()); // Set Ended At
+        res.setHasRoute(ride.getRouteCoordinates() != null && !ride.getRouteCoordinates().isBlank());
         return res; // Return response
     } // End method
+
+    public Boolean getHasRoute() {
+        return hasRoute;
+    }
+
+    public void setHasRoute(Boolean hasRoute) {
+        this.hasRoute = hasRoute;
+    }
 
     // Getters and setters
     public Long getId() { // Get ID

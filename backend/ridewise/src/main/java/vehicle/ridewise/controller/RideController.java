@@ -23,7 +23,7 @@ import java.util.Map; // Import Map
 //
 // Endpoints:
 //   POST   /api/rides/            → create a new ride
-//   GET    /api/rides/user/{id}   → get all rides for a user
+//   GET    /api/rides/user/{id}   → get all rides for a user (?summary=true: without routes)
 //   GET    /api/rides/user/{id}/active → get active rides for a user
 //   PATCH  /api/rides/{id}/status → update ride status (active/completed)
 //                                   body may include actualDistanceMeters
@@ -63,13 +63,21 @@ public class RideController { // Define class
     } // End handler
 
     // ── GET ALL RIDES FOR USER ───────────────────────────────
-    // GET /api/rides/user/{userId}
-    // Returns: List of RideResponse, newest first
+    // GET /api/rides/user/{userId}[?summary=true]
+    // Returns: List of RideResponse, newest first.
+    //
+    // summary=true leaves out routeCoordinates and routeSteps (each ride
+    // carries hasRoute instead). The app's ride list uses it, so the list
+    // stays small however long the routes are; the full route of one ride
+    // comes from GET /api/rides/{rideId}.
     @GetMapping("/user/{userId}") // Get user rides endpoint
-    public ResponseEntity<List<RideResponse>> getUserRides(@PathVariable Long userId, HttpServletRequest request) { // Get user rides handler
+    public ResponseEntity<List<RideResponse>> getUserRides(
+            @PathVariable Long userId,
+            @RequestParam(defaultValue = "false") boolean summary,
+            HttpServletRequest request) { // Get user rides handler
         Long currentUserId = SessionAuthInterceptor.requireUserId(request);
         if (!currentUserId.equals(userId)) throw vehicle.ridewise.exception.ApiException.forbidden("You can only view your own rides");
-        return ResponseEntity.ok(rideService.getUserRides(currentUserId)); // Return 200 OK with list
+        return ResponseEntity.ok(rideService.getUserRides(currentUserId, summary)); // Return 200 OK with list
     } // End handler
 
     // ── GET ACTIVE RIDES FOR USER ────────────────────────────
@@ -112,10 +120,15 @@ public class RideController { // Define class
     } // End handler
 
     // ── GET SINGLE RIDE ──────────────────────────────────────
-    // GET /api/rides/{rideId}
+    // GET /api/rides/{rideId}[?summary=true]
+    // summary=true returns the ride without its route (a cheap way to check
+    // whether a ride is still active).
     @GetMapping("/{rideId}") // Get single ride endpoint
-    public ResponseEntity<RideResponse> getRide(@PathVariable Long rideId, HttpServletRequest request) { // Get ride handler
-        RideResponse res = rideService.getRide(rideId, SessionAuthInterceptor.requireUserId(request)); // Call service
+    public ResponseEntity<RideResponse> getRide(
+            @PathVariable Long rideId,
+            @RequestParam(defaultValue = "false") boolean summary,
+            HttpServletRequest request) { // Get ride handler
+        RideResponse res = rideService.getRide(rideId, SessionAuthInterceptor.requireUserId(request), summary); // Call service
         return ResponseEntity.ok(res); // Return ride
     } // End handler
 

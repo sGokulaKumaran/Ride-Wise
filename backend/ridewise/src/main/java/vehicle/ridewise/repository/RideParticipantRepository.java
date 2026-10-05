@@ -16,6 +16,10 @@ public interface RideParticipantRepository extends JpaRepository<RideParticipant
 
     List<RideParticipant> findByRideId(Long rideId);
 
+    // Participants of several rides in ONE query (used to fill a ride list
+    // without a query per ride).
+    List<RideParticipant> findByRideIdIn(java.util.Collection<Long> rideIds);
+
     List<RideParticipant> findByUserId(Long userId);
 
     Optional<RideParticipant> findByRideIdAndUserId(Long rideId, Long userId);

@@ -381,53 +381,94 @@ const ICONS = {
   ),
 
   // ── Route maneuvers ───────────────────────────────────────
+  // One shape language: the stem always enters from the bottom (where
+  // the rider is coming from) and the arrowhead shows where to go, so
+  // every turn reads at a glance — a slight turn leans, a sharp turn
+  // folds back, a fork splits, a merge joins.
   maneuverStraight: (
     <>
-      <path d="M12 20V4.8" />
+      <path d="M12 20.4V4.8" />
       <path d="M7.2 9.6 12 4.8l4.8 4.8" />
     </>
   ),
   maneuverLeft: (
     <>
-      <path d="M19 20V9.4a3 3 0 0 0-3-3H6.2" />
-      <path d="M10.2 2.6 6.2 6.4l4 3.8" />
+      <path d="M18.6 20.4V10a3 3 0 0 0-3-3H5.4" />
+      <path d="M9.4 3 5.4 7l4 4" />
     </>
   ),
   maneuverRight: (
     <>
-      <path d="M5 20V9.4a3 3 0 0 1 3-3h9.8" />
-      <path d="M13.8 2.6l4 3.8-4 3.8" />
+      <path d="M5.4 20.4V10a3 3 0 0 1 3-3h10.2" />
+      <path d="M14.6 3l4 4-4 4" />
     </>
   ),
   maneuverSlightLeft: (
     <>
-      <path d="M17.8 20V8.2a3 3 0 0 0-3-3H5.4" />
-      <path d="M9.2 1.8 5 5.2l4.2 3.4" />
+      <path d="M14.6 20.4v-5.2a3 3 0 0 0-.9-2.1L7 6.4" />
+      <path d="M7 11.6V6.4h5.2" />
     </>
   ),
   maneuverSlightRight: (
     <>
-      <path d="M6.2 20V8.2a3 3 0 0 1 3-3h9.4" />
-      <path d="M14.8 1.8l4.2 3.4-4.2 3.4" />
+      <path d="M9.4 20.4v-5.2a3 3 0 0 1 .9-2.1L17 6.4" />
+      <path d="M11.8 6.4H17v5.2" />
+    </>
+  ),
+  maneuverSharpLeft: (
+    <>
+      <path d="M15.4 20.4V9a2.2 2.2 0 0 0-3.8-1.5L6.6 13.4" />
+      <path d="M6.6 8.2v5.2h5.2" />
+    </>
+  ),
+  maneuverSharpRight: (
+    <>
+      <path d="M8.6 20.4V9a2.2 2.2 0 0 1 3.8-1.5l5 5.9" />
+      <path d="M17.4 8.2v5.2h-5.2" />
     </>
   ),
   maneuverUTurn: (
     <>
-      <path d="M7 20v-8.4a5 5 0 0 1 10 0V16" />
-      <path d="M13.4 12.6 17 16l3.6-3.4" />
+      <path d="M7 20.4v-8.8a5 5 0 0 1 10 0v4.6" />
+      <path d="M13.4 12.8 17 16.2l3.6-3.4" />
+    </>
+  ),
+  maneuverKeepLeft: (
+    <>
+      <path d="M12 20.4v-6.2" />
+      <path d="M12 14.2 7.4 9.6V4.6" />
+      <path d="M4.6 7.4 7.4 4.6l2.8 2.8" />
+      <path d="M12 14.2l4.6-4.6V7.4" />
+    </>
+  ),
+  maneuverKeepRight: (
+    <>
+      <path d="M12 20.4v-6.2" />
+      <path d="M12 14.2l4.6-4.6V4.6" />
+      <path d="M13.8 7.4l2.8-2.8 2.8 2.8" />
+      <path d="M12 14.2 7.4 9.6V7.4" />
     </>
   ),
   maneuverMerge: (
     <>
-      <path d="M6 20V9.4a3 3 0 0 1 3-3h6" />
-      <path d="M11.4 2.8 15.4 6.4l-4 3.6" />
-      <path d="M18 4v16" />
+      <path d="M13.6 20.4V4.8" />
+      <path d="M10 8.4l3.6-3.6 3.6 3.6" />
+      <path d="M6.4 20.4v-3a3 3 0 0 1 .9-2.1l6.3-6.3" />
+    </>
+  ),
+  maneuverRoundabout: (
+    <>
+      <circle cx="11" cy="11.4" r="3.6" />
+      <path d="M11 20.4V15" />
+      <path d="M13.6 8.8 18 4.4" />
+      <path d="M13.8 4.4H18v4.2" />
     </>
   ),
   maneuverDepart: (
     <>
-      <circle cx="12" cy="12" r="3" fill="currentColor" stroke="none" />
-      <path d="M12 3.4V1.8M3.4 12H1.8M5.6 5.6 4.5 4.5M18.4 5.6l1.1-1.1" />
+      <circle cx="12" cy="12" r="8.2" />
+      <path d="M12 16.2V8" />
+      <path d="M8.8 11.2 12 8l3.2 3.2" />
     </>
   ),
   maneuverArrive: (
@@ -437,10 +478,89 @@ const ICONS = {
     </>
   ),
 
+  // ── Map controls ──────────────────────────────────────────
+  layers: (
+    <>
+      <path d="M12 3.8 20.2 8.2 12 12.6 3.8 8.2Z" />
+      <path d="M3.8 12.2 12 16.6l8.2-4.4" />
+      <path d="M3.8 16.2 12 20.6l8.2-4.4" />
+    </>
+  ),
+  // "Show the whole route": a viewfinder around a path
+  overview: (
+    <>
+      <path d="M4.4 9V6.4a2 2 0 0 1 2-2H9" />
+      <path d="M15 4.4h2.6a2 2 0 0 1 2 2V9" />
+      <path d="M19.6 15v2.6a2 2 0 0 1-2 2H15" />
+      <path d="M9 19.6H6.4a2 2 0 0 1-2-2V15" />
+      <path d="M8.6 14.8c1.4-3.8 5.4-1.8 6.8-5.6" />
+    </>
+  ),
+  compass: (
+    <>
+      <circle cx="12" cy="12" r="8.2" />
+      <path d="M14.9 9.1 13.4 13.4 9.1 14.9l1.5-4.3Z" />
+    </>
+  ),
+  gpsOff: (
+    <>
+      <circle cx="12" cy="12" r="6.6" />
+      <path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4" />
+      <path d="M4.6 4.6 19.4 19.4" />
+    </>
+  ),
+  volume: (
+    <>
+      <path d="M4.2 9.8h2.9l4.3-3.4v11.2l-4.3-3.4H4.2Z" />
+      <path d="M14.6 9.4a3.7 3.7 0 0 1 0 5.2" />
+      <path d="M17.2 6.9a7.2 7.2 0 0 1 0 10.2" />
+    </>
+  ),
+  volumeOff: (
+    <>
+      <path d="M4.2 9.8h2.9l4.3-3.4v11.2l-4.3-3.4H4.2Z" />
+      <path d="M15.2 9.6l5 4.8M20.2 9.6l-5 4.8" />
+    </>
+  ),
+  expand: (
+    <>
+      <path d="M14 4.6h5.4V10" />
+      <path d="M19.4 4.6l-6 6" />
+      <path d="M10 19.4H4.6V14" />
+      <path d="M4.6 19.4l6-6" />
+    </>
+  ),
+
   // ── Window actions ─────────────────────────────────────────
   minimize: (
     <>
       <path d="M5.6 12h12.8" />
+    </>
+  ),
+
+  // ── Info / identity ───────────────────────────────────────
+  info: (
+    <>
+      <circle cx="12" cy="12" r="8.2" />
+      <path d="M12 11v5.2" />
+      <circle cx="12" cy="8" r=".95" fill="currentColor" stroke="none" />
+    </>
+  ),
+  idCard: (
+    <>
+      <rect x="3.6" y="5.6" width="16.8" height="12.8" rx="2.4" />
+      <circle cx="8.8" cy="10.8" r="1.9" />
+      <path d="M5.9 15.6a3 3 0 0 1 5.8 0" />
+      <path d="M14.2 10h3.6M14.2 13.4h2.4" />
+    </>
+  ),
+  // "Do it again" — ride the same route once more
+  repeat: (
+    <>
+      <path d="M4.6 11a5.4 5.4 0 0 1 5.4-5.4h8.4" />
+      <path d="M15.8 3l2.8 2.6-2.8 2.6" />
+      <path d="M19.4 13a5.4 5.4 0 0 1-5.4 5.4H5.6" />
+      <path d="M8.2 21l-2.8-2.6 2.8-2.6" />
     </>
   ),
 

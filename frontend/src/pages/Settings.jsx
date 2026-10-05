@@ -1,27 +1,27 @@
 // ============================================================
-// ⚙️ Settings — App settings page
+// Settings — how RideWise looks and behaves for this rider
 // Route: /settings (protected — requires login + onboarding)
 //
-// SECTIONS:
-//   1. Appearance     → Theme switcher (live preview)
-//   2. Accessibility  → Text Size, Reduce Motion, High Contrast
-//   3. Notifications  → Ride alerts, Messages, Community updates
-//   4. Privacy        → Profile visibility, Show online status
+// Every control on this page does something:
 //
-// BEHAVIOR:
-//   - Theme toggle applies immediately (uses useTheme hook)
-//   - All settings are persisted per-user in localStorage under
-//     "ridewise-settings-<userId>" so switching accounts loads
-//     the correct settings for that account.
+//   Appearance     theme (applies at once, remembered per account)
+//   Rides & map    spoken directions on/off, and the map style — the same
+//                  two choices the ride map itself offers
+//   Accessibility  text size, reduced motion, high contrast (applied
+//                  app-wide by utils/a11y.js)
+//   Privacy        "Public profile" — saved on the server; when off, riders
+//                  who are not already connected with you cannot find you
+//                  in search or "near me"
 //
-// BACKEND-READY:
-//   When backend is ready, save each setting with:
-//   await axios.put('/api/user/settings', { theme, notifications, ... })
-//   You can add a debounced auto-save or an explicit "Save" button.
+// WHERE THINGS ARE STORED
+//   theme, accessibility, voice, map style → this device (localStorage)
+//   public profile                         → the rider's account (server)
 // ============================================================
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "react-toastify";
 import { useTheme, themes } from "./hooks/useTheme";
+import { usePersistentFlag, voiceSupported } from "./hooks/useRideAssist";
 import { useAuth } from "../context/AuthContext";
 import Icon from "./components/ui/Icon";
 import { Chip } from "./components/ui/Button";
@@ -29,188 +29,233 @@ import Sidebar from "./components/layout/Sidebar";
 import TopBar from "./components/layout/TopBar";
 import MobileNav from "./components/layout/MobileNav";
 import { applyA11ySettings } from "../utils/a11y";
+import {
+  MAP_STYLES,
+  MAP_STYLE_AUTO,
+  loadMapStyleChoice,
+  saveMapStyleChoice,
+} from "./components/ride/mapStyles";
 
-// ── Per-user settings localStorage key ──────────────────────
+const A11Y_DEFAULTS = { textSize: "medium", reduceMotion: false, highContrast: false };
+
 function settingsKey(userId) {
   return userId ? `ridewise-settings-${userId}` : "ridewise-settings";
 }
 
-// ── Load saved settings for this user (or return defaults) ──
+// Saved accessibility choices for this rider (or the defaults)
 function loadSettings(userId) {
   try {
-    const raw = localStorage.getItem(settingsKey(userId));
-    if (raw) return JSON.parse(raw);
-  } catch (_) {}
-  return {
-    textSize:        "medium",
-    reduceMotion:    false,
-    highContrast:    false,
-    notifyRides:     true,
-    notifyMessages:  true,
-    notifyCommunity: false,
-    profilePublic:   true,
-    showOnlineStatus: true,
-  };
+    const saved = JSON.parse(localStorage.getItem(settingsKey(userId)) || "null");
+    if (saved && typeof saved === "object") {
+      return {
+        textSize: saved.textSize || A11Y_DEFAULTS.textSize,
+        reduceMotion: Boolean(saved.reduceMotion),
+        highContrast: Boolean(saved.highContrast),
+      };
+    }
+  } catch {
+    // unreadable → defaults
+  }
+  return { ...A11Y_DEFAULTS };
 }
 
-// ── Small reusable toggle component ─────────────────────────
-// Renders a label + description on the left, a switch on the right.
-// "checked" controls the visual state; "onChange" fires when clicked.
-// ON uses the functional accent (an active state is one of the few
-// places colour is allowed); OFF stays a neutral hairline track.
-function Toggle({ checked, onChange, label, sub, tc }) {
+// ── A labelled on/off switch ─────────────────────────────────
+// ON uses the functional accent (an active state is one of the few places
+// colour is allowed); OFF stays a neutral track.
+function Toggle({ checked, onChange, label, sub, tc, disabled = false }) {
   return (
     <div className="flex items-center justify-between gap-4 py-3">
-      {/* Left side: text */}
-      <div>
-        <p className="font-semibold text-sm">{label}</p>
-        {sub && <p className={`text-xs mt-0.5 ${tc.sub}`}>{sub}</p>}
+      <div className="min-w-0">
+        <p className="text-sm font-semibold">{label}</p>
+        {sub && <p className={`mt-0.5 text-xs ${tc.sub}`}>{sub}</p>}
       </div>
-      {/* Right side: switch */}
       <button
+        type="button"
         role="switch"
         aria-checked={checked}
         aria-label={label}
+        disabled={disabled}
         onClick={() => onChange(!checked)}
-        className={`relative w-11 h-6 rounded-full border transition-colors shrink-0 ${
+        className={`relative h-6 w-11 shrink-0 rounded-full border transition-colors disabled:opacity-50 ${
           checked ? tc.btnAccent : `${tc.isLight ? "bg-black/15" : "bg-white/15"} border-transparent`
         }`}
       >
         <span
-          className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white ${
+          className={`absolute left-[3px] top-[3px] h-4 w-4 rounded-full bg-white transition-transform ${
             checked ? "translate-x-5" : "translate-x-0"
-          } transition-transform`}
+          }`}
         />
       </button>
     </div>
   );
 }
 
-// ── Small reusable section header ────────────────────────────
-// Monochrome glyph + title, used to start each settings section.
 function SectionHeader({ icon, title, tc }) {
   return (
-    <div className="flex items-center gap-2.5 mb-1">
+    <div className="mb-1 flex items-center gap-2.5">
       <Icon name={icon} size={16} className={tc.sub} />
-      <h2 className="font-bold text-base">{title}</h2>
+      <h2 className="text-base font-bold">{title}</h2>
     </div>
   );
 }
 
+// Re-created when the account changes, so one rider's choices are never
+// shown to (or saved over) another's.
 export default function Settings() {
   const { user } = useAuth();
-  const userId   = user?.id;
-  const navigate = useNavigate();
+  return <SettingsScreen key={user?.id ?? "signed-out"} />;
+}
 
-  // Pull current theme + setter — scoped to this user
+function SettingsScreen() {
+  const { user, updateProfile } = useAuth();
+  const userId = user?.id;
+  const navigate = useNavigate();
   const { theme, setTheme, tc } = useTheme(userId);
 
-  // ── Load initial settings from per-user localStorage ─────────
+  // ── Accessibility (this device) ──
   const [settings, setSettings] = useState(() => loadSettings(userId));
-
-  // Re-load settings whenever the logged-in user changes
-  // (covers the case where two sessions exist in the same tab)
-  useEffect(() => {
-    setSettings(loadSettings(userId));
-  }, [userId]);
-
-  // Persist settings to localStorage whenever any value changes,
-  // and apply accessibility choices (text size / motion / contrast)
-  // to the whole app immediately
   useEffect(() => {
     try {
-      localStorage.setItem(settingsKey(userId), JSON.stringify(settings));
-    } catch (_) {}
+      // Merge, so keys written by older versions of this page survive.
+      const existing = JSON.parse(localStorage.getItem(settingsKey(userId)) || "{}") || {};
+      localStorage.setItem(settingsKey(userId), JSON.stringify({ ...existing, ...settings }));
+    } catch {
+      // storage unavailable — the choice still applies for this visit
+    }
     applyA11ySettings(settings);
   }, [settings, userId]);
+  const update = (key) => (value) => setSettings((previous) => ({ ...previous, [key]: value }));
 
-  // ── Convenience updater ──────────────────────────────────────
-  const update = (key) => (value) =>
-    setSettings((prev) => ({ ...prev, [key]: value }));
+  // ── Rides & map (this device) ──
+  const [voiceOn, setVoiceOn] = usePersistentFlag("ridewise-voice-guidance", true);
+  const [mapStyle, setMapStyle] = useState(loadMapStyleChoice);
+  const chooseMapStyle = (choice) => {
+    setMapStyle(choice);
+    saveMapStyleChoice(choice);
+  };
 
-  // Theme options come straight from the theme system, so labels, glyphs and
-  // preview swatches can never drift out of sync with useTheme.js
-  const themeOptions = Object.entries(themes).map(([key, t]) => ({
-    key, label: t.label, icon: t.icon, preview: t.preview,
+  // ── Privacy (the account) ──
+  const profilePublic = user?.profilePublic !== false;
+  const [savingPrivacy, setSavingPrivacy] = useState(false);
+  const setProfilePublic = async (value) => {
+    setSavingPrivacy(true);
+    try {
+      await updateProfile({ profilePublic: value });
+      toast.success(value
+        ? "Other riders can find you again."
+        : "You're hidden from search and from riders nearby.");
+    } catch (err) {
+      toast.error(err.message || "Couldn't save that. Please try again.");
+    } finally {
+      setSavingPrivacy(false);
+    }
+  };
+
+  // Labels, glyphs and swatches come straight from the theme system
+  const themeOptions = Object.entries(themes).map(([key, option]) => ({
+    key, label: option.label, preview: option.preview,
   }));
 
   return (
     <div className={`relative min-h-screen w-full overflow-x-hidden ${tc.bg} ${tc.text}`}>
       <Sidebar tc={tc} />
-      <TopBar theme={theme} setTheme={setTheme} tc={tc} userId={user?.id} />
+      <TopBar theme={theme} setTheme={setTheme} tc={tc} userId={userId} />
       <MobileNav tc={tc} />
 
-      <main className="lg:ml-64 pt-20 px-4 pb-28 lg:pb-8">
-        <div className="max-w-2xl mx-auto">
-          {/* ── Back to Account (mobile only) ────────────────── */}
-          {/* On a phone Settings is opened from the Account tab, so give an
-              explicit way back that does not depend on the bottom bar.
-              Desktop opens Settings from the sidebar dropdown and needs
-              no back link. */}
+      <main className="px-4 pb-28 pt-24 lg:ml-64 lg:pb-12">
+        <div className="mx-auto max-w-2xl">
+          {/* Back to Account (phones reach Settings from the Account tab) */}
           <button
             type="button"
             onClick={() => navigate("/account")}
-            className={`lg:hidden mb-4 inline-flex items-center gap-1.5 text-sm font-semibold transition-colors ${tc.sub} hover:underline`}
+            className={`mb-4 inline-flex items-center gap-1.5 text-sm font-semibold hover:underline lg:hidden ${tc.sub}`}
           >
             <Icon name="arrowLeft" size={16} />
             Back to Account
           </button>
 
-          {/* ── Page header ──────────────────────────────────── */}
-          <div className="mb-7">
-            <h1 className="text-2xl font-bold mb-1 flex items-center gap-2.5">
-              <Icon name="settings" size={22} />
-              Settings
-            </h1>
-            <p className={`text-sm ${tc.sub}`}>Customize your RideWise experience</p>
-          </div>
+          <header className="mb-6">
+            <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
+            <p className={`mt-1 text-sm ${tc.sub}`}>Make RideWise look and behave the way you like.</p>
+          </header>
 
-          {/* ══════════════════════════════════════════════════
-              APPEARANCE
-          ══════════════════════════════════════════════════ */}
-          <div className={`rounded-xl border p-5 mb-4 ${tc.card}`}>
+          {/* ── APPEARANCE ── */}
+          <section className={`mb-4 rounded-xl border p-5 ${tc.card}`}>
             <SectionHeader icon="theme" title="Appearance" tc={tc} />
-            <p className={`text-xs ${tc.sub} mb-4`}>
-              Choose a theme or let RideWise auto-select based on time of day.
+            <p className={`mb-4 text-xs ${tc.sub}`}>
+              Until you pick one, RideWise follows the time of day.
             </p>
-            {/* Theme grid — each option previews its own palette */}
             <div className="grid grid-cols-2 gap-2.5">
-              {themeOptions.map((t) => {
-                const active = theme === t.key;
+              {themeOptions.map((option) => {
+                const active = theme === option.key;
                 return (
                   <button
-                    key={t.key}
-                    onClick={() => setTheme(t.key)}
+                    key={option.key}
+                    type="button"
+                    onClick={() => setTheme(option.key)}
                     aria-pressed={active}
-                    className={`flex items-center gap-3 p-2.5 rounded-lg border text-sm font-semibold text-left transition-colors ${
+                    className={`flex items-center gap-3 rounded-lg border p-2.5 text-left text-sm font-semibold transition-colors ${
                       active ? tc.accentSoft : `${tc.card} ${tc.cardHover}`
                     }`}
                   >
                     {/* swatch: page, surface, ink, accent of that theme */}
                     <span
-                      className={`w-11 h-9 rounded-lg border flex flex-col justify-end gap-[3px] p-1.5 shrink-0 ${t.preview.page} ${tc.divider}`}
+                      className={`flex h-9 w-11 shrink-0 flex-col justify-end gap-[3px] rounded-lg border p-1.5 ${option.preview.page} ${tc.divider}`}
                     >
-                      <span className={`h-1 w-3 rounded-full ${t.preview.surface}`} />
-                      <span className={`h-1 w-6 rounded-full ${t.preview.ink}`} />
-                      <span className={`h-1 w-2 rounded-full ${t.preview.accent}`} />
+                      <span className={`h-1 w-3 rounded-full ${option.preview.surface}`} />
+                      <span className={`h-1 w-6 rounded-full ${option.preview.ink}`} />
+                      <span className={`h-1 w-2 rounded-full ${option.preview.accent}`} />
                     </span>
-                    <span className="flex-1">{t.label}</span>
+                    <span className="flex-1">{option.label}</span>
                     {active ? <Icon name="check" size={16} /> : null}
                   </button>
                 );
               })}
             </div>
-          </div>
+          </section>
 
-          {/* ══════════════════════════════════════════════════
-              ACCESSIBILITY
-          ══════════════════════════════════════════════════ */}
-          <div className={`rounded-xl border p-5 mb-4 ${tc.card}`}>
+          {/* ── RIDES & MAP ── */}
+          <section className={`mb-4 rounded-xl border p-5 ${tc.card}`}>
+            <SectionHeader icon="map" title="Rides & map" tc={tc} />
+
+            <Toggle
+              checked={voiceOn && voiceSupported}
+              onChange={setVoiceOn}
+              disabled={!voiceSupported}
+              label="Spoken directions"
+              sub={voiceSupported
+                ? "Reads each turn aloud while you ride. You can also mute it on the map."
+                : "This browser can't speak directions."}
+              tc={tc}
+            />
+
+            <div className={`border-t ${tc.divider}`} />
+            <div className="py-3">
+              <p className="text-sm font-semibold">Map style</p>
+              <p className={`mb-2.5 mt-0.5 text-xs ${tc.sub}`}>
+                Automatic matches the map to your theme — dark map for dark themes.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {[{ id: MAP_STYLE_AUTO, label: "Automatic" }, ...MAP_STYLES].map((style) => (
+                  <Chip
+                    key={style.id}
+                    selected={mapStyle === style.id}
+                    onClick={() => chooseMapStyle(style.id)}
+                    tc={tc}
+                  >
+                    {style.label}
+                  </Chip>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          {/* ── ACCESSIBILITY ── */}
+          <section className={`mb-4 rounded-xl border p-5 ${tc.card}`}>
             <SectionHeader icon="access" title="Accessibility" tc={tc} />
 
-            {/* Text Size */}
             <div className="py-3">
-              <p className="font-semibold text-sm mb-2">Text Size</p>
+              <p className="mb-2 text-sm font-semibold">Text size</p>
               <div className="flex gap-2">
                 {["small", "medium", "large"].map((size) => (
                   <Chip
@@ -220,7 +265,7 @@ export default function Settings() {
                     tc={tc}
                     className="flex-1 justify-center capitalize"
                   >
-                    {size.charAt(0).toUpperCase() + size.slice(1)}
+                    {size}
                   </Chip>
                 ))}
               </div>
@@ -230,82 +275,38 @@ export default function Settings() {
             <Toggle
               checked={settings.reduceMotion}
               onChange={update("reduceMotion")}
-              label="Reduce Motion"
-              sub="Disables animations and transitions"
+              label="Reduce motion"
+              sub="Turns off animations and transitions, including on the map"
               tc={tc}
             />
             <div className={`border-t ${tc.divider}`} />
             <Toggle
               checked={settings.highContrast}
               onChange={update("highContrast")}
-              label="High Contrast"
-              sub="Increases text and border contrast"
+              label="High contrast"
+              sub="Stronger text and borders"
               tc={tc}
             />
-          </div>
+          </section>
 
-          {/* ══════════════════════════════════════════════════
-              NOTIFICATIONS
-          ══════════════════════════════════════════════════ */}
-          <div className={`rounded-xl border p-5 mb-4 ${tc.card}`}>
-            <SectionHeader icon="bell" title="Notifications" tc={tc} />
-            <p className={`text-xs ${tc.sub} mb-2`}>
-              Choose which updates you want to receive.
-            </p>
-            <Toggle
-              checked={settings.notifyRides}
-              onChange={update("notifyRides")}
-              label="Ride Alerts"
-              sub="When riders near you start a public ride"
-              tc={tc}
-            />
-            <div className={`border-t ${tc.divider}`} />
-            <Toggle
-              checked={settings.notifyMessages}
-              onChange={update("notifyMessages")}
-              label="Messages"
-              sub="New messages from other riders"
-              tc={tc}
-            />
-            <div className={`border-t ${tc.divider}`} />
-            <Toggle
-              checked={settings.notifyCommunity}
-              onChange={update("notifyCommunity")}
-              label="Community Updates"
-              sub="New posts and events in the community"
-              tc={tc}
-            />
-          </div>
-
-          {/* ══════════════════════════════════════════════════
-              PRIVACY
-          ══════════════════════════════════════════════════ */}
-          <div className={`rounded-xl border p-5 mb-4 ${tc.card}`}>
+          {/* ── PRIVACY ── */}
+          <section className={`mb-4 rounded-xl border p-5 ${tc.card}`}>
             <SectionHeader icon="lock" title="Privacy" tc={tc} />
-            <p className={`text-xs ${tc.sub} mb-2`}>
-              Control who can see your profile and activity.
+            <Toggle
+              checked={profilePublic}
+              onChange={setProfilePublic}
+              disabled={savingPrivacy}
+              label="Public profile"
+              sub="When off, riders you're not connected with can't find you in search or near them."
+              tc={tc}
+            />
+            <p className={`border-t pt-3 text-xs ${tc.divider} ${tc.sub}`}>
+              Other riders never see your exact location or phone number. In a group ride your live
+              position is shared only with that ride&apos;s riders, and only while you ride.
             </p>
-            <Toggle
-              checked={settings.profilePublic}
-              onChange={update("profilePublic")}
-              label="Public Profile"
-              sub="Other riders can discover your profile"
-              tc={tc}
-            />
-            <div className={`border-t ${tc.divider}`} />
-            <Toggle
-              checked={settings.showOnlineStatus}
-              onChange={update("showOnlineStatus")}
-              label="Show Online Status"
-              sub="Let others see when you're active"
-              tc={tc}
-            />
-          </div>
+          </section>
 
-          {/* ── App version footer ────────────────────────────── */}
-          <div className={`text-center text-xs ${tc.sub} py-4`}>
-            RideWise v1.0 · Connected to the Spring Boot backend
-          </div>
+          <p className={`py-4 text-center text-xs ${tc.sub}`}>RideWise v1.0</p>
         </div>
       </main>
     </div>

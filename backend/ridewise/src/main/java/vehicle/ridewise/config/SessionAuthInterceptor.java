@@ -3,21 +3,36 @@ package vehicle.ridewise.config;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 import vehicle.ridewise.exception.ApiException;
-import org.springframework.http.HttpStatus;
 
 import java.io.IOException;
 
 // SessionAuthInterceptor — protects every /api endpoint except signup/login.
-// The authenticated user id is stored in the server-side HttpSession after login.
-// Controllers/services must use requireUserId(request), never a browser-supplied id.
+//
+// The authenticated user id is stored in the server-side HttpSession at
+// login. Controllers and services must use requireUserId(request) — never
+// an id supplied by the browser.
+//
+// A request is let through only when
+//   1. the session carries a user id, AND
+//   2. that account still exists and is not suspended (UserStatusCache).
+// Otherwise the answer is 401, which the frontend treats as "signed out".
+@Component
 public class SessionAuthInterceptor implements HandlerInterceptor {
 
     public static final String SESSION_USER_ID = "RIDEWISE_USER_ID";
     public static final String SESSION_USER_ROLE = "RIDEWISE_USER_ROLE";
     public static final String REQUEST_USER_ID = "authenticatedUserId";
+
+    private final UserStatusCache userStatusCache;
+
+    public SessionAuthInterceptor(UserStatusCache userStatusCache) {
+        this.userStatusCache = userStatusCache;
+    }
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws IOException {
@@ -26,25 +41,37 @@ public class SessionAuthInterceptor implements HandlerInterceptor {
         }
 
         String path = request.getRequestURI();
-        boolean publicAuthEndpoint =
-                path.equals("/api/auth/login") ||
-                path.equals("/api/auth/signup");
-
-        if (publicAuthEndpoint) {
+        if (path.equals("/api/auth/login") || path.equals("/api/auth/signup")) {
             return true;
         }
 
         HttpSession session = request.getSession(false);
         Object value = session != null ? session.getAttribute(SESSION_USER_ID) : null;
         if (!(value instanceof Number)) {
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-            response.getWriter().write("{\"message\":\"Authentication required\",\"error\":\"Authentication required\"}");
-            return false;
+            return reject(response, "Authentication required");
         }
 
-        request.setAttribute(REQUEST_USER_ID, ((Number) value).longValue());
+        long userId = ((Number) value).longValue();
+        if (!userStatusCache.isActive(userId)) {
+            // Suspended (or deleted) while logged in: end the session now.
+            try {
+                session.invalidate();
+            } catch (IllegalStateException ignored) {
+                // already invalidated
+            }
+            return reject(response, "This account has been suspended. Please contact an administrator.");
+        }
+
+        request.setAttribute(REQUEST_USER_ID, userId);
         return true;
+    }
+
+    private static boolean reject(HttpServletResponse response, String message) throws IOException {
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding("UTF-8");
+        response.getWriter().write("{\"message\":\"" + message + "\",\"error\":\"" + message + "\"}");
+        return false;
     }
 
     public static Long requireUserId(HttpServletRequest request) {

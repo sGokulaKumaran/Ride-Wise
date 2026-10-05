@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
 
 // ============================================================
 // RideWise theme tokens
@@ -8,12 +8,20 @@ import { useState, useEffect } from "react";
 //   · surfaces and text are monochrome (no brand gradients anywhere)
 //   · one functional accent (RideWise amber) for primary ride actions,
 //     active selection and map recenter
-//   · one functional danger tone, one ok tone, one warn tone
+//   · one functional danger tone, one ok tone, one warn tone, and one
+//     "rejoin" tone that matches the purple rejoin line on the map
 //   · borders are hairlines; shadows are reserved for floating
 //     controls that sit on top of the map
 //
 // Token groups:  page → container → chrome → form → buttons → nav →
 //                accent/status → chips → map → decoration
+//
+// OPACITY NOTE
+//   Tailwind only generates `/NN` opacity steps that exist in its scale
+//   (multiples of 5). A value such as `/12` or `/88` produces NO CSS at
+//   all — which silently left the Warm and Midnight top bars transparent
+//   and the "soft" status surfaces without their tint. Every off-scale
+//   opacity below therefore uses the explicit `/[0.12]` form.
 // ============================================================
 export const themes = {
   // ── DARK · neutral black, light ink ─────────────────────────
@@ -28,7 +36,8 @@ export const themes = {
     cardHover: "hover:bg-[#1C1C20]",
     surface2: "bg-[#1A1A1E]",                              // raised row inside a card
     divider: "border-[#26262B]",                           // hairline
-    bar: "bg-[#0B0B0C]/85",                                // sidebar / topbar
+    bar: "bg-[#0B0B0C]",                                   // sidebar / topbar / bottom nav — opaque, so
+                                                           // scrolled content never shows through it
     overlay: "bg-black/70",                                // scrim behind sheets
 
     input: "bg-[#141416] border-[#26262B] text-[#F4F4F5] placeholder-[#71717A] focus:border-[#3F3F46]",
@@ -47,11 +56,14 @@ export const themes = {
     record: "bg-white/[0.05] border-[#26262B]",            // soft translucent panel
 
     accent:     "text-[#FF8A34]",                          // accent ink
-    accentSoft: "bg-[#FF7A1A]/12 border-[#FF7A1A]/35 text-[#FF9A4D]",
+    accentSoft: "bg-[#FF7A1A]/[0.12] border-[#FF7A1A]/35 text-[#FF9A4D]",
     danger:     "text-[#FF7B7B]",
-    dangerSoft: "bg-[#FF7B7B]/12 border-[#FF7B7B]/35 text-[#FF9A9A]",
+    dangerSoft: "bg-[#FF7B7B]/[0.12] border-[#FF7B7B]/35 text-[#FF9A9A]",
     ok:         "text-[#5DD98A]",
+    okSoft:     "bg-[#5DD98A]/[0.12] border-[#5DD98A]/35 text-[#7CE3A1]",
     warn:       "text-[#FFC24D]",
+    warnSoft:   "bg-[#FFC24D]/[0.12] border-[#FFC24D]/35 text-[#FFD27A]",
+    rejoinSoft: "bg-[#8B5CF6]/[0.16] border-[#8B5CF6]/40 text-[#B7A1FF]", // off-route / rejoin state
 
     chipIdle:     "bg-transparent text-[#A1A1AA] border-[#26262B] hover:bg-white/[0.06] hover:text-[#F4F4F5]",
     chipSelected: "bg-[#F4F4F5] text-[#0B0B0C] border-[#F4F4F5]",
@@ -89,7 +101,7 @@ export const themes = {
     cardHover: "hover:bg-[#F4F4F5]",
     surface2: "bg-[#F4F4F5]",
     divider: "border-[#E4E4E7]",
-    bar: "bg-white/85",
+    bar: "bg-white",
     overlay: "bg-black/40",
 
     input: "bg-white border-[#D9D9DE] text-[#111113] placeholder-[#9A9AA1] focus:border-[#A1A1AA]",
@@ -110,9 +122,12 @@ export const themes = {
     accent:     "text-[#B4500A]",
     accentSoft: "bg-[#F2690C]/10 border-[#F2690C]/30 text-[#9E4408]",
     danger:     "text-[#C23434]",
-    dangerSoft: "bg-[#C23434]/8 border-[#C23434]/30 text-[#A82C2C]",
+    dangerSoft: "bg-[#C23434]/[0.08] border-[#C23434]/30 text-[#A82C2C]",
     ok:         "text-[#1F7A4D]",
+    okSoft:     "bg-[#1F7A4D]/[0.08] border-[#1F7A4D]/30 text-[#1B6B43]",
     warn:       "text-[#8A5A00]",
+    warnSoft:   "bg-[#B97800]/10 border-[#B97800]/30 text-[#7A4F00]",
+    rejoinSoft: "bg-[#8B5CF6]/10 border-[#8B5CF6]/30 text-[#5B21B6]",
 
     chipIdle:     "bg-transparent text-[#6B6B72] border-[#D9D9DE] hover:bg-black/[0.04] hover:text-[#111113]",
     chipSelected: "bg-[#111113] text-white border-[#111113]",
@@ -146,7 +161,7 @@ export const themes = {
     cardHover: "hover:bg-[#F7F0E7]",
     surface2: "bg-[#F7F0E7]",
     divider: "border-[#EADFD2]",
-    bar: "bg-[#FBF6F0]/88",
+    bar: "bg-[#FBF6F0]",
     overlay: "bg-[#3B2E22]/45",
 
     input: "bg-white border-[#DFD1C0] text-[#241C15] placeholder-[#A79383] focus:border-[#B9A490]",
@@ -169,7 +184,10 @@ export const themes = {
     danger:     "text-[#A8402C]",
     dangerSoft: "bg-[#A8402C]/10 border-[#A8402C]/30 text-[#93361F]",
     ok:         "text-[#3F6B3A]",
+    okSoft:     "bg-[#3F6B3A]/10 border-[#3F6B3A]/30 text-[#35592F]",
     warn:       "text-[#8A5A00]",
+    warnSoft:   "bg-[#B97800]/10 border-[#B97800]/30 text-[#7A4F00]",
+    rejoinSoft: "bg-[#8B5CF6]/10 border-[#8B5CF6]/30 text-[#5B21B6]",
 
     chipIdle:     "bg-transparent text-[#7C6A58] border-[#DFD1C0] hover:bg-[#2A211A]/[0.05] hover:text-[#241C15]",
     chipSelected: "bg-[#2A211A] text-[#FDF8F3] border-[#2A211A]",
@@ -203,7 +221,7 @@ export const themes = {
     cardHover: "hover:bg-[#1A1E33]",
     surface2: "bg-[#181C2E]",
     divider: "border-[#252A45]",
-    bar: "bg-[#0A0B14]/88",
+    bar: "bg-[#0A0B14]",
     overlay: "bg-[#05060C]/75",
 
     input: "bg-[#131627] border-[#252A45] text-[#E7E9F5] placeholder-[#707A9E] focus:border-[#3A416B]",
@@ -222,11 +240,14 @@ export const themes = {
     record: "bg-white/[0.05] border-[#252A45]",
 
     accent:     "text-[#FF9A4D]",
-    accentSoft: "bg-[#FF7A1A]/14 border-[#FF7A1A]/35 text-[#FFAE6E]",
+    accentSoft: "bg-[#FF7A1A]/[0.14] border-[#FF7A1A]/35 text-[#FFAE6E]",
     danger:     "text-[#FF8A8A]",
-    dangerSoft: "bg-[#FF8A8A]/12 border-[#FF8A8A]/35 text-[#FFA3A3]",
+    dangerSoft: "bg-[#FF8A8A]/[0.12] border-[#FF8A8A]/35 text-[#FFA3A3]",
     ok:         "text-[#6ED9A0]",
+    okSoft:     "bg-[#6ED9A0]/[0.12] border-[#6ED9A0]/35 text-[#8FE4B6]",
     warn:       "text-[#FFC96B]",
+    warnSoft:   "bg-[#FFC96B]/[0.12] border-[#FFC96B]/35 text-[#FFD68F]",
+    rejoinSoft: "bg-[#8B5CF6]/[0.18] border-[#8B5CF6]/40 text-[#C1AEFF]",
 
     chipIdle:     "bg-transparent text-[#9AA0C0] border-[#252A45] hover:bg-white/[0.06] hover:text-[#E7E9F5]",
     chipSelected: "bg-[#E7E9F5] text-[#0A0B14] border-[#E7E9F5]",
@@ -250,10 +271,12 @@ export const themes = {
   },
 };
 
-// ── Build a per-user localStorage key ──────────────────────────
-// When userId is available the key is "ridewise-theme-<id>".
-// When not logged in (userId is null/undefined) we fall back to
-// the legacy global key so the login page still has a theme.
+// Browser chrome colour (address bar on phones) for each theme
+const PAGE_COLOR = { dark: "#0B0B0C", light: "#FAFAFA", warm: "#FBF6F0", midnight: "#0A0B14" };
+
+// ── Per-user localStorage key ──────────────────────────────────
+// "ridewise-theme-<id>" when logged in; the global "ridewise-theme"
+// otherwise, so the login page has a theme too.
 function themeKey(userId) {
   return userId ? `ridewise-theme-${userId}` : "ridewise-theme";
 }
@@ -270,45 +293,87 @@ function detectThemeByTime() {
 // ── Resolve the theme that should apply right now ────────────────
 // Priority: 1. per-user saved choice  2. login-page (global) choice
 //           3. auto-detect by time of day
-// Both the first render AND the userId effect use this one helper, so
-// every page resolves the SAME theme — admin panel and onboarding too.
 function resolveTheme(userId) {
+  // A choice made while storage is unavailable still applies for this visit
+  const remembered = unsaved.get(themeKey(userId));
+  if (remembered) return remembered;
   try {
-    // 1. Try the per-user key first
     if (userId) {
       const perUser = localStorage.getItem(themeKey(userId));
       if (perUser && themes[perUser]) return perUser;
     }
-    // 2. Fall back to the legacy global key (login-page pick / old data)
-    const legacy = localStorage.getItem("ridewise-theme");
-    if (legacy && themes[legacy]) return legacy;
-  } catch (_) {}
-  // 3. Nothing saved yet → auto-detect by time
+    const global = localStorage.getItem("ridewise-theme");
+    if (global && themes[global]) return global;
+  } catch {
+    // storage unavailable (private mode) → fall through to auto-detect
+  }
   return detectThemeByTime();
+}
+
+// Choices that could not be written to localStorage (key → theme)
+const unsaved = new Map();
+
+// ── One shared theme store ───────────────────────────────────────
+// useTheme() is called by many components at once (the page, the toast
+// host, the route guards, the ride overlay…). Each used to keep its OWN
+// copy of the theme in useState, so changing the theme in the top bar
+// left the others on the old one until a reload — toasts stayed dark
+// after switching to Light. All of them now read one store and are
+// notified together. The `storage` event keeps other tabs in sync too.
+const listeners = new Set();
+
+function subscribe(listener) {
+  listeners.add(listener);
+  const onStorage = (event) => {
+    if (!event.key || event.key.startsWith("ridewise-theme")) listener();
+  };
+  window.addEventListener("storage", onStorage);
+  return () => {
+    listeners.delete(listener);
+    window.removeEventListener("storage", onStorage);
+  };
+}
+
+function notify() {
+  listeners.forEach((listener) => listener());
 }
 
 // ── useTheme hook ───────────────────────────────────────────────
 // userId  — pass user?.id so the theme is scoped per account.
 //           Omit (or pass null) on public pages.
 export function useTheme(userId) {
-  // First render: resolve immediately so there is no theme flash
-  const [theme, setThemeState] = useState(() => resolveTheme(userId));
+  const theme = useSyncExternalStore(
+    subscribe,
+    () => resolveTheme(userId),
+    () => "dark",
+  );
 
-  // Re-resolve whenever userId changes — switching accounts loads that
-  // account's saved theme right away. A saved choice always wins; only
-  // a brand-new user with nothing stored falls back to the clock.
-  useEffect(() => {
-    setThemeState(resolveTheme(userId));
+  const setTheme = useCallback((next) => {
+    if (!themes[next]) return;
+    try {
+      localStorage.setItem(themeKey(userId), next);
+      // Also remember it as this DEVICE's theme. The login page — and the
+      // first moment of every app start, before the account is known —
+      // then use what the rider last chose instead of flashing another
+      // theme and switching a moment later.
+      if (userId) localStorage.setItem("ridewise-theme", next);
+      unsaved.delete(themeKey(userId));
+    } catch {
+      unsaved.set(themeKey(userId), next); // lasts for this visit only
+    }
+    notify();
   }, [userId]);
 
-  // Persist theme under the per-user key whenever it changes
-  const setTheme = (newTheme) => {
-    setThemeState(newTheme);
-    try {
-      localStorage.setItem(themeKey(userId), newTheme);
-    } catch (_) {}
-  };
+  // Tell the browser which scheme is active, so native pieces (scrollbars,
+  // form controls, the phone's address bar) match the theme as well.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.colorScheme = themes[theme].isDark ? "dark" : "light";
+    root.dataset.rwTheme = theme;
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", PAGE_COLOR[theme]);
+  }, [theme]);
 
   return { theme, setTheme, tc: themes[theme], allThemes: themes };
-  // tc = "theme classes" — the bundle for current theme
+  // tc = "theme classes" — the bundle for the current theme
 }

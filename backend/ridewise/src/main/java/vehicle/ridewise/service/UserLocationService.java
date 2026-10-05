@@ -31,6 +31,14 @@ import java.util.stream.Collectors;
 @Service
 public class UserLocationService {
 
+    // A rider's app sends a position every ~1.5 s. Anything arriving faster
+    // than this is dropped before it reaches the database or the group — a
+    // buggy or hostile client cannot flood either.
+    private static final long MIN_UPDATE_INTERVAL_MS = 250;
+
+    // userId → time of the last accepted position
+    private final Map<Long, Long> lastAccepted = new java.util.concurrent.ConcurrentHashMap<>();
+
     private final UserLocationRepository userLocationRepository;
     private final RideRepository rideRepository;
     private final RideParticipantRepository rideParticipantRepository;
@@ -53,13 +61,29 @@ public class UserLocationService {
     // requireActiveParticipant = true: only an ACTIVE member (or the ride
     // owner) may publish a position. A rider who left is rejected.
     // ============================================================
+    @org.springframework.transaction.annotation.Transactional
     public LiveLocationResponse updateLocation(Long rideId, Long userId,
                                                Double lat, Double lng, Double accuracy) {
         if (userId == null) {
             throw ApiException.badRequest("Authenticated user is required");
         }
-        if (lat == null || lat < -90 || lat > 90 || lng == null || lng < -180 || lng > 180) {
+        if (rideId == null) {
+            throw ApiException.badRequest("rideId is required");
+        }
+        if (lat == null || lat.isNaN() || lat < -90 || lat > 90
+                || lng == null || lng.isNaN() || lng < -180 || lng > 180) {
             throw ApiException.badRequest("Invalid GPS coordinates");
+        }
+        // Accuracy is informational; a nonsensical value is simply not stored.
+        if (accuracy != null && (accuracy.isNaN() || accuracy.isInfinite() || accuracy < 0)) {
+            accuracy = null;
+        }
+
+        // Too soon after the previous one → ignore (see MIN_UPDATE_INTERVAL_MS)
+        long now = System.currentTimeMillis();
+        Long previous = lastAccepted.get(userId);
+        if (previous != null && now - previous < MIN_UPDATE_INTERVAL_MS) {
+            return null;
         }
 
         Ride ride = rideRepository.findById(rideId)
@@ -87,6 +111,7 @@ public class UserLocationService {
         ul.setLng(lng);
         ul.setAccuracy(accuracy);
         UserLocation saved = userLocationRepository.save(ul);
+        lastAccepted.put(userId, now);
 
         LiveLocationResponse res = LiveLocationResponse.from(saved);
 
@@ -120,6 +145,8 @@ public class UserLocationService {
         if (!"group".equals(ride.getRideType())) return;
 
         assertRideAccess(ride, userId, false);
+
+        lastAccepted.remove(userId);
 
         UserLocation row = userLocationRepository.findByUserId(userId).orElse(null);
         if (row != null && rideId.equals(row.getRideId())) {

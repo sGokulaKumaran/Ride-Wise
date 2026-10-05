@@ -32,6 +32,12 @@ public class User {
     @Column(name = "enabled", nullable = false)
     private Boolean enabled;
 
+    // Can other riders discover this account through search and "near me"?
+    // NULL (accounts created before this setting existed) means yes.
+    // People already connected with the rider are not affected.
+    @Column(name = "profile_public")
+    private Boolean profilePublic;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -53,6 +59,7 @@ public class User {
     public Double getLng()               { return lng; }
     public String getRole()              { return role; }
     public Boolean getEnabled()          { return enabled; }
+    public Boolean getProfilePublic()    { return profilePublic; }
     public LocalDateTime getCreatedAt()  { return createdAt; }
 
     // ---- Setters ----
@@ -66,5 +73,6 @@ public class User {
     public void setLng(Double lng)                     { this.lng = lng; }
     public void setRole(String role)                   { this.role = role; }
     public void setEnabled(Boolean enabled)            { this.enabled = enabled; }
+    public void setProfilePublic(Boolean profilePublic) { this.profilePublic = profilePublic; }
     public void setCreatedAt(LocalDateTime createdAt)  { this.createdAt = createdAt; }
 }

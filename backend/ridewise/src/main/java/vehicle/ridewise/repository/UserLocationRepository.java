@@ -35,8 +35,8 @@ public interface UserLocationRepository extends JpaRepository<UserLocation, Long
     void deleteByUserId(Long userId);
 
     // Drop positions that have not been refreshed for a long time
-    // (rider closed the tab without ending the ride).
+    // (rider closed the tab without ending the ride). Returns how many.
     @Transactional
     @Modifying
-    void deleteByUpdatedAtBefore(LocalDateTime cutoff);
+    long deleteByUpdatedAtBefore(LocalDateTime cutoff);
 } // End of interface

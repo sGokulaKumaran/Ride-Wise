@@ -32,11 +32,16 @@ import java.util.Map;
 //   server → { "type": "snapshot",   "rideId": .., "locations": [ ... ] }
 //   server → { "type": "location",   "location": { ... } }
 //   server → { "type": "location-cleared", "rideId": .., "userId": .. }
+//   server → { "type": "participants-changed", "rideId": .. }   (someone joined / left)
+//   server → { "type": "ride-ended", "rideId": .., "status": .., "endedBy": .. }
 //   server → { "type": "error",      "message": ".." }
 //
 // SECURITY: the sender's id always comes from the handshake session, never
 // from the message body. Subscribing and publishing both run through
 // UserLocationService, which re-verifies the user belongs to the ride.
+//
+// All sends go through the broadcaster's per-session wrapper (see
+// RideLocationBroadcaster), so replies and broadcasts never interleave.
 // ============================================================
 @Component
 public class RideLocationSocketHandler extends TextWebSocketHandler {
@@ -60,7 +65,8 @@ public class RideLocationSocketHandler extends TextWebSocketHandler {
             session.close(CloseStatus.NOT_ACCEPTABLE.withReason("Not authenticated"));
             return;
         }
-        send(session, Map.of("type", "connected", "userId", userId));
+        broadcaster.register(session);
+        broadcaster.send(session, Map.of("type", "connected", "userId", userId));
     }
 
     @Override
@@ -75,7 +81,7 @@ public class RideLocationSocketHandler extends TextWebSocketHandler {
         try {
             msg = objectMapper.readValue(message.getPayload(), UserLocationMessage.class);
         } catch (Exception e) {
-            send(session, Map.of("type", "error", "message", "Malformed message"));
+            broadcaster.send(session, Map.of("type", "error", "message", "Malformed message"));
             return;
         }
 
@@ -85,7 +91,7 @@ public class RideLocationSocketHandler extends TextWebSocketHandler {
             case "unsubscribe" -> broadcaster.unsubscribe(session);
             case "location" -> handleLocation(session, userId, msg);
             case "stop" -> handleStop(session, userId, msg);
-            default -> send(session, Map.of("type", "error", "message", "Unknown message type"));
+            default -> broadcaster.send(session, Map.of("type", "error", "message", "Unknown message type"));
         }
     }
 
@@ -94,16 +100,16 @@ public class RideLocationSocketHandler extends TextWebSocketHandler {
         Long rideId = msg.getRideId();
 
         if (!userLocationService.canSubscribe(rideId, userId)) {
-            send(session, Map.of("type", "error", "message", "You are not a member of this ride"));
+            broadcaster.send(session, Map.of("type", "error", "message", "You are not a member of this ride"));
             closeQuietly(session, CloseStatus.POLICY_VIOLATION.withReason("Not a ride member"));
             return;
         }
 
         broadcaster.subscribe(session, rideId);
-        send(session, Map.of("type", "subscribed", "rideId", rideId));
+        broadcaster.send(session, Map.of("type", "subscribed", "rideId", rideId));
 
-        // Requirement 7: hand the client the current positions immediately,
-        // then live updates flow through broadcast().
+        // Hand the client the current positions immediately, then live
+        // updates flow through broadcast().
         try {
             List<LiveLocationResponse> current =
                     userLocationService.getLiveLocations(rideId, userId);
@@ -111,7 +117,7 @@ public class RideLocationSocketHandler extends TextWebSocketHandler {
             snapshot.put("type", "snapshot");
             snapshot.put("rideId", rideId);
             snapshot.put("locations", current);
-            send(session, snapshot);
+            broadcaster.send(session, snapshot);
         } catch (Exception e) {
             // Not fatal: the client still gets live updates.
         }
@@ -123,29 +129,29 @@ public class RideLocationSocketHandler extends TextWebSocketHandler {
             userLocationService.updateLocation(
                     msg.getRideId(), userId, msg.getLat(), msg.getLng(), msg.getAccuracy());
         } catch (ApiException e) {
-            send(session, Map.of("type", "error", "message", e.getMessage()));
+            broadcaster.send(session, Map.of("type", "error", "message", e.getMessage()));
         } catch (Exception e) {
-            send(session, Map.of("type", "error", "message", "Failed to store location"));
+            broadcaster.send(session, Map.of("type", "error", "message", "Failed to store location"));
         }
     }
 
-    // ── Stop sharing (requirement 10): delete my latest row and let the
-    // group remove my marker right away. rideId is optional — when the
-    // client omits it we fall back to the ride this socket subscribed to.
+    // ── Stop sharing: delete my latest row and let the group remove my
+    // marker right away. rideId is optional — when the client omits it we
+    // fall back to the ride this socket subscribed to.
     private void handleStop(WebSocketSession session, Long userId, UserLocationMessage msg) {
         Long rideId = msg.getRideId() != null ? msg.getRideId() : broadcaster.rideOf(session);
         try {
             userLocationService.clearLocation(rideId, userId);
         } catch (ApiException e) {
-            send(session, Map.of("type", "error", "message", e.getMessage()));
+            broadcaster.send(session, Map.of("type", "error", "message", e.getMessage()));
         } catch (Exception e) {
-            send(session, Map.of("type", "error", "message", "Failed to clear location"));
+            broadcaster.send(session, Map.of("type", "error", "message", "Failed to clear location"));
         }
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-        broadcaster.unsubscribe(session);
+        broadcaster.unregister(session);
     }
 
     // ── Helpers ──
@@ -153,18 +159,6 @@ public class RideLocationSocketHandler extends TextWebSocketHandler {
     private Long userIdOf(WebSocketSession session) {
         Object v = session.getAttributes().get(SessionHandshakeInterceptor.WS_USER_ID);
         return v instanceof Number ? ((Number) v).longValue() : null;
-    }
-
-    private void send(WebSocketSession session, Object payload) {
-        try {
-            if (session.isOpen()) {
-                synchronized (session) {
-                    session.sendMessage(new TextMessage(objectMapper.writeValueAsString(payload)));
-                }
-            }
-        } catch (Exception e) {
-            System.err.println("[RideSocket] send failed: " + e.getMessage());
-        }
     }
 
     private void closeQuietly(WebSocketSession session, CloseStatus status) {

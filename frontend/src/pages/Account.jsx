@@ -1,385 +1,319 @@
 // ============================================================
-// 👤 Account — User profile page
+// Account — the rider's profile
 // Route: /account (protected — requires login + onboarding)
 //
-// SECTIONS:
-//   1. Cover banner (gradient)
-//   2. Avatar + username + join date (overlaps the cover)
-//   3. Edit Profile / Save / Cancel buttons
-//   4. Stats row: Rides · Followers · Following
-//   5. Profile details card (editable: username, mobile, address; read-only: email)
-//   6. Account actions: Log out
+// SECTIONS
+//   1. Who you are: avatar, name, member since, Edit profile
+//   2. Your numbers: rides · km ridden · connections
+//   3. Settings (phones only — the desktop sidebar has its own link)
+//   4. Profile details: username, mobile, address (editable), email
+//   5. Location for "riders near me": share / update / status
+//   6. Log out
 //
-// EDIT MODE:
-//   Clicking "Edit Profile" switches text fields to inputs.
-//   Clicking "Save" calls updateProfile() from AuthContext.
-//   Clicking "Cancel" reverts all local edits.
-//
-// BACKEND-READY:
-//   updateProfile() in AuthContext does the save.
-//   When backend is ready, replace that function's body with an API call.
-//   This page doesn't need to change.
+// Saving goes through AuthContext.updateProfile(), which validates on the
+// server and returns the server's message when something is wrong
+// ("Username is already taken").
 // ============================================================
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "react-toastify";
 import { useAuth } from "../context/AuthContext";
 import MobileNav from "./components/layout/MobileNav";
 import Sidebar from "./components/layout/Sidebar";
 import TopBar from "./components/layout/TopBar";
 import Icon from "./components/ui/Icon";
+import Button from "./components/ui/Button";
 import { useTheme } from "./hooks/useTheme";
-import { toast } from "react-toastify";
 import { getUserRides } from "../services/rideApi";
+import { rideRiddenMeters } from "../services/routingApi";
 import { getConnectionsFull } from "../services/ridersApi";
+import { getCurrentLocation } from "../services/locationService";
 
-// ============================================================
-// 📝 Field — Reusable editable text field component
-// ============================================================
-//
-// WHY THIS LIVES OUTSIDE Account():
-// ─────────────────────────────────
-// In the previous version, this component was defined INSIDE the
-// Account() function. That meant every time Account() re-rendered
-// (which happens on every keystroke, because setUsername etc. are
-// called), a BRAND NEW Field function was created. To React, that
-// looks like a completely different component type — so React
-// unmounts the old <input> and mounts a new one. The browser drops
-// focus and resets the cursor position → you can only type ONE
-// character at a time.
-//
-// By moving Field to module scope, it has a stable identity across
-// renders. React reconciles it as the SAME component, keeps the
-// <input> mounted, and preserves focus + cursor position while// typing. ✅
-//
-// PROPS:
-//   label — uppercase label shown above the field
-//   value      — display value when NOT editing
-//   editValue  — controlled value of the input/textarea
-//   onChange   — stable setter (e.g. setUsername) from the parent
-//   editing — whether the input is shown (true) or plain text (false)
-//   type       — input type: "text", "tel", "email", etc.
-//   multiline  — if true, render a <textarea> instead of <input>
-//   tc — theme class object (for colors)
-// ============================================================
-function Field({ label, value, editValue, onChange, editing, type = "text", multiline = false, tc }) {
+// ── One profile field: text when viewing, an input when editing ──
+// Defined at module scope on purpose: a component created inside Account()
+// would be a new type on every keystroke, and React would remount the
+// <input> — dropping focus after each character.
+function Field({ icon, label, value, editValue, onChange, editing, type = "text", multiline = false, hint, tc }) {
+  const id = `account-${label.toLowerCase().replace(/\s+/g, "-")}`;
   return (
-    <div>
-      {/* Field label */}
-      <label className={`text-xs font-bold tracking-wider mb-1.5 block ${tc.sub}`}>
-        {label}
-      </label>
-
-      {/* Edit mode → show input / textarea  |  View mode → show plain text */}
-      {editing ? (
-        multiline ? (
-          <textarea
-            value={editValue}
-            onChange={(e) => onChange(e.target.value)}
-            rows={3}
-            className={`w-full px-4 py-3 rounded-xl border-2 outline-none focus:ring-2 focus:ring-orange-500/30 resize-none transition-all ${tc.input}`}
-          />
+    <div className="flex items-start gap-3">
+      <span className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${tc.surface2}`}>
+        <Icon name={icon} size={17} className={tc.sub} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <label htmlFor={id} className={`block text-xs font-medium ${tc.sub}`}>{label}</label>
+        {editing && onChange ? (
+          multiline ? (
+            <textarea
+              id={id}
+              value={editValue}
+              onChange={(event) => onChange(event.target.value)}
+              rows={2}
+              maxLength={255}
+              className={`mt-1 w-full resize-none rounded-lg border px-3 py-2 text-sm ${tc.input}`}
+            />
+          ) : (
+            <input
+              id={id}
+              type={type}
+              value={editValue}
+              onChange={(event) => onChange(event.target.value)}
+              className={`mt-1 w-full rounded-lg border px-3 py-2 text-sm ${tc.input}`}
+            />
+          )
         ) : (
-          <input
-            type={type}
-            value={editValue}
-            onChange={(e) => onChange(e.target.value)}
-            className={`w-full px-4 py-3 rounded-xl border-2 outline-none focus:ring-2 focus:ring-orange-500/30 transition-all ${tc.input}`}
-          />
-        )
-      ) : (
-        <p className="font-semibold">
-          {value || <span className={`italic ${tc.sub}`}>Not set</span>}
-        </p>
-      )}
+          <p id={id} className="mt-0.5 break-words text-sm font-medium">
+            {value || <span className={tc.sub}>Not set</span>}
+          </p>
+        )}
+        {hint && <p className={`mt-1 text-xs ${tc.sub}`}>{hint}</p>}
+      </div>
     </div>
   );
 }
 
 export default function Account() {
   const { user, avatarLetter, updateProfile, logout } = useAuth();
-  const { theme, setTheme, tc } = useTheme(user?.id);
+  const userId = user?.id;
+  const { theme, setTheme, tc } = useTheme(userId);
   const navigate = useNavigate();
 
-  // ── Edit mode state ──────────────────────────────────────────
-  const [editing, setEditing] = useState(false);
+  // ── Editing ──
+  // The form holds its own copy of the fields only WHILE editing; it is
+  // filled from the profile at the moment "Edit profile" is pressed.
+  const [form, setForm] = useState(null); // null = viewing
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const editing = form !== null;
+  const setField = (key) => (value) => setForm((current) => ({ ...current, [key]: value }));
 
-  // Local editable copies of profile fields
-  const [username, setUsername] = useState(user?.username || "");
-  const [mobile,   setMobile]   = useState(user?.mobile   || "");
-  const [address,  setAddress]  = useState(user?.address  || "");
-  const [saving,   setSaving]   = useState(false);
-  const [error,    setError]    = useState("");
-
-  // ── FIX: Re-sync local state whenever user object updates ────
-  // Without this, when AuthContext restores the user from localStorage
-  // AFTER this component mounts, our local form fields stay empty
-  // and the user can't type anything.
-  useEffect(() => {
-    setUsername(user?.username || "");
-    setMobile(user?.mobile     || "");
-    setAddress(user?.address || "");
-  }, [user]);
-
-  // ── Live stats: real rides + connections from the backend ──────
-  const [rideCount,       setRideCount]       = useState(0);
-  const [distanceKm,      setDistanceKm]      = useState("0.0");
-  const [connectionCount, setConnectionCount] = useState(0);
+  // ── Numbers from the server ──
+  const [stats, setStats] = useState({ rides: null, km: null, connections: null });
+  const [locating, setLocating] = useState(false);
 
   useEffect(() => {
-    if (!user?.id) return;
-    getUserRides(user.id)
+    if (!userId) return undefined;
+    let cancelled = false;
+
+    getUserRides(userId)
       .then((rides) => {
+        if (cancelled) return;
         const list = Array.isArray(rides) ? rides : [];
-        setRideCount(list.length);
-        const totalM = list.reduce((s, r) => s + (r.distanceMeters || 0), 0);
-        setDistanceKm((totalM / 1000).toFixed(1));
+        // What was actually ridden; the planned length only for rides
+        // completed before distance tracking existed (see rideRiddenMeters).
+        const metres = list.reduce((sum, ride) => sum + rideRiddenMeters(ride), 0);
+        setStats((current) => ({ ...current, rides: list.length, km: metres / 1000 }));
       })
       .catch(() => {});
-    getConnectionsFull(user.id)
-      .then((list) => setConnectionCount(Array.isArray(list) ? list.length : 0))
-      .catch(() => {});
-  }, [user?.id]);
 
-  // ── Save changes ─────────────────────────────────────────────
+    getConnectionsFull()
+      .then((list) => {
+        if (!cancelled) setStats((current) => ({ ...current, connections: Array.isArray(list) ? list.length : 0 }));
+      })
+      .catch(() => {});
+
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  const startEditing = () => {
+    setError("");
+    setForm({ username: user?.username || "", mobile: user?.mobile || "", address: user?.address || "" });
+  };
+
+  const cancelEditing = () => {
+    setForm(null);
+    setError("");
+  };
+
   const handleSave = async () => {
-    if (!username.trim()) {
-      setError("Username cannot be empty.");
-      return;
-    }
-    if (!/^[a-zA-Z0-9_]{3,20}$/.test(username.trim())) {
+    const username = form.username.trim();
+    const mobile = form.mobile.trim();
+    const address = form.address.trim();
+
+    if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
       setError("Username must be 3–20 characters — letters, numbers and underscores only.");
       return;
     }
-    if (mobile.trim() && !/^[+\d][\d\s\-()]{6,18}$/.test(mobile.trim())) {
+    if (mobile && !/^[+\d][\d\s\-()]{6,18}$/.test(mobile)) {
       setError("Please enter a valid mobile number.");
       return;
     }
+
     setSaving(true);
     setError("");
     try {
-      await updateProfile({ username: username.trim(), mobile: mobile.trim(), address: address.trim() });
-      setEditing(false);
-      toast.success("Profile saved");
+      await updateProfile({ username, mobile, address });
+      setForm(null);
+      toast.success("Profile saved.");
     } catch (err) {
-      setError(err.message || "Failed to save. Please try again.");
-      toast.error(err.message || "Failed to save. Please try again.");
+      setError(err.message || "Couldn't save your profile. Please try again.");
     } finally {
       setSaving(false);
     }
   };
 
-  // ── Cancel — revert local edits to current user data ─────────
-  const handleCancel = () => {
-    setUsername(user?.username || "");
-    setMobile(user?.mobile || "");
-    setAddress(user?.address   || "");
-    setError("");
-    setEditing(false);
+  // Share (or refresh) the location used by "riders near me".
+  const shareLocation = async () => {
+    setLocating(true);
+    try {
+      const here = await getCurrentLocation();
+      await updateProfile({ lat: here.lat, lng: here.lng });
+      toast.success("Location saved. Riders near you can now find you.");
+    } catch (err) {
+      toast.error(err.message || "Couldn't get your location.");
+    } finally {
+      setLocating(false);
+    }
   };
 
-  // ── Mock stats (replace with API data later) ─────────────────
-  // Live stats from the backend (rides + connections)
-  const stats = [
-    { label: "Rides",       value: String(rideCount),       icon: "fa-motorcycle" },
-    { label: "Km ridden",   value: distanceKm,              icon: "fa-route"      },
-    { label: "Connections", value: String(connectionCount), icon: "fa-users"      },
+  const hasLocation = Number.isFinite(user?.lat) && Number.isFinite(user?.lng);
+  const memberSince = user?.createdAt
+    ? new Date(user.createdAt).toLocaleDateString([], { month: "long", year: "numeric" })
+    : null;
+  const show = (value, format = String) => (value == null ? "—" : format(value));
+
+  const statTiles = [
+    { icon: "route",  label: "Rides",       value: show(stats.rides) },
+    { icon: "road",   label: "km ridden",   value: show(stats.km, (km) => (km >= 100 ? Math.round(km) : km.toFixed(1))) },
+    { icon: "riders", label: "Connections", value: show(stats.connections) },
   ];
 
   return (
     <div className={`relative min-h-screen w-full overflow-x-hidden ${tc.bg} ${tc.text}`}>
       <Sidebar tc={tc} />
-      <TopBar theme={theme} setTheme={setTheme} tc={tc} userId={user?.id} />
+      <TopBar theme={theme} setTheme={setTheme} tc={tc} userId={userId} />
       <MobileNav tc={tc} />
 
-      <main className="lg:ml-64 pt-20 px-4 pb-28 lg:pb-8">
-        <div className="max-w-3xl mx-auto">
+      <main className="px-4 pb-28 pt-24 lg:ml-64 lg:pb-12">
+        <div className="mx-auto w-full max-w-2xl space-y-4">
 
-          {/* ── Cover banner ──────────────────────────────────── */}
-          <div className="relative h-44 md:h-56 rounded-3xl overflow-hidden mb-16">
-            <div className="absolute inset-0 bg-gradient-to-br from-orange-500 via-pink-500 to-purple-600" />
-            {/* Decorative pattern overlay */}
-            <div className="absolute inset-0 opacity-20"
-              style={{
-                backgroundImage: "radial-gradient(circle, white 1px, transparent 1px)",
-                backgroundSize: "24px 24px",
-              }}
-            />
-          </div>
-
-          {/* ── Avatar + name (overlaps the cover) ────────────── */}
-          <div className="px-4 -mt-16 mb-6 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
-            <div className="flex flex-col md:flex-row md:items-end gap-4">
-              {/* Large avatar circle */}
-              <div className={`w-28 h-28 md:w-32 md:h-32 rounded-3xl bg-gradient-to-br from-orange-500 to-pink-500 flex items-center justify-center font-black text-white text-5xl ring-4 shadow-2xl ${tc.isLight ? "ring-black/10" : "ring-white/15"}`}>
-                {avatarLetter}
-              </div>
-
-              <div className="md:pb-2">
-                <h1 className="text-3xl md:text-4xl font-black">
-                  {user?.username || "Rider"}
-                </h1>
-                <p className={`text-sm ${tc.sub}`}>
-                  @{user?.username || "you"} · Member since{" "}
-                  {new Date(user?.createdAt || Date.now()).toLocaleDateString("en", {
-                    month: "long",
-                    year:  "numeric",
-                  })}
-                </p>
-              </div>
+          {/* ── Who you are ───────────────────────────────── */}
+          <section className={`flex flex-col gap-4 rounded-xl border p-5 sm:flex-row sm:items-center ${tc.card}`}>
+            <div className={`flex h-20 w-20 shrink-0 items-center justify-center rounded-xl text-4xl font-bold ${tc.inkTile}`}>
+              {avatarLetter}
             </div>
-
-            {/* Edit / Save / Cancel buttons */}
-            <div className="flex gap-2 md:pb-2">
-              {!editing ? (
-                <button
-                  id="edit-profile-btn"
-                  onClick={() => setEditing(true)}
-                  className={`px-5 py-2.5 rounded-full font-bold transition-all hover:scale-105 ${tc.button}`}
-                >
-                  <i className="fa fa-pen mr-2" />
-                  Edit Profile
-                </button>
-              ) : (
-                <>
-                  <button
-                    onClick={handleCancel}
-                    className={`px-5 py-2.5 rounded-full font-bold border transition-all hover:scale-105 ${tc.card}`}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    className={`px-5 py-2.5 rounded-full font-bold transition-all hover:scale-105 disabled:opacity-50 bg-gradient-to-r from-orange-500 to-pink-500 text-white`}
-                  >
-                    {saving
-                      ? <><i className="fa fa-spinner fa-spin mr-2" />Saving…</>
-                      : <><i className="fa fa-check mr-2" />Save</>
-                    }
-                  </button>
-                </>
-              )}
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate text-2xl font-bold tracking-tight">{user?.username || "Rider"}</h1>
+              <p className={`truncate text-sm ${tc.sub}`}>{user?.email}</p>
+              {memberSince && <p className={`mt-0.5 text-xs ${tc.sub}`}>Riding with RideWise since {memberSince}</p>}
             </div>
-          </div>
+            {!editing && (
+              <Button id="edit-profile-btn" variant="secondary" icon="edit" tc={tc} onClick={startEditing}>
+                Edit profile
+              </Button>
+            )}
+          </section>
 
-          {/* Error message (edit mode) */}
-          {error && (
-            <div className="mb-4 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm flex items-center gap-2">
-              <i className="fa fa-exclamation-circle" /> {error}
-            </div>
-          )}
-
-          {/* ── Stats row ────────────────────────────────────── */}
-          <div className="grid grid-cols-3 gap-3 mb-5">
-            {stats.map((s) => (
-              <div
-                key={s.label}
-                className={`rounded-2xl border p-4 text-center transition-all hover:scale-[1.02] ${tc.card}`}
-              >
-                <i className={`fa ${s.icon} text-xl text-orange-400 mb-1.5 block`} />
-                <p className="text-2xl font-black">{s.value}</p>
-                <p className={`text-xs ${tc.sub}`}>{s.label}</p>
+          {/* ── Your numbers ──────────────────────────────── */}
+          <section aria-label="Your numbers" className="grid grid-cols-3 gap-3">
+            {statTiles.map((stat) => (
+              <div key={stat.label} className={`rounded-xl border p-4 ${tc.card}`}>
+                <Icon name={stat.icon} size={18} className={tc.sub} />
+                <p className="mt-3 text-xl font-bold tabular-nums">{stat.value}</p>
+                <p className={`mt-0.5 text-xs ${tc.sub}`}>{stat.label}</p>
               </div>
             ))}
-          </div>
+          </section>
 
-          {/* ── Preferences (mobile only) ─────────────────────── */}
-          {/* The desktop sidebar ends with AccountMenu → "My Profile |
-              Settings | Log out", but that menu is `hidden lg:flex`, so on a
-              phone there was NO route to Settings at all. Account is the
-              mobile gateway to it: one clear row that opens /settings.
-              Desktop keeps its dropdown unchanged (hence lg:hidden). */}
-          <div className={`lg:hidden rounded-2xl border p-2 mb-5 ${tc.card}`}>
-            <button
-              type="button"
-              onClick={() => navigate("/settings")}
-              className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-colors ${tc.cardHover}`}
-            >
-              <span
-                className={`w-10 h-10 rounded-full border flex items-center justify-center shrink-0 ${tc.surface2} ${tc.divider}`}
-              >
-                <Icon name="settings" size={18} />
-              </span>
-              <span className="flex-1 min-w-0">
-                <span className="block text-sm font-bold">Settings</span>
-                <span className={`block text-xs truncate ${tc.sub}`}>
-                  Theme, text size, motion &amp; contrast
-                </span>
-              </span>
-              <Icon name="chevronRight" size={18} className={tc.sub} />
-            </button>
-          </div>
+          {/* ── Settings (phones: there is no sidebar to reach it from) ── */}
+          <button
+            type="button"
+            onClick={() => navigate("/settings")}
+            className={`flex w-full items-center gap-3 rounded-xl border p-4 text-left transition-colors lg:hidden ${tc.card} ${tc.cardHover}`}
+          >
+            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${tc.surface2}`}>
+              <Icon name="settings" size={17} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold">Settings</span>
+              <span className={`block truncate text-xs ${tc.sub}`}>Theme, text size, motion and contrast</span>
+            </span>
+            <Icon name="chevronRight" size={18} className={tc.sub} />
+          </button>
 
-          {/* ── Profile details card ─────────────────────────── */}
-          <div className={`rounded-2xl border p-6 mb-4 ${tc.card}`}>
-            <h2 className="text-lg font-black mb-5 flex items-center gap-2">
-              <i className="fa fa-id-card text-orange-400" />
+          {/* ── Profile details ───────────────────────────── */}
+          <section className={`rounded-xl border p-5 ${tc.card}`} aria-labelledby="profile-details-title">
+            <h2 id="profile-details-title" className="mb-4 flex items-center gap-2 text-base font-semibold">
+              <Icon name="idCard" size={18} className={tc.sub} />
               Profile details
             </h2>
 
-            <div className="space-y-5">
-
-              {/* Username (editable) — setUsername is a stable React setter */}
-              <Field
-                label="USERNAME"
-                value={user?.username ? `@${user.username}` : null}
-                editValue={username}
-                onChange={setUsername}
-                editing={editing}
-                tc={tc}
-              />
-
-              {/* Email (read-only — set at signup, changed via backend later) */}
-              <div>
-                <label className={`text-xs font-bold tracking-wider mb-1.5 block ${tc.sub}`}>
-                  EMAIL <span className="text-orange-400/70 font-normal">(read-only)</span>
-                </label>
-                <p className="font-semibold">{user?.email || "—"}</p>
+            {error && (
+              <div role="alert" className={`mb-4 flex items-start gap-2 rounded-lg border px-3 py-2.5 text-sm ${tc.dangerSoft}`}>
+                <Icon name="alertCircle" size={16} className="mt-0.5" />
+                <span>{error}</span>
               </div>
+            )}
 
-              {/* Mobile (editable) */}
+            <div className="space-y-4">
               <Field
-                label="MOBILE"
-                value={user?.mobile}
-                editValue={mobile}
-                onChange={setMobile}
-                editing={editing}
-                type="tel"
-                tc={tc}
+                icon="at" label="Username" tc={tc} editing={editing}
+                value={user?.username ? `@${user.username}` : null}
+                editValue={form?.username ?? ""} onChange={setField("username")}
+                hint={editing ? "3–20 characters: letters, numbers and underscores." : null}
               />
-
-              {/* Address (editable, multiline) */}
+              <Field icon="mail" label="Email" tc={tc} editing={false} value={user?.email}
+                hint={editing ? "Your email is your sign-in and can't be changed here." : null}
+              />
               <Field
-                label="CITY / ADDRESS"
+                icon="phone" label="Mobile" type="tel" tc={tc} editing={editing}
+                value={user?.mobile}
+                editValue={form?.mobile ?? ""} onChange={setField("mobile")}
+              />
+              <Field
+                icon="city" label="City or address" multiline tc={tc} editing={editing}
                 value={user?.address}
-                editValue={address}
-                onChange={setAddress}
-                editing={editing}
-                multiline
-                tc={tc}
+                editValue={form?.address ?? ""} onChange={setField("address")}
               />
             </div>
-          </div>
 
-          {/* ── Account actions (danger zone) ─────────────────── */}
-          <div className={`rounded-2xl border p-6 ${tc.card}`}>
-            <h2 className="text-lg font-black mb-1 flex items-center gap-2">
-              <i className="fa fa-shield-halved text-orange-400" />
-              Account actions
+            {editing && (
+              <div className="mt-5 flex gap-2">
+                <Button variant="ghost" tc={tc} onClick={cancelEditing} disabled={saving}>Cancel</Button>
+                <Button variant="primary" icon="check" tc={tc} loading={saving} onClick={handleSave}>
+                  {saving ? "Saving…" : "Save changes"}
+                </Button>
+              </div>
+            )}
+          </section>
+
+          {/* ── Location for "riders near me" ─────────────── */}
+          <section className={`rounded-xl border p-5 ${tc.card}`} aria-labelledby="location-title">
+            <h2 id="location-title" className="flex items-center gap-2 text-base font-semibold">
+              <Icon name="pin" size={18} className={tc.sub} />
+              Riders near me
             </h2>
-            <p className={`text-xs ${tc.sub} mb-4`}>
-              Logging out keeps all your data saved. You can log back in any time.
+            <p className={`mt-1 text-xs ${tc.sub}`}>
+              {hasLocation
+                ? "Your location is saved. Riders within 50 km can find you, and only ever see how far away you are."
+                : "Share your location once so riders within 50 km can find you. They only ever see a distance, never where you are."}
             </p>
-            <button
-              onClick={logout}
-              className="px-5 py-2.5 rounded-full font-bold bg-red-500/15 text-red-400 border border-red-500/30 transition-all hover:scale-105 hover:bg-red-500/25"
-            >
-              <i className="fa fa-right-from-bracket mr-2" />
-              Log out
-            </button>
-          </div>
+            <div className="mt-3">
+              <Button
+                variant={hasLocation ? "secondary" : "primary"}
+                icon="recenter"
+                tc={tc}
+                loading={locating}
+                onClick={shareLocation}
+              >
+                {locating ? "Finding you…" : hasLocation ? "Update my location" : "Share my location"}
+              </Button>
+            </div>
+          </section>
 
+          {/* ── Log out ───────────────────────────────────── */}
+          <section className={`flex flex-col gap-3 rounded-xl border p-5 sm:flex-row sm:items-center ${tc.card}`}>
+            <div className="flex-1">
+              <h2 className="text-base font-semibold">Log out</h2>
+              <p className={`mt-0.5 text-xs ${tc.sub}`}>
+                Your rides and connections stay saved. You can log back in any time.
+              </p>
+            </div>
+            <Button variant="danger" icon="logout" tc={tc} onClick={logout}>
+              Log out
+            </Button>
+          </section>
         </div>
       </main>
     </div>

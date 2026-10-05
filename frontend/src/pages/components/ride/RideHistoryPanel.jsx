@@ -1,319 +1,275 @@
 // ============================================================
-// 📋 RideHistoryPanel.jsx — Full ride history side panel
+// RideHistoryPanel.jsx — every ride, in a side panel
 //
-// Shows all rides for the logged-in user (newest first).
-// Features per card:
-//   ✅ From → Destination summary
-//   ✅ Distance, duration, date
-//   ✅ Status badge (active / completed / cancelled)
-//   ✅ "Open Map" button — reopens the full-screen map for that ride
-//   ✅ Delete button   — permanently deletes the ride after confirmation
+// Per ride:
+//   • start → destination, distance, time, date, status
+//   • "Open map" (live ride) / "View route" (finished ride)
+//   • a small route preview that expands in place
+//   • delete — two taps, and only for rides this rider owns
+//     (the server refuses to delete someone else's group ride)
 //
-// PROPS:
-//   rides         — array of ride objects (from backend/localStorage)
-//   onOpenRide    — callback(ride) — reopens full-screen map for a ride
-//   onDeleteRide  — callback(rideId) — deletes ride + refreshes list
-//   onClose       — close the panel
-//   tc            — theme classes
+// The filter chips narrow the list; they appear once there is more than
+// a handful of rides.
+//
+// PROPS
+//   rides          lightweight ride rows (no route geometry)
+//   currentUserId  the logged-in rider (decides who may delete)
+//   onOpenRide     (ride) → open the full-screen map
+//   onDeleteRide   async (rideId) → delete and refresh
+//   onClose        close the panel
+//   tc             theme classes
 // ============================================================
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import RideMap from "./RideMap";
 import Icon from "../ui/Icon";
-import { formatDistance, formatDuration } from "../../../services/routingApi";
+import Button, { Chip, IconButton } from "../ui/Button";
+import { getRide } from "../../../services/rideApi";
+import {
+  formatDistance,
+  formatDuration,
+  hasTrackedDistance,
+  rideTimeSeconds,
+  shortPlaceName,
+} from "../../../services/routingApi";
 
-// ---- Status → colour mapping ----
-// The tint (background/border) is functional and works on every theme; the
-// TEXT colour comes from the theme tokens via `tone`, so a completed ride is
-// readable ink on a light card instead of a fixed grey.
-const STATUS_STYLE = {
-  active:    { bg: "rgba(34,197,94,0.13)",  border: "rgba(34,197,94,0.28)",  tone: "ok" },
-  completed: { bg: null,                    border: null,                     tone: "sub" },
-  cancelled: { bg: "rgba(239,68,68,0.13)",  border: "rgba(239,68,68,0.28)",  tone: "danger" },
-};
+const FILTERS = [
+  { id: "all",       label: "All",       test: () => true },
+  { id: "active",    label: "Active",    test: (ride) => ride.status === "active" },
+  { id: "completed", label: "Completed", test: (ride) => ride.status === "completed" },
+  { id: "group",     label: "Group",     test: (ride) => ride.rideType === "group" },
+];
 
-export default function RideHistoryPanel({ rides, onOpenRide, onDeleteRide, onClose, tc }) {
-  // Track which card's map is expanded
-  const [expandedId, setExpandedId]   = useState(null);
-  // Track which card has a delete confirmation pending
-  const [deletingId,  setDeletingId]  = useState(null);
-  const [deleting,    setDeleting]    = useState(false); // spinner state
+export default function RideHistoryPanel({ rides, currentUserId, onOpenRide, onDeleteRide, onClose, tc }) {
+  const [filter, setFilter] = useState("all");
+  const [expandedId, setExpandedId] = useState(null);   // ride whose preview map is open
+  const [details, setDetails] = useState({});           // rideId → ride with its route
+  const [confirmId, setConfirmId] = useState(null);     // ride waiting for delete confirmation
+  const [deletingId, setDeletingId] = useState(null);
 
-  // Toggle a card's map expansion
-  const toggleExpand = (id) => setExpandedId(prev => prev === id ? null : id);
+  // Escape closes the panel
+  useEffect(() => {
+    const onKey = (event) => { if (event.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
-  // First click on delete = show confirmation
-  // Second click = actually delete
-  const handleDelete = async (rideId) => {
-    if (deletingId !== rideId) {
-      setDeletingId(rideId); // show confirm state
-      return;
+  const visible = rides.filter(FILTERS.find((f) => f.id === filter).test);
+
+  // Open/close a preview. The list rows carry no geometry, so the route is
+  // fetched the first time a preview is opened.
+  const togglePreview = async (ride) => {
+    const id = String(ride.id);
+    if (expandedId === id) { setExpandedId(null); return; }
+    setExpandedId(id);
+    if (ride.routeCoordinates || details[id]) return;
+    try {
+      const full = await getRide(ride.id);
+      if (full) setDetails((previous) => ({ ...previous, [id]: full }));
+    } catch {
+      // The preview then shows the two endpoints only.
     }
-    setDeleting(true);
-    await onDeleteRide(rideId);
-    setDeletingId(null);
-    setDeleting(false);
   };
 
-  // Cancel the delete confirmation
-  const cancelDelete = (e) => {
-    e.stopPropagation(); // don't bubble to card expansion
+  // First tap asks, second tap deletes.
+  const handleDelete = async (ride) => {
+    const id = String(ride.id);
+    if (confirmId !== id) { setConfirmId(id); return; }
+    setDeletingId(id);
+    await onDeleteRide(ride.id);
     setDeletingId(null);
+    setConfirmId(null);
   };
 
   return (
     <div
-      className={tc.overlay}
-      style={{
-        position:       "fixed",
-        inset:          0,
-        zIndex:         7000,
-        backdropFilter: "blur(8px)",
-        display:        "flex",
-        justifyContent: "flex-end",
-      }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      className={`fixed inset-0 z-[7000] flex justify-end ${tc.overlay}`}
+      onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
     >
-      {/* ---- Side panel ---- */}
-      <div
-        className={`${tc.card} ${tc.text}`}
-        style={{
-          width:         "100%",
-          maxWidth:      "480px",
-          height:        "100%",
-          display:       "flex",
-          flexDirection: "column",
-          animation:     "slideRight 0.3s cubic-bezier(0.32,0.72,0,1)",
-          boxShadow:     "-20px 0 80px rgba(0,0,0,0.35)",
-        }}>
-        {/* ---- Header ---- */}
-        <div
-          className={tc.divider}
-          style={{
-            display:       "flex",
-            alignItems:    "center",
-            justifyContent:"space-between",
-            padding:       "20px",
-            borderBottomWidth: "1px",
-            flexShrink:    0,
-          }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <div className={tc.accentSoft} style={{
-              width: "38px", height: "38px", borderRadius: "12px",
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}>
-              <Icon name="history" size={17} />
-            </div>
-            <div>
-              <p style={{ fontWeight: 900, fontSize: "16px", margin: 0 }}>Ride History</p>
-              <p className={tc.sub} style={{ fontSize: "11px", margin: 0 }}>
-                {rides.length} ride{rides.length !== 1 ? "s" : ""} total
-              </p>
-            </div>
+      <aside
+        role="dialog"
+        aria-label="Ride history"
+        className={`flex h-full w-full max-w-[480px] flex-col border-l ${tc.card} ${tc.text}`}
+        style={{ animation: "rw-panel-in 0.28s cubic-bezier(0.32,0.72,0,1)" }}
+      >
+        {/* Header */}
+        <div className={`flex shrink-0 items-center gap-3 border-b px-4 py-4 ${tc.divider}`}>
+          <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${tc.surface2}`}>
+            <Icon name="history" size={19} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-base font-semibold">Ride history</p>
+            <p className={`text-xs ${tc.sub}`}>
+              {rides.length} {rides.length === 1 ? "ride" : "rides"}
+            </p>
           </div>
-          <button
-            onClick={onClose}
-            className={tc.btnGhost}
-            style={{
-              width: "36px", height: "36px", borderRadius: "50%", cursor: "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}
-          >
-            <Icon name="close" size={17} />
-          </button>
+          <IconButton icon="close" label="Close ride history" size="sm" tc={tc} onClick={onClose} />
         </div>
 
-        {/* ---- Ride list (scrollable) ---- */}
-        <div style={{ overflowY: "auto", flex: 1, padding: "16px" }}>
-          {rides.length === 0 ? (
-            // Empty state
-            <div style={{ textAlign: "center", padding: "60px 0" }}>
-              <Icon name="route" size={48} className={`${tc.sub} mx-auto mb-4 opacity-40`} />
-              <p className={tc.sub} style={{ fontWeight: 700, margin: "0 0 6px" }}>No rides yet</p>
-              <p className={tc.sub} style={{ fontSize: "12px", margin: 0 }}>
-                Start your first ride and it will appear here.
+        {/* Filters */}
+        {rides.length > 4 && (
+          <div className={`scrollbar-hide flex shrink-0 gap-2 overflow-x-auto border-b px-4 py-2.5 ${tc.divider}`}>
+            {FILTERS.map((option) => (
+              <Chip
+                key={option.id}
+                selected={filter === option.id}
+                onClick={() => setFilter(option.id)}
+                tc={tc}
+                className="shrink-0"
+              >
+                {option.label}
+              </Chip>
+            ))}
+          </div>
+        )}
+
+        {/* List */}
+        <div className="flex-1 space-y-3 overflow-y-auto p-4">
+          {visible.length === 0 && (
+            <div className="py-16 text-center">
+              <Icon name="route" size={32} className={`mx-auto mb-3 ${tc.sub}`} />
+              <p className="text-sm font-semibold">
+                {rides.length === 0 ? "No rides yet" : "No rides match this filter"}
+              </p>
+              <p className={`mt-1 text-xs ${tc.sub}`}>
+                {rides.length === 0
+                  ? "Start your first ride and it will appear here."
+                  : "Choose another filter to see more."}
               </p>
             </div>
-          ) : (
-            // Ride cards
-            rides.map(ride => {
-              const statusStyle = STATUS_STYLE[ride.status] || STATUS_STYLE.completed;
-              const isExpanded  = expandedId === String(ride.id);
-              const isDeleting  = deletingId === String(ride.id);
-              const dateStr     = ride.createdAt
-                ? new Date(ride.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
-                : "";
+          )}
 
-              return (
-                <div
-                  key={ride.id}
-                  className={`${tc.surface2} ${tc.divider}`}
-                  style={{
-                   marginBottom:  "12px",
-                   borderRadius:  "18px",
-                   overflow:      "hidden",
-                   transition:    "background-color 0.2s, border-color 0.2s",
-                  }}
-                >
-                  {/* Card header (always visible) */}
-                  <div style={{ padding: "14px 16px" }}>
-                    {/* From → Destination */}
-                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "8px", marginBottom: "10px" }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ fontWeight: 700, fontSize: "14px", margin: "0 0 2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          <i className="fa fa-circle" style={{ color: "#22c55e", fontSize: "7px", marginRight: "6px" }} />
-                          {(ride.fromName || "From").split(",")[0]}
-                        </p>
-                        <p style={{ fontWeight: 700, fontSize: "14px", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          <i className="fa fa-circle" style={{ color: "#ef4444", fontSize: "7px", marginRight: "6px" }} />
-                          {(ride.destinationName || "Destination").split(",")[0]}
-                        </p>
-                      </div>
-                      {/* Status badge */}
-                      <span
-                        className={`${tc[statusStyle.tone] || tc.sub} ${statusStyle.bg ? "" : tc.surface2}`}
-                        style={{
-                          padding: "3px 10px", borderRadius: "50px",
-                          background: statusStyle.bg || undefined,
-                          border: statusStyle.border ? `1px solid ${statusStyle.border}` : undefined,
-                          fontSize: "10px", fontWeight: 700,
-                          textTransform: "uppercase", letterSpacing: "0.5px", flexShrink: 0,
-                        }}
-                      >
-                        {ride.status}
-                      </span>
+          {visible.map((ride) => {
+            const id = String(ride.id);
+            const active = ride.status === "active";
+            const expanded = expandedId === id;
+            const confirming = confirmId === id;
+            const mine = String(ride.userId) === String(currentUserId);
+            const canPreview = Boolean(ride.routeCoordinates || ride.hasRoute);
+            const date = ride.createdAt
+              ? new Date(ride.createdAt).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })
+              : "";
+            const statusTone = active ? tc.okSoft : ride.status === "cancelled" ? tc.dangerSoft : `${tc.surface2} ${tc.sub} ${tc.divider}`;
+
+            return (
+              <article key={ride.id} className={`overflow-hidden rounded-xl border ${tc.divider}`}>
+                <div className="p-3.5">
+                  {/* Start → destination */}
+                  <div className="flex items-start gap-3">
+                    <div className="flex flex-col items-center pt-1.5" aria-hidden="true">
+                      <span className="h-2.5 w-2.5 rounded-full border-2 border-current" />
+                      <span className={`my-0.5 h-5 w-px ${tc.hairline}`} />
+                      <span className="h-2.5 w-2.5 rounded-full bg-current" />
                     </div>
-
-                    {/* Meta row: distance · duration · date */}
-                    <div className={tc.sub} style={{
-                      display: "flex", alignItems: "center", gap: "8px",
-                      fontSize: "11px", flexWrap: "wrap",
-                    }}>
-                      {ride.actualDistanceMeters > 0 && (
-                        <>
-                          <span title="Distance actually ridden">
-                            <i className={`fa fa-location-arrow ${tc.ok}`} style={{ marginRight: "4px" }} />
-                            {formatDistance(ride.actualDistanceMeters)} ridden
-                          </span>
-                          <span>·</span>
-                        </>
-                      )}
-                      {ride.distanceMeters && (
-                        <>
-                          <span title="Planned route length"><i className={`fa fa-route ${tc.accent}`} style={{ marginRight: "4px" }} />{formatDistance(ride.distanceMeters)}</span>
-                          <span>·</span>
-                        </>
-                      )}
-                      {ride.durationSeconds && (
-                        <>
-                          <span><i className="fa fa-clock" style={{ marginRight: "4px" }} />{formatDuration(ride.durationSeconds)}</span>
-                          <span>·</span>
-                        </>
-                      )}
-                      {dateStr && <span>{dateStr}</span>}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold">{shortPlaceName(ride.fromName, "Start")}</p>
+                      <p className="mt-2 truncate text-sm font-semibold">
+                        {shortPlaceName(ride.destinationName, "Destination")}
+                      </p>
                     </div>
-
-                    {/* Action buttons row */}
-                    <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
-                      {/* Open Map button */}
-                      <button
-                        onClick={() => onOpenRide(ride)}
-                        className={ride.status === "active" ? tc.btnAccent : tc.btnSoft}
-                        style={{
-                          flex: 1, padding: "8px 12px",
-                          borderRadius: "10px",
-                          fontWeight: 700, fontSize: "12px",
-                          cursor: "pointer",
-                          display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
-                        }}
-                      >
-                        <i className={`fa ${ride.status === "active" ? "fa-location-crosshairs" : "fa-map"}`} />
-                        {ride.status === "active" ? "Live Map" : "View Route"}
-                      </button>
-
-                      {/* Expand/collapse mini map */}
-                      {ride.routeCoordinates && (
-                        <button
-                          onClick={() => toggleExpand(String(ride.id))}
-                          className={isExpanded ? tc.accentSoft : tc.btnGhost}
-                          style={{
-                            padding: "8px 12px",
-                            borderRadius: "10px",
-                            cursor: "pointer", fontSize: "12px",
-                          }}
-                          title={isExpanded ? "Collapse map" : "Preview route"}
-                        >
-                          <i className={`fa fa-chevron-${isExpanded ? "up" : "down"}`} />
-                        </button>
-                      )}
-
-                      {/* Delete button (with confirmation) */}
-                      {isDeleting ? (
-                        // Confirmation row
-                        <div style={{ display: "flex", gap: "6px" }}>
-                          <button
-                            onClick={cancelDelete}
-                            className={tc.btnGhost}
-                            style={{
-                              padding: "8px 10px", borderRadius: "10px",
-                              cursor: "pointer", fontSize: "11px",
-                            }}
-                          >
-                            <i className="fa fa-times" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(String(ride.id))}
-                            disabled={deleting}
-                            style={{
-                              padding: "8px 10px", borderRadius: "10px",
-                              background: "rgba(239,68,68,0.2)",
-                              border: "1px solid rgba(239,68,68,0.4)",
-                              color: "#ef4444", cursor: deleting ? "not-allowed" : "pointer", fontSize: "11px",
-                            }}
-                          >
-                            <i className={`fa ${deleting ? "fa-spinner fa-spin" : "fa-check"}`} />
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => handleDelete(String(ride.id))}
-                          title="Delete ride"
-                          style={{
-                            padding: "8px 12px", borderRadius: "10px",
-                            background: "rgba(239,68,68,0.06)",
-                            border: "1px solid rgba(239,68,68,0.15)",
-                            color: "rgba(239,68,68,0.6)",
-                            cursor: "pointer", fontSize: "12px",
-                          }}
-                        >
-                          <i className="fa fa-trash" />
-                        </button>
-                      )}
-                    </div>
+                    <span className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold capitalize ${statusTone}`}>
+                      {active ? "Live" : ride.status}
+                    </span>
                   </div>
 
-                  {/* Expandable mini map */}
-                  {isExpanded && (
-                      <div
-                        className={tc.divider}
-                        style={{ borderTopWidth: "1px", height: "200px" }}
+                  {/* Numbers */}
+                  <p className={`mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs ${tc.sub}`}>
+                    {hasTrackedDistance(ride) && (ride.actualDistanceMeters > 0 || !active) && (
+                      <span className="inline-flex items-center gap-1" title="Distance actually ridden">
+                        <Icon name="navigate" size={13} />
+                        {formatDistance(ride.actualDistanceMeters)} ridden
+                      </span>
+                    )}
+                    {ride.distanceMeters > 0 && (
+                      <span className="inline-flex items-center gap-1" title="Planned route length">
+                        <Icon name="route" size={13} />
+                        {formatDistance(ride.distanceMeters)}
+                      </span>
+                    )}
+                    {rideTimeSeconds(ride) > 0 && (
+                      <span
+                        className="inline-flex items-center gap-1"
+                        title={active ? "Planned ride time" : "Time from start to finish"}
                       >
-                      <RideMap ride={ride} isLive={false} />
+                        <Icon name="clock" size={13} />
+                        {formatDuration(rideTimeSeconds(ride))}
+                      </span>
+                    )}
+                    {ride.rideType === "group" && (
+                      <span className="inline-flex items-center gap-1">
+                        <Icon name="riders" size={13} />
+                        Group
+                      </span>
+                    )}
+                    {date && <span>{date}</span>}
+                  </p>
+
+                  {/* Actions */}
+                  {confirming ? (
+                    <div className="mt-3">
+                      <p className={`mb-2 text-xs ${tc.sub}`}>
+                        Delete this ride for good? This can&apos;t be undone.
+                      </p>
+                      <div className="flex gap-2">
+                        <Button variant="secondary" size="sm" full tc={tc} onClick={() => setConfirmId(null)} disabled={deletingId === id}>
+                          Keep
+                        </Button>
+                        <Button variant="danger" size="sm" full icon="trash" tc={tc} loading={deletingId === id} onClick={() => handleDelete(ride)}>
+                          Delete
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-3 flex gap-2">
+                      <Button
+                        variant={active ? "accent" : "soft"}
+                        size="sm"
+                        full
+                        icon={active ? "navigate" : "map"}
+                        tc={tc}
+                        onClick={() => onOpenRide(ride)}
+                      >
+                        {active ? "Open map" : "View route"}
+                      </Button>
+                      {canPreview && (
+                        <Button
+                          variant={expanded ? "soft" : "ghost"}
+                          size="sm"
+                          icon={expanded ? "chevronUp" : "chevronDown"}
+                          iconOnly
+                          tc={tc}
+                          title={expanded ? "Hide preview" : "Preview route"}
+                          onClick={() => togglePreview(ride)}
+                        />
+                      )}
+                      {mine && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          icon="trash"
+                          iconOnly
+                          tc={tc}
+                          title="Delete ride"
+                          onClick={() => handleDelete(ride)}
+                        />
+                      )}
                     </div>
                   )}
                 </div>
-              );
-            })
-          )}
-        </div>
-      </div>
 
-      {/* Slide-in animation keyframe */}
+                {expanded && (
+                  <div className={`relative h-[200px] border-t ${tc.divider}`}>
+                    <RideMap ride={details[id] || ride} compact tc={tc} />
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      </aside>
+
       <style>{`
-        @keyframes slideRight {
-          from { transform: translateX(100%); }
-          to   { transform: translateX(0); }
-        }
+        @keyframes rw-panel-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
       `}</style>
     </div>
   );

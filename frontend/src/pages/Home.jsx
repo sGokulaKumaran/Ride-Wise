@@ -1,680 +1,488 @@
 // ============================================================
-// 🏠 Home.jsx — Rider Dashboard
+// Home.jsx — the rider's dashboard
 //
-// WHAT THIS FILE MANAGES:
-//   1. The hero section with greeting + "Start a Ride" button
-//   2. The ride history section (below the hero) — live + ended rides
-//   3. The StartRideModal (bottom sheet for creating rides)
-//   4. The ActiveRideOverlay (full-screen map during a live ride)
-//   5. The RideHistoryPanel (side panel for full ride history)
+// TOP TO BOTTOM
+//   1. Greeting + the one main action: "Start a ride"
+//   2. Continue riding — rides that are still active (one tap back to the map)
+//   3. Your numbers — rides, distance ridden, completed, this month
+//   4. Recent rides — the last three, with a link to the full history
+//   5. A first-ride guide for new riders, and a daily tip
 //
-// STATE:
-//   showStart       → StartRideModal open/closed
-//   showHistory     → RideHistoryPanel open/closed
-//   activeRide      → the currently live ride (shown in ActiveRideOverlay)
-//   rides           → all rides for this user (shown in history section)
-//   mapRide         → ride being viewed on the full-screen map (can be
-//                     any past ride, not just the live one)
+// OVERLAYS OWNED HERE
+//   StartRideModal     plan a new ride
+//   ActiveRideOverlay  the full-screen map (live ride or a past one)
+//   RideHistoryPanel   every ride, with delete
 //
-// DATA FLOW:
-//   1. On mount: fetch all rides from backend (or localStorage fallback)
-//   2. Active rides are shown in the home page "Live" section
-//   3. When user creates a ride in the modal: activeRide is set + map opens
-//   4. When user clicks "Open Map" in history: mapRide is set + map opens
-//   5. When user ends a ride: ride is updated in DB, list is refreshed
-//   6. When user deletes a ride: ride is removed from DB, list is refreshed
+// DATA
+//   The ride list holds lightweight rows (no route geometry). When a ride
+//   is opened, its full route is fetched and swapped in — so this page
+//   loads fast however many long rides there are.
 //
-// LAYOUT:
-//   Desktop: [Sidebar 256px] [Centered main content]
-//   Mobile:  [TopBar] [Content] [Bottom Nav with FAB]
+// DEEP LINKS (handled once, then removed from the URL)
+//   /home?openRide=<id>   a notification was tapped → open that ride's map
+//   /home?startRide=1     the ride button was pressed on another page
 // ============================================================
 
-import { useEffect, useState, useCallback, useRef, memo, useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
-import { useAuth }          from "../context/AuthContext";
-import MobileNav            from "./components/layout/MobileNav";
-import Sidebar              from "./components/layout/Sidebar";
-import TopBar               from "./components/layout/TopBar";
-import StartRideModal       from "./components/shared/StartRideModal";
-import { useVoice }         from "./components/shared/useVoice";
-import { useTheme }         from "./hooks/useTheme";
-import Icon                 from "./components/ui/Icon";
-import Button               from "./components/ui/Button";
-
-import ActiveRideOverlay    from "./components/ride/ActiveRideOverlay";
-import RideHistoryPanel     from "./components/ride/RideHistoryPanel";
-
-import { getUserRides, endRide, deleteRide, getRide } from "../services/rideApi";
-import { formatDistance, formatDuration }    from "../services/routingApi";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "react-toastify";
+import { useAuth } from "../context/AuthContext";
+import MobileNav from "./components/layout/MobileNav";
+import Sidebar from "./components/layout/Sidebar";
+import TopBar from "./components/layout/TopBar";
+import StartRideModal from "./components/shared/StartRideModal";
+import { useVoice } from "./components/shared/useVoice";
+import { useTheme } from "./hooks/useTheme";
+import { pruneNavProgress } from "./hooks/useNavigation";
+import Icon from "./components/ui/Icon";
+import Button from "./components/ui/Button";
+import ActiveRideOverlay from "./components/ride/ActiveRideOverlay";
+import RideHistoryPanel from "./components/ride/RideHistoryPanel";
+import { getUserRides, endRide, deleteRide, getRide } from "../services/rideApi";
+import {
+  formatDistance,
+  formatDuration,
+  hasTrackedDistance,
+  rideRiddenMeters,
+  rideTimeSeconds,
+  shortPlaceName,
+} from "../services/routingApi";
 
+const TIPS = [
+  "Check your tyre pressure before a long ride — correctly inflated tyres grip better and save fuel.",
+  "Riding in a group? Agree on fuel and rest stops before you set off.",
+  "Carry a small first-aid kit, a torch and a puncture repair kit on longer rides.",
+  "Drink water at every stop — dehydration slows your reactions just like tiredness does.",
+];
+
+function greetingFor(hour) {
+  if (hour < 5) return "Up late";
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening"; // "Good night" is a goodbye, not a greeting
+}
+
+// Load the ride list. Never throws: resolves to { rides, failed }.
+async function fetchRides(userId) {
+  try {
+    const rides = await getUserRides(userId); // newest first
+    // Stored navigation progress is only useful for rides still active
+    pruneNavProgress(rides.filter((r) => r.status === "active").map((r) => r.id));
+    return { rides, failed: false };
+  } catch (err) {
+    console.error("[Home] Failed to load rides:", err);
+    return { rides: null, failed: true };
+  }
+}
+
+// Home is re-created whenever the account changes, so one rider's rides
+// can never be shown to the next person who logs in on this device.
 export default function Home() {
-  const { user }                = useAuth();
-  // Pass user?.id so each account gets its own theme stored separately
-  const { theme, setTheme, tc } = useTheme(user?.id);
+  const { user } = useAuth();
+  return <HomeScreen key={user?.id ?? "signed-out"} user={user} />;
+}
 
-  // ── MODAL VISIBILITY ────────────────────────────────────────
-  const [showStart,   setShowStart]   = useState(false); // StartRideModal
-  const [showHistory, setShowHistory] = useState(false); // RideHistoryPanel side panel
+function HomeScreen({ user }) {
+  const userId = user?.id;
+  const { theme, setTheme, tc } = useTheme(userId);
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  // ── RIDE STATE ───────────────────────────────────────────────
-  // mapRide: which ride is currently shown on the full-screen map
-  // (can be the live ride OR any historical ride opened for review)
-  const [mapRide,   setMapRide]   = useState(null);
-  const [rides,     setRides]     = useState([]);   // all rides for history
-  const [loading,   setLoading]   = useState(true); // loading history on mount
+  // ── Overlays ──
+  const [showStart, setShowStart] = useState(() => searchParams.get("startRide") === "1");
+  const [showHistory, setShowHistory] = useState(false);
+  const [mapRide, setMapRide] = useState(null); // the ride shown on the full-screen map
 
-  useEffect(() => {
-    const handler = async (e) => {
-      const { rideId } = e.detail;
-      try {
-        const ride = await getRide(rideId);
-        if (ride) setMapRide(ride);
-      } catch (err) {
-        console.warn("[Home] Failed to open ride from notification:", err.message);
-      }
-    };
-    window.addEventListener("rw-open-ride", handler);
-    return () => window.removeEventListener("rw-open-ride", handler);
+  // ── Rides ──
+  const [rides, setRides] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
+
+  // Computed once per visit (reading the clock is not a pure render step)
+  const [greeting] = useState(() => greetingFor(new Date().getHours()));
+  const [tip] = useState(() => TIPS[new Date().getDate() % TIPS.length]);
+
+  // ── Load the ride list ──
+  const applyRides = useCallback((result) => {
+    if (result.rides) setRides(result.rides); // keep the current list when a refresh fails
+    setLoadFailed(result.failed);
+    setLoading(false);
   }, []);
 
-  // ── DEEP LINKS (handled ONCE, then the param is cleared) ─────────
-  //   /home?openRide=<id>  → notification clicked from any page → open that ride's map
-  //   /home?startRide=1    → mobile FAB pressed on Account/Riders/Settings → open Start Ride modal
-  const [searchParams, setSearchParams] = useSearchParams();
+  const refreshRides = useCallback(() => {
+    if (userId) fetchRides(userId).then(applyRides);
+  }, [userId, applyRides]);
+
   useEffect(() => {
-    const openRideId = searchParams.get("openRide");
-    const startRide  = searchParams.get("startRide");
-    if (!openRideId && startRide !== "1") return;
+    if (!userId) return undefined;
+    let cancelled = false;
+    fetchRides(userId).then((result) => { if (!cancelled) applyRides(result); });
+    return () => { cancelled = true; };
+  }, [userId, applyRides]);
 
-    // Clear params FIRST so the action can't fire twice on re-render
+  // ── Open a ride on the map ──
+  // The map opens at once with what the list row knows (the endpoints);
+  // the full route follows a moment later and is swapped in.
+  const openRide = useCallback(async (ride) => {
+    if (!ride) return;
+    setShowHistory(false);
+    setShowStart(false);
+
+    const needsRoute = !ride.routeCoordinates && ride.hasRoute !== false;
+    setMapRide(needsRoute ? { ...ride, routePending: true } : ride);
+    if (!needsRoute) return;
+
+    let full = null;
+    try {
+      full = await getRide(ride.id);
+    } catch (err) {
+      console.warn("[Home] Could not load the ride's route:", err.message);
+    }
+    setMapRide((current) => {
+      if (!current || String(current.id) !== String(ride.id)) return current; // closed meanwhile
+      return { ...current, ...(full || {}), routePending: false };
+    });
+  }, []);
+
+  // ── Deep links ──
+  const openRideId = searchParams.get("openRide");
+  const startRideParam = searchParams.get("startRide");
+  useEffect(() => {
+    if (!openRideId && startRideParam !== "1") return;
+    // Clear the params first so the action cannot fire twice
     setSearchParams({}, { replace: true });
-
-    if (startRide === "1") setShowStart(true);
 
     if (openRideId) {
       getRide(openRideId)
-        .then(ride => { if (ride) setMapRide(ride); })
-        .catch(err => console.warn("[Home] Failed to open ride from link:", err.message));
+        .then((ride) => {
+          if (ride) setMapRide(ride);
+          else toast.info("That ride is no longer available.");
+        })
+        .catch(() => toast.info("That ride is no longer available."));
     }
-  }, [searchParams, setSearchParams]);
+  }, [openRideId, startRideParam, setSearchParams]);
 
-  // ── RESET STATE ON USER SWITCH ───────────────────────────────
-  // If the logged-in account changes (e.g. logout → login as someone else),
-  // wipe all in-memory ride state so the previous user's data is never shown.
-  useEffect(() => {
-    setMapRide(null);
-    setRides([]);
-    setShowStart(false);
-    setShowHistory(false);
-    setLoading(true);
-  }, [user?.id]);
-
-  // ── VOICE COMMANDS ───────────────────────────────────────────
-  // Memoised so the map object keeps a stable identity across renders —
-  // otherwise useVoice's startVoice callback is recreated on every render
-  // (its [commands] dep changes identity each time).
-  const commandsMap = useMemo(() => ({
+  // ── Voice commands ──
+  const commands = useMemo(() => ({
     start:    () => setShowStart(true),
     history:  () => setShowHistory(true),
+    riders:   () => navigate("/riders"),
     dark:     () => setTheme("dark"),
     light:    () => setTheme("light"),
     warm:     () => setTheme("warm"),
     midnight: () => setTheme("midnight"),
-  }), [setTheme]);
-  const { voiceMode, startVoice } = useVoice(commandsMap);
+  }), [setTheme, navigate]);
+  const { voiceMode, startVoice, voiceSupported } = useVoice(commands);
 
-  // ── TIME GREETING ────────────────────────────────────────────
-  const hour         = new Date().getHours();
-  const greeting     = hour < 5  ? "Up late, "     : hour < 12 ? "Good morning, "
-                     : hour < 17 ? "Good afternoon, " : hour < 21 ? "Good evening, "
-                     : "Good night, ";
-  const greetingIcon = hour < 5  ? "fa-moon"       : hour < 12 ? "fa-sun"
-                     : hour < 17 ? "fa-cloud-sun"   : hour < 21 ? "fa-city"
-                     : "fa-moon";
+  // ── Derived ──
+  const liveRides = rides.filter((r) => r.status === "active");
+  const pastRides = rides.filter((r) => r.status !== "active");
+  const stats = useMemo(() => {
+    const now = new Date();
+    const thisMonth = rides.filter((r) => {
+      const d = new Date(r.createdAt);
+      return !Number.isNaN(d.getTime()) && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    }).length;
+    const km = rides.reduce((sum, r) => sum + rideRiddenMeters(r), 0) / 1000;
+    return [
+      { icon: "route",       value: String(rides.length),                             label: "Rides" },
+      { icon: "road",        value: km >= 100 ? `${Math.round(km)} km` : `${km.toFixed(1)} km`, label: "Ridden" },
+      { icon: "checkCircle", value: String(rides.filter((r) => r.status === "completed").length), label: "Completed" },
+      { icon: "calendar",    value: String(thisMonth),                                label: "This month" },
+    ];
+  }, [rides]);
 
-  // ── LOAD ALL RIDES ON MOUNT ──────────────────────────────────
-  // silent=true → background refresh (no loading-skeleton flash)
-  const refreshRides = useCallback(async (silent = false) => {
-    if (!user?.id) return;
-    if (!silent) setLoading(true);
-    try {
-      const all = await getUserRides(user.id);
-      setRides(all); // newest first (backend orders by createdAt desc)
-      return all;
-    } catch (e) {
-      console.error("Failed to load rides:", e);
-      return [];
-    } finally {
-      setLoading(false);
-    }
-  }, [user?.id]);
-
-  useEffect(() => {
-    refreshRides();
-  }, [refreshRides]);
-
-  // ── DERIVED: separate active vs. past rides for the home page ──
-  const liveRides = rides.filter(r => r.status === "active");
-
-  // Ended rides only. "Recent Rides" must not repeat a ride that is already
-  // listed under LIVE RIDES — the same card appeared twice on the page.
-  const pastRides = rides.filter(r => r.status !== "active");
-
-  // ── STATS ────────────────────────────────────────────────────
-  // Computed from actual ride history instead of hardcoded values
-  // Distance actually ridden (falls back to the planned route length for
-  // rides ended before distance tracking existed)
-  const totalKm        = rides.reduce(
-    (sum, r) => sum + (r.actualDistanceMeters ?? r.distanceMeters ?? 0) / 1000,
-    0
-  );
-  const completedCount = rides.filter(r => r.status === "completed").length;
-
-  // Rides created in the current calendar month
-  const now = new Date();
-  const monthRides = rides.filter((r) => {
-    const d = new Date(r.createdAt);
-    return !isNaN(d) && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-  }).length;
-
-  const stats = [
-    { value: String(rides.length),                   label: "Total Rides" },
-    { value: totalKm > 0 ? `${totalKm.toFixed(0)} km` : "0 km", label: "Distance Ridden" },
-    { value: String(completedCount),                  label: "Completed" },
-    { value: String(monthRides),                      label: "This Month" },
-  ];
-
-  // ── EVENT HANDLERS ───────────────────────────────────────────
-
-  // Called when a new ride is created in the modal
+  // ── Handlers ──
   const handleRideCreated = (ride) => {
-    setMapRide(ride);            // open the full-screen map with this ride
-    refreshRides();              // refresh the history list
+    setMapRide(ride); // a freshly created ride already carries its route
+    refreshRides();
   };
 
-  // Called by ActiveRideOverlay's X button (close map, ride stays alive)
-  const handleCloseMap = () => {
-    setMapRide(null); // hides the overlay; ride is still "active" in the DB
-  };
-
-  // Called by ActiveRideOverlay when user confirms "End Ride"
-  // BUG FIX: we must setMapRide(null) BEFORE refreshing so the overlay
-  // doesn't still show "active" state with a stale ride object.
-  const handleEndRide = async (stats) => {
-    if (!mapRide?.id) return;
-    const rideId = mapRide.id;
-    // Close map immediately — prevents re-opening a stale active ride object
-    setMapRide(null);
+  // "End ride" confirmed on the map. Returns true when it went through —
+  // the map only closes then, so a failure never strands an active ride.
+  const handleEndRide = async ({ distanceTraveled } = {}) => {
+    if (!mapRide?.id) return false;
     try {
-      // stats.distanceTraveled = metres ACTUALLY ridden (tracked live in the overlay)
-      await endRide(rideId, user?.id, stats?.distanceTraveled);  // PATCH status → "completed" in backend
-      toast.success("Ride ended — great ride! 🏁");
-    } catch(e) {
-      console.error("End ride failed:", e);
-      toast.error("Couldn't end the ride. Please try again.");
-    } finally {
-      refreshRides(true);         // silent refresh — no skeleton flash
+      await endRide(mapRide.id, distanceTraveled);
+      setMapRide(null);
+      toast.success("Ride ended — saved to your history.");
+      refreshRides();
+      return true;
+    } catch (err) {
+      console.error("[Home] End ride failed:", err);
+      toast.error(err.message || "Couldn't end the ride. Please try again.");
+      return false;
     }
   };
 
-  // ── LEAVE RIDE (group member, non-admin) ──────────────────────────
-  // The overlay already marked this user as "left" on the backend.
-  // Here we just close the map and refresh so the live card disappears.
-  const handleLeaveRide = () => {
+  // Left a group ride, or the admin ended it: close the map and refresh.
+  const handleRideGone = () => {
     setMapRide(null);
     refreshRides();
   };
 
-  // Called from RideHistoryPanel or home page history section
-  // Opens the full-screen map to view/resume a ride
-  const handleOpenRide = (ride) => {
-    setMapRide(ride);
-    setShowHistory(false); // close the history panel if it was open
-  };
-
-  // Called from RideHistoryPanel to permanently delete a ride
   const handleDeleteRide = async (rideId) => {
     try {
       await deleteRide(rideId);
-      toast.success("Ride deleted");
-    } catch (e) {
-      console.error("Delete ride failed:", e);
-      toast.error("Couldn't delete the ride. Please try again.");
+      toast.success("Ride deleted.");
+    } catch (err) {
+      console.error("[Home] Delete ride failed:", err);
+      toast.error(err.message || "Couldn't delete the ride. Please try again.");
     } finally {
-      refreshRides(true);
+      refreshRides();
     }
   };
 
-  // ── STATIC TIPS ──────────────────────────────────────────────
-  const tips = [
-    "Always check tire pressure before a long ride — properly inflated tires improve fuel efficiency by up to 10%.",
-    "Ride in groups for long-distance trips — group rides are statistically safer and more fun.",
-    "Keep a first-aid kit, a torch, and a puncture repair kit in your saddlebag for emergencies.",
-    "Stay hydrated on long rides — dehydration impairs reaction time just like fatigue.",
-  ];
-  const dailyTip = tips[new Date().getDate() % tips.length]; // rotates daily
+  const isNewRider = !loading && !loadFailed && rides.length === 0;
 
-  // ────────────────────────────────────────────────────────────
-  // RENDER
-  // ────────────────────────────────────────────────────────────
   return (
-    <div
-      className={`relative min-h-screen w-full overflow-x-hidden ${tc.bg} ${tc.text}`}
-    >
-
-      {/* Orange radial mouse glow (self-contained layer: zero Home re-renders) */}
-      <HomeGlow />
-
-      {/* ── Layout shell ─────────────────────────────────────── */}
+    <div className={`relative min-h-screen w-full overflow-x-hidden ${tc.bg} ${tc.text}`}>
       <Sidebar tc={tc} />
       <TopBar
         theme={theme} setTheme={setTheme} tc={tc}
-        voiceMode={voiceMode} startVoice={startVoice}
-        userId={user?.id}
+        voiceMode={voiceMode} startVoice={voiceSupported ? startVoice : undefined}
+        userId={userId}
       />
       <MobileNav tc={tc} onStartRide={() => setShowStart(true)} />
 
-      {/* ══════════════════════════════════════════════════════
-          MAIN CONTENT — centered column, scrollable
-      ══════════════════════════════════════════════════════ */}
-      <main className="relative z-10 lg:ml-64 min-h-screen flex flex-col items-center px-5 pt-20 pb-28 lg:pb-12">
+      <main className="px-4 pb-28 pt-24 lg:ml-64 lg:pb-12">
+        <div className="mx-auto w-full max-w-2xl space-y-8">
 
-        {/* ─── MAX-WIDTH WRAPPER (keeps content readable on wide screens) */}
-        <div className="w-full max-w-[560px]">
-
-          {/* ═══════════════════════════════════════════════
-              HERO SECTION — greeting + Start Ride CTA
-          ═══════════════════════════════════════════════ */}
-          <div
-            className="text-center mb-10"
-            style={{ animation: "slideUp 0.6s ease-out both" }}
-          >
-            {/* Live riders badge */}
-            <div
-              className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full border text-xs font-bold mb-6 ${tc.card}`}
-              style={{ animation: "slideUp 0.45s ease-out both" }}
-            >
-              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              <span>3 riders online near you</span>
-            </div>
-
-            {/* Personalised greeting */}
-            <h1
-              className="text-4xl md:text-5xl font-black mb-2 leading-tight"
-              style={{ animation: "slideUp 0.5s ease-out both" }}
-            >
-              {greeting}
-              <span
-                className="bg-clip-text text-transparent"
-                style={{ backgroundImage: "linear-gradient(135deg, #f97316, #ec4899)" }}
-              >
-                {user?.username || "Rider"}
-              </span>
+          {/* ── Greeting + main action ─────────────────────── */}
+          <section>
+            <p className={`text-sm ${tc.sub}`}>{greeting},</p>
+            <h1 className="text-3xl font-bold tracking-tight md:text-4xl">
+              {user?.username || "Rider"}
             </h1>
-
-            <p
-              className={`text-base md:text-lg mb-8 ${tc.sub}`}
-              style={{ animation: "slideUp 0.55s ease-out both" }}
-            >
-              Your next adventure is one tap away.
+            <p className={`mt-1.5 text-sm ${tc.sub}`}>
+              {liveRides.length > 0
+                ? "You have a ride in progress."
+                : "Plan a route, follow turn-by-turn guidance, ride with friends."}
             </p>
 
-            {/* ── START A RIDE button ── */}
-            <div className="relative inline-block" style={{ animation: "slideUp 0.6s ease-out both" }}>
-              {/* Pulsing outer ring */}
-              <span
-                className="absolute inset-0 rounded-2xl pointer-events-none"
-                style={{ animation: "ring-pulse 2.5s ease-in-out infinite" }}
-              />
-              <button
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+              <Button
                 id="home-start-ride-btn"
+                variant="accent"
+                size="lg"
+                icon="ride"
+                tc={tc}
+                className="sm:px-8"
                 onClick={() => setShowStart(true)}
-                className="relative group px-10 py-5 rounded-2xl font-black text-lg text-white transition-all duration-300 hover:scale-105 hover:-translate-y-1 active:scale-95 active:translate-y-0"
-                style={{
-                  background:  "linear-gradient(135deg, #f97316 0%, #ec4899 100%)",
-                  boxShadow:   "0 8px 40px rgba(249,115,22,0.45)",
-                  animation:   "glow 3s ease-in-out infinite",
-                }}
               >
-                <span className="flex items-center justify-center gap-3">
-                  
-                  Start a Ride
-                  <i className="fa fa-arrow-right text-base opacity-70 transition-all duration-300 group-hover:translate-x-2" />
-                </span>
-              </button>
+                Start a ride
+              </Button>
+              <Button variant="secondary" size="lg" icon="history" tc={tc} onClick={() => setShowHistory(true)}>
+                Ride history
+              </Button>
+              <Button variant="ghost" size="lg" icon="riders" tc={tc} onClick={() => navigate("/riders")}>
+                Find riders
+              </Button>
             </div>
 
-            <p
-              className={`mt-4 text-xs ${tc.sub}`}
-              style={{ animation: "slideUp 0.75s ease-out both" }}
-            >
-               say <span className="font-semibold">"start"</span> to your mic
-            </p>
-          </div>
+            {voiceSupported && (
+              <p className={`mt-3 flex items-center gap-1.5 text-xs ${tc.sub}`}>
+                <Icon name="mic" size={13} />
+                Tap the mic in the top bar and say &ldquo;start&rdquo; or &ldquo;history&rdquo;.
+              </p>
+            )}
+          </section>
 
-          {/* ═══════════════════════════════════════════════
-              LIVE RIDES SECTION — shown only when there are active rides
-          ═══════════════════════════════════════════════ */}
+          {/* ── Continue riding ────────────────────────────── */}
           {liveRides.length > 0 && (
-            <div className="mb-8" style={{ animation: "slideUp 0.7s ease-out both" }}>
-              <div className="flex items-center gap-2 mb-3">
-                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                <h2 className="font-black text-sm tracking-wide uppercase opacity-70">Live Rides</h2>
-              </div>
+            <section aria-labelledby="live-rides-title">
+              <h2 id="live-rides-title" className="mb-3 flex items-center gap-2 text-sm font-semibold">
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-500 opacity-60" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
+                </span>
+                Continue riding
+              </h2>
               <div className="space-y-2">
-                {liveRides.map(ride => (
-                  <RideCard
-                    key={ride.id}
-                    ride={ride}
-                    onOpen={() => handleOpenRide(ride)}
-                    tc={tc}
-                    isLive
-                  />
+                {liveRides.map((ride) => (
+                  <RideRow key={ride.id} ride={ride} live tc={tc} onOpen={() => openRide(ride)} />
                 ))}
               </div>
+            </section>
+          )}
+
+          {/* ── Your numbers ───────────────────────────────── */}
+          <section aria-label="Your riding numbers" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {stats.map((stat) => (
+              <div key={stat.label} className={`rounded-xl border p-4 ${tc.card}`}>
+                <Icon name={stat.icon} size={18} className={tc.sub} />
+                <p className="mt-3 text-xl font-bold tabular-nums">
+                  {loading ? <span className={`inline-block h-6 w-12 rounded ${tc.surface2}`} /> : stat.value}
+                </p>
+                <p className={`mt-0.5 text-xs ${tc.sub}`}>{stat.label}</p>
+              </div>
+            ))}
+          </section>
+
+          {/* ── Could not load ─────────────────────────────── */}
+          {loadFailed && (
+            <div className={`flex items-center gap-3 rounded-xl border p-4 text-sm ${tc.dangerSoft}`}>
+              <Icon name="alertTriangle" size={18} />
+              <span className="flex-1">Couldn&apos;t load your rides.</span>
+              <Button variant="secondary" size="sm" icon="refresh" tc={tc} onClick={refreshRides}>
+                Try again
+              </Button>
             </div>
           )}
 
-          {/* ═══════════════════════════════════════════════
-              STATS CARDS
-          ═══════════════════════════════════════════════ */}
-          <div
-            className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8"
-            style={{ animation: "slideUp 0.8s ease-out both" }}
-          >
-            {stats.map((s, i) => (
-              <div
-                key={s.label}
-                className={`rounded-2xl border p-4 text-center transition-all duration-300 cursor-default ${tc.card}`}
-                style={{ animation: `slideUp ${0.8 + i * 0.07}s ease-out both` }}
-                onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-6px) scale(1.03)"; e.currentTarget.style.boxShadow = "0 16px 40px rgba(0,0,0,0.25)"; }}
-                onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = ""; }}
-              >
-                
-                <p className="text-xl md:text-2xl font-black">{s.value}</p>
-                <p className={`text-[10px] md:text-xs mt-0.5 ${tc.sub}`}>{s.label}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* ═══════════════════════════════════════════════
-              RECENT RIDES SECTION — last 3 rides with quick actions
-          ═══════════════════════════════════════════════ */}
-          {(pastRides.length > 0 || loading) && (
-            <div className="mb-8" style={{ animation: "slideUp 0.85s ease-out both" }}>
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="font-black text-sm tracking-wide uppercase opacity-70">Recent Rides</h2>
-                {/* "View All" opens the full history side panel */}
-                {rides.length > 3 && (
-                  <button
-                    onClick={() => setShowHistory(true)}
-                    className={`text-xs font-bold text-orange-400 hover:text-orange-300 transition-colors`}
-                  >
-                    View All <i className="fa fa-arrow-right ml-1 text-[10px]" />
-                  </button>
+          {/* ── Recent rides ───────────────────────────────── */}
+          {(loading || pastRides.length > 0) && (
+            <section aria-labelledby="recent-rides-title">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 id="recent-rides-title" className="text-sm font-semibold">Recent rides</h2>
+                {pastRides.length > 3 && (
+                  <Button variant="ghost" size="sm" icon="arrowRight" iconRight tc={tc} onClick={() => setShowHistory(true)}>
+                    See all {rides.length}
+                  </Button>
                 )}
               </div>
-
               {loading ? (
-                // Skeleton loaders while fetching
                 <div className="space-y-2">
-                  {[1, 2].map(n => (
-                    <div key={n} className={`rounded-2xl border h-20 animate-pulse ${tc.card}`} />
+                  {[1, 2].map((n) => (
+                    <div key={n} className={`h-[68px] animate-pulse rounded-xl border ${tc.card}`} />
                   ))}
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {/* Show only the most recent 3 rides */}
-                  {pastRides.slice(0, 3).map(ride => (
-                    <RideCard
-                      key={ride.id}
-                      ride={ride}
-                      onOpen={() => handleOpenRide(ride)}
-                      tc={tc}
-                    />
+                  {pastRides.slice(0, 3).map((ride) => (
+                    <RideRow key={ride.id} ride={ride} tc={tc} onOpen={() => openRide(ride)} />
                   ))}
                 </div>
               )}
-
-              {/* "See all history" button */}
-              <button
-                onClick={() => setShowHistory(true)}
-                className={`mt-3 w-full py-3 rounded-2xl text-sm font-bold border transition-all hover:scale-[1.01] ${tc.card}`}
-              >
-                <i className="fa fa-clock-rotate-left mr-2 " />
-                {rides.length === 0 ? "Ride History" : `See all ${rides.length} ride${rides.length !== 1 ? "s" : ""}`}
-              </button>
-            </div>
+            </section>
           )}
 
-          {/* ═══════════════════════════════════════════════
-              FIRST TIME — no rides yet
-          ═══════════════════════════════════════════════ */}
-          {!loading && rides.length === 0 && (
-            <div
-              className={`mb-8 rounded-2xl border p-8 text-center ${tc.card}`}
-              style={{ animation: "slideUp 0.85s ease-out both" }}
-            >
-              <i className={`fa fa-route text-4xl mb-3 block ${tc.sub}`} style={{ opacity: 0.45 }} />
-              <p className="font-bold opacity-50 mb-1">No rides yet</p>
-              <p className={`text-xs ${tc.sub}`}>Press "Start a Ride" above to begin your first adventure.</p>
-            </div>
+          {/* ── First ride: how it works ───────────────────── */}
+          {isNewRider && (
+            <section className={`rounded-xl border p-5 ${tc.card}`} aria-labelledby="first-ride-title">
+              <h2 id="first-ride-title" className="text-base font-semibold">Your first ride in three steps</h2>
+              <ol className="mt-4 space-y-4">
+                {[
+                  { icon: "pin",      title: "Choose where you're going", text: "Use your current location or search for any place." },
+                  { icon: "navigate", title: "Follow the route",          text: "Spoken turn-by-turn directions, with your position live on the map." },
+                  { icon: "riders",   title: "Ride together",             text: "Invite your connections to a group ride and see each other on the map." },
+                ].map((step, index) => (
+                  <li key={step.title} className="flex items-start gap-3">
+                    <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${tc.surface2}`}>
+                      <Icon name={step.icon} size={18} />
+                    </span>
+                    <span>
+                      <span className="block text-sm font-semibold">{index + 1}. {step.title}</span>
+                      <span className={`block text-xs ${tc.sub}`}>{step.text}</span>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </section>
           )}
 
-          {/* ═══════════════════════════════════════════════
-              TIP OF THE DAY
-          ═══════════════════════════════════════════════ */}
-          <div style={{ animation: "slideUp 0.95s ease-out both" }}>
-            <div className={`rounded-2xl border p-5 flex items-start gap-4 ${tc.card}`}>
-              
-              <div>
-                <p className="font-black text-sm mb-1">Tip of the Day</p>
-                <p className={`text-xs leading-relaxed ${tc.sub}`}>{dailyTip}</p>
-              </div>
+          {/* ── Tip of the day ─────────────────────────────── */}
+          <section className={`flex items-start gap-3 rounded-xl border p-4 ${tc.card}`}>
+            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${tc.surface2}`}>
+              <Icon name="idea" size={18} />
+            </span>
+            <div>
+              <p className="text-sm font-semibold">Tip of the day</p>
+              <p className={`mt-0.5 text-xs leading-relaxed ${tc.sub}`}>{tip}</p>
             </div>
-          </div>
-
-        </div>{/* end max-width wrapper */}
+          </section>
+        </div>
       </main>
 
-      {/* ══════════════════════════════════════════════════════
-          OVERLAYS & MODALS
-      ══════════════════════════════════════════════════════ */}
-
-      {/* ── Start Ride bottom-sheet modal ─────────────────── */}
+      {/* ── Plan a ride ── */}
       <StartRideModal
         open={showStart}
         onClose={() => setShowStart(false)}
         tc={tc}
+        activeRide={liveRides[0] || null}
+        onContinueRide={() => openRide(liveRides[0])}
         onRideCreated={handleRideCreated}
         onOpenHistory={() => { setShowStart(false); setShowHistory(true); }}
       />
 
-      {/* ── Full-screen map (active or history view) ────────── */}
+      {/* ── The map. Keyed by ride, so opening another ride starts clean ── */}
       {mapRide && (
         <ActiveRideOverlay
+          key={mapRide.id}
           ride={mapRide}
-          onClose={handleCloseMap}
+          onClose={() => setMapRide(null)}
           onEnd={handleEndRide}
-          onLeave={handleLeaveRide}
+          onLeave={handleRideGone}
+          onRideEnded={handleRideGone}
         />
       )}
 
-      {/* ── Ride History side panel ──────────────────────────── */}
+      {/* ── Full history ── */}
       {showHistory && (
         <RideHistoryPanel
           rides={rides}
-          onOpenRide={handleOpenRide}
+          currentUserId={userId}
+          onOpenRide={openRide}
           onDeleteRide={handleDeleteRide}
           onClose={() => setShowHistory(false)}
           tc={tc}
         />
       )}
-
-      {/* ── CSS Animations ──────────────────────────────────── */}
-      <style>{`
-        @keyframes glow {
-          0%, 100% { box-shadow: 0 8px 40px rgba(249,115,22,0.45); }
-          50%       { box-shadow: 0 12px 60px rgba(249,115,22,0.70); }
-        }
-        @keyframes ring-pulse {
-          0%   { box-shadow: 0 0 0 0px  rgba(249,115,22,0.50); }
-          70%  { box-shadow: 0 0 0 18px rgba(249,115,22,0.00); }
-          100% { box-shadow: 0 0 0 0px  rgba(249,115,22,0.00); }
-        }
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(24px); }
-          to   { opacity: 1; transform: translateY(0);    }
-        }
-      `}</style>
     </div>
   );
 }
 
 // ============================================================
-// RideCard — compact row card used in "Live Rides" + "Recent Rides"
-//
-// PROPS:
-//   ride   — ride object
-//   onOpen — open this ride's full-screen map
-//   tc     — theme classes
-//   isLive — true = show green live indicator
+// RideRow — one ride in "Continue riding" / "Recent rides"
 // ============================================================
-function RideCard({ ride, onOpen, tc, isLive }) {
-  // Short names: "Marina Beach, Chennai, Tamil Nadu..." → "Marina Beach"
-  const fromShort = (ride.fromName || "From").split(",")[0];
-  const toShort   = (ride.destinationName || "Destination").split(",")[0];
-
-  // Date string: "3 Sep 2026"
-  const dateStr = ride.createdAt
-    ? new Date(ride.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+function RideRow({ ride, onOpen, tc, live = false }) {
+  const from = shortPlaceName(ride.fromName, "Start");
+  const to = shortPlaceName(ride.destinationName, "Destination");
+  const group = ride.rideType === "group";
+  const date = ride.createdAt
+    ? new Date(ride.createdAt).toLocaleDateString([], { day: "numeric", month: "short" })
     : "";
 
+  // A finished ride shows what really happened (distance ridden, time
+  // taken); a ride still under way shows the plan.
+  const tracked = hasTrackedDistance(ride);
+  const distance = tracked ? Number(ride.actualDistanceMeters) : ride.distanceMeters;
+  const seconds = rideTimeSeconds(ride);
+  const meta = [
+    tracked ? `${formatDistance(distance)} ridden` : distance > 0 ? formatDistance(distance) : null,
+    seconds > 0 ? formatDuration(seconds) : null,
+    group ? `${ride.participants?.length || 1} riders` : null,
+    date || null,
+  ].filter(Boolean);
+
   return (
-    <div
-      className={`rounded-2xl border p-3.5 flex items-center gap-3 transition-all hover:scale-[1.01] cursor-pointer ${tc.card}`}
+    <button
+      type="button"
       onClick={onOpen}
+      className={`flex w-full items-center gap-3 rounded-xl border p-3.5 text-left transition-colors ${tc.card} ${tc.cardHover}`}
     >
-    
+      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${tc.surface2}`}>
+        <Icon name={group ? "riders" : "ride"} size={19} />
+      </span>
 
-      {/* Center: route + meta */}
-      <div className="flex-1 min-w-0">
-        <p className="font-bold text-sm truncate">{fromShort} → {toShort}</p>
-        <div className={`flex items-center gap-2 text-[11px] mt-0.5 ${tc.sub} flex-wrap`}>
-          {ride.actualDistanceMeters > 0 ? (
-            <span title="Distance actually ridden">
-              {formatDistance(ride.actualDistanceMeters)}
-            </span>
-          ) : ride.distanceMeters > 0 ? (
-            <span>{formatDistance(ride.distanceMeters)}</span>
-          ) : null}
-          {ride.durationSeconds > 0 && <><span className="opacity-30">·</span><span>{formatDuration(ride.durationSeconds)}</span></>}
-          {dateStr && <><span className="opacity-30">·</span><span>{dateStr}</span></>}
-        </div>
-      </div>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-semibold">{from} → {to}</span>
+        <span className={`block truncate text-xs ${tc.sub}`}>{meta.join(" · ")}</span>
+      </span>
 
-      {/* Right: status + open icon */}
-      <div className="flex items-center gap-2 shrink-0">
-        {ride.rideType === "group" && (
-          <span
-            className={`border ${tc.groupBadge}`}
-            style={{
-              borderRadius: "50px",
-              padding: "2px 8px",
-              fontSize: "10px",
-              fontWeight: 700,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "4px",
-            }}
-          >
-            Group
+      {live ? (
+        <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${tc.okSoft}`}>
+          Open map
+          <Icon name="arrowRight" size={13} />
+        </span>
+      ) : (
+        <>
+          <span className={`shrink-0 text-xs capitalize ${ride.status === "cancelled" ? tc.danger : tc.sub}`}>
+            {ride.status}
           </span>
-        )}
-        {ride.participants && ride.participants.length > 0 && (
-          <div style={{ display: "flex", alignItems: "center", marginLeft: "4px" }}>
-            {ride.participants.slice(0, 3).map((p, i) => (
-              <div
-                key={p.userId ?? `rider-${i}`}
-                // Ring comes from the theme (= the surface this sits on), so a
-                // stacked avatar never shows a black ring on a light card.
-                className={`border-2 ${tc.avatarRing}`}
-                style={{
-                  width: "20px", height: "20px", borderRadius: "50%",
-                  background: "linear-gradient(135deg, #f97316, #ec4899)",
-                  marginLeft: i > 0 ? "-8px" : "0",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: "9px", fontWeight: "bold", color: "white",
-                  zIndex: 3 - i
-                }}
-              >
-                {(p.username || p.name || p.id || "?")[0].toUpperCase()}
-              </div>
-            ))}
-            {ride.participants.length > 3 && (
-              <div
-                // The "+N" circle is theme-aware ink on a subtle wash, so the
-                // number stays readable on BOTH a dark and a light card.
-                className={`border-2 ${tc.avatarMore}`}
-                style={{
-                  width: "20px", height: "20px", borderRadius: "50%",
-                  marginLeft: "-8px",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: "8px", fontWeight: 700, zIndex: 0
-                }}
-              >
-                +{ride.participants.length - 3}
-              </div>
-            )}
-          </div>
-        )}
-        {isLive ? (
-          <span className="text-xs font-bold  bg-green-500/10 px-2 py-0.5 rounded-full border border-green-500/20">
-            Live
-          </span>
-        ) : (
-          <span className="text-[10px] font-bold opacity-30 uppercase tracking-wide">{ride.status}</span>
-        )}
-        <i className="fa fa-chevron-right text-xs opacity-30" />
-      </div>
-    </div>
+          <Icon name="chevronRight" size={16} className={`shrink-0 ${tc.sub}`} />
+        </>
+      )}
+    </button>
   );
 }
-
-
-// ============================================================
-// HomeGlow - orange radial mouse glow WITHOUT re-rendering Home.
-// Owns its own mousemove listener, paints via ref + rAF (same pattern
-// as the Login page glow layer).
-// ============================================================
-const HomeGlow = memo(function HomeGlow() {
-  const glowRef = useRef(null);
-  useEffect(() => {
-    const el = glowRef.current;
-    if (!el) return;
-    let rafId = 0;
-    let pending = null;
-    const paint = () => {
-      rafId = 0;
-      if (!pending) return;
-      el.style.background = 'radial-gradient(circle 600px at ' + pending.x + 'px ' + pending.y + 'px, rgba(249,115,22,0.08), transparent 60%)';
-      pending = null;
-    };
-    const onMove = (e) => {
-      pending = { x: e.clientX, y: e.clientY };
-      if (!rafId) rafId = requestAnimationFrame(paint);
-    };
-    window.addEventListener('mousemove', onMove, { passive: true });
-    return () => {
-      window.removeEventListener('mousemove', onMove);
-      if (rafId) cancelAnimationFrame(rafId);
-    };
-  }, []);
-  return (
-    <div
-      ref={glowRef}
-      className='pointer-events-none fixed inset-0 z-0 transition-all duration-500'
-    />
-  );
-});

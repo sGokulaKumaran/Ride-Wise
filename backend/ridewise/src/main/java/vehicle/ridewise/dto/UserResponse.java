@@ -13,6 +13,7 @@ public class UserResponse {
     private Double lng;
     private String role;
     private Boolean enabled;
+    private Boolean profilePublic = true; // may other riders discover this account?
     private LocalDateTime createdAt;
 
     public UserResponse() {}
@@ -44,6 +45,7 @@ public class UserResponse {
     public Double getLng()               { return lng; }
     public String getRole()              { return role; }
     public Boolean getEnabled()          { return enabled; }
+    public Boolean getProfilePublic()    { return profilePublic; }
     public LocalDateTime getCreatedAt()  { return createdAt; }
 
     // ---- Setters ----
@@ -56,5 +58,6 @@ public class UserResponse {
     public void setLng(Double lng)                     { this.lng = lng; }
     public void setRole(String role)                   { this.role = role; }
     public void setEnabled(Boolean enabled)            { this.enabled = enabled; }
+    public void setProfilePublic(Boolean profilePublic) { this.profilePublic = profilePublic; }
     public void setCreatedAt(LocalDateTime createdAt)  { this.createdAt = createdAt; }
 }

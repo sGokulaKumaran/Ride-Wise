@@ -1,161 +1,270 @@
 // ============================================================
-// 📍 locationService.js — Browser Geolocation wrapper
+// locationService.js — browser geolocation, made dependable
 //
-// WHY THIS EXISTS:
-//   The native navigator.geolocation API fires very frequently
-//   (sometimes every 100ms on mobile). This wrapper throttles
-//   updates to THROTTLE_MS and exposes speed + heading.
+// Every position handed to the app comes from the device. There is no
+// simulation mode and nothing is ever invented.
 //
-// LOCATION OBJECT:
-//   {
-//     lat:       number,        — latitude  (decimal degrees)
-//     lng:       number,        — longitude (decimal degrees)
-//     accuracy:  number,        — accuracy radius in metres
-//                                 < 20m  = GPS hardware fix (excellent)
-//                                 < 100m = WiFi-based (good)
-//                                 > 500m = IP-based (unreliable — do not use)
-//     speed:     number|null,   — speed in m/s (null if unavailable)
-//     heading:   number|null,   — direction 0-360° (null if unavailable)
-//     timestamp: number,        — ms since epoch
-//   }
+// LOCATION OBJECT
+//   { lat, lng, accuracy (m), speed (m/s | null), heading (° | null), timestamp }
 //
-// EXPORTS:
-//   getCurrentLocation()               → Promise<LocationObj>
-//   watchLocation(onUpdate, onError)   → stop() function
+// WHAT THIS ADDS ON TOP OF navigator.geolocation
+//   • THROTTLE      at most one update every 1.5 s (the raw API can fire
+//                   10×/second on a phone).
+//   • STATUS        one of GPS.* is reported whenever it changes, so the
+//                   UI can say "Searching for GPS…" or "GPS signal lost"
+//                   instead of flashing a raw browser error.
+//   • NO DEAD ENDS  a high-accuracy TIMEOUT used to surface as a red
+//                   "Timeout expired" banner every 15 s on laptops and
+//                   indoors. It now falls back to a coarse (Wi-Fi) fix,
+//                   which is shown as approximate.
+//   • HEARTBEAT     some devices send nothing while standing still. After
+//                   12 s of silence the device is asked directly, so
+//                   "no updates" and "signal lost" can be told apart.
+//   • RECOVERY      if the rider grants the location permission after
+//                   having blocked it, tracking restarts by itself.
+//
+// EXPORTS
+//   GPS                              status names
+//   watchLocation(onUpdate, onStatus) → stop()
+//   getCurrentLocation()             → Promise<Location>
+//   requestFreshFix()                → Promise<Location | null>
+//   getLastKnownLocation()           → Location | null
 // ============================================================
 
-// ---------------------------------------------------------------------------
-// THROTTLE: minimum ms between emitted location updates.
-// 1500ms = responsive for navigation while still battery-friendly.
-// ---------------------------------------------------------------------------
-const THROTTLE_MS = 1500;
+export const GPS = Object.freeze({
+  SEARCHING: "searching",     // watching, no position yet
+  OK: "ok",                   // recent, accurate position
+  WEAK: "weak",               // recent but only approximate (Wi-Fi level)
+  LOST: "lost",               // had a position, nothing new arrives
+  DENIED: "denied",           // permission blocked
+  UNSUPPORTED: "unsupported", // no geolocation on this device / page
+});
 
-// ---------------------------------------------------------------------------
-// GPS options:
-//   enableHighAccuracy: true  → use GPS chip (not IP/WiFi fallback)
-//   maximumAge: 0             → ALWAYS request a fresh GPS fix.
-//                               Never serve a stale cached position.
-//                               This is the key fix for the "locked location"
-//                               bug — cached IP-based positions (like an ISP
-//                               server at Virudhunagar) would be served if
-//                               maximumAge > 0.
-//   timeout: 15000            → wait up to 15s for a real GPS hardware fix
-// ---------------------------------------------------------------------------
-const GPS_OPTIONS = {
-  enableHighAccuracy: true,
-  maximumAge:         0,      // ← CRITICAL: 0 = never use cached position
-  timeout:            15000,
+const STATUS_MESSAGE = {
+  [GPS.SEARCHING]: "Searching for GPS…",
+  [GPS.OK]: "",
+  [GPS.WEAK]: "Approximate location — GPS signal is weak",
+  [GPS.LOST]: "GPS signal lost",
+  [GPS.DENIED]: "Location access is blocked. Allow it in your browser settings to navigate.",
+  [GPS.UNSUPPORTED]: "This device or browser can't share its location.",
 };
 
-// ── Internal helper ─────────────────────────────────────────
+const THROTTLE_MS = 1500;       // minimum gap between emitted updates
+const SILENCE_MS = 12_000;      // no position for this long → ask directly
+const WEAK_ACCURACY_M = 60;     // worse than this is shown as approximate
 
-function posToLocation(pos) {
+// maximumAge: 0 → always a FRESH fix. A cached, IP-based position can be
+// hundreds of kilometres off, which is how the map once "locked" onto
+// the ISP's town instead of the rider.
+const PRECISE = { enableHighAccuracy: true, maximumAge: 0, timeout: 15_000 };
+// Fallback when the GPS chip cannot answer in time (laptops, indoors).
+const COARSE = { enableHighAccuracy: false, maximumAge: 15_000, timeout: 10_000 };
+// Heartbeat for devices that stay silent while standing still.
+const HEARTBEAT = { enableHighAccuracy: true, maximumAge: 10_000, timeout: 8_000 };
+
+const PERMISSION_DENIED = 1;
+const TIMEOUT = 3;
+
+function supported() {
+  return typeof navigator !== "undefined" && "geolocation" in navigator;
+}
+
+function toLocation(pos) {
+  const c = pos.coords;
   return {
-    lat:       pos.coords.latitude,
-    lng:       pos.coords.longitude,
-    accuracy:  pos.coords.accuracy,   // metres — lower is better
-    speed:     pos.coords.speed   ?? null,  // m/s
-    heading:   pos.coords.heading ?? null,  // degrees 0-360
-    timestamp: pos.timestamp,
+    lat: c.latitude,
+    lng: c.longitude,
+    accuracy: Number.isFinite(c.accuracy) ? c.accuracy : null,
+    speed: Number.isFinite(c.speed) ? c.speed : null,
+    heading: Number.isFinite(c.heading) ? c.heading : null,
+    timestamp: pos.timestamp || Date.now(),
   };
 }
 
-// ============================================================
-// getCurrentLocation — one-shot fresh GPS fix
-// Returns a Promise — never uses cache (maximumAge: 0).
-// ============================================================
+// The newest real fix — lets the re-center button respond instantly.
+let lastKnown = null;
+export function getLastKnownLocation() {
+  return lastKnown;
+}
 
+// Active watchers, so requestFreshFix() can hand them the new position.
+const watchers = new Set();
+
+// ============================================================
+// getCurrentLocation — one position, as good as the device can give
+//
+// Tries the GPS chip first; if that times out (very common on desktops)
+// it settles for a coarse fix rather than failing.
+// Rejects with an Error whose message is safe to show to the rider.
+// ============================================================
 export function getCurrentLocation() {
   return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) {
-      reject(new Error("Geolocation is not supported by this browser."));
+    if (!supported()) {
+      reject(new Error(STATUS_MESSAGE[GPS.UNSUPPORTED]));
       return;
     }
 
-    navigator.geolocation.getCurrentPosition( // this getCurrentPosotion is the browser function a inbuild function for to track gps
-      (pos) => resolve(posToLocation(pos)), // this is a success parameter 
-      (err)  => reject(err),// this the error parameter but its all call inside of another function like
-      GPS_OPTIONS // this is the variable on that 44 line
+    const succeed = (pos) => {
+      const location = toLocation(pos);
+      lastKnown = location;
+      resolve(location);
+    };
+    const fail = (err) => {
+      reject(new Error(
+        err?.code === PERMISSION_DENIED
+          ? STATUS_MESSAGE[GPS.DENIED]
+          : "Couldn't find your location. Check that location is switched on and try again.",
+      ));
+    };
+
+    navigator.geolocation.getCurrentPosition(
+      succeed,
+      (err) => {
+        if (err?.code === PERMISSION_DENIED) { fail(err); return; }
+        navigator.geolocation.getCurrentPosition(succeed, fail, { ...COARSE, maximumAge: 60_000 });
+      },
+      { ...PRECISE, timeout: 12_000 },
     );
   });
 }
 
 // ============================================================
-// watchLocation — continuous position tracking (throttled)
+// watchLocation — continuous tracking
 //
-// onUpdate(location) is called at most once every THROTTLE_MS.
-// Returns a stop() function — call it to cancel tracking.
+//   onUpdate(location)             throttled position updates
+//   onStatus({ state, message })   whenever the GPS status changes
 //
-// There is deliberately NO simulation mode: every location handed to the
-// app comes from the browser's GPS hardware. (The old drag-the-marker
-// "simulate-gps" path was removed so a rider can never publish or see a
-// fabricated position.)
+// Returns stop(). Tracking ends completely when it is called — nothing
+// keeps running in the background.
 // ============================================================
+export function watchLocation(onUpdate, onStatus) {
+  let state = null;
+  const report = (next) => {
+    if (next === state) return;
+    state = next;
+    try { onStatus?.({ state: next, message: STATUS_MESSAGE[next] }); } catch { /* UI callback failed */ }
+  };
 
-const activeListeners = new Set();
-
-// The most recent REAL fix, kept only so the map's re-center button can
-// snap back instantly before the next throttled tick arrives.
-let lastKnownLocation = null;
-
-// 1. Listen for the Re-Center button (dispatched by RideMap)
-window.addEventListener("resume-real-gps", () => {
-  // A. Instantly snap to the last real fix we received (if we have one)
-  if (lastKnownLocation) {
-    activeListeners.forEach(onUpdate => onUpdate(lastKnownLocation));
-    window.dispatchEvent(new CustomEvent("rw-recenter", {
-      detail: { lat: lastKnownLocation.lat, lng: lastKnownLocation.lng }
-    }));
-  }
-
-  // B. GUARANTEE a fresh coordinate by forcing the hardware sensors to ping
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      const freshLoc = posToLocation(pos);
-      lastKnownLocation = freshLoc;
-      activeListeners.forEach(onUpdate => onUpdate(freshLoc));
-      window.dispatchEvent(new CustomEvent("rw-recenter", {
-        detail: { lat: freshLoc.lat, lng: freshLoc.lng }
-      }));
-    },
-    (err) => console.warn("Forced GPS failed:", err),
-    GPS_OPTIONS
-  );
-});
-
-export function watchLocation(onUpdate, onError) {
-  if (!navigator.geolocation) {
-    console.warn("[locationService] Geolocation not supported.");
-    if (onError) onError(new Error("Geolocation not supported"));
+  if (!supported()) {
+    report(GPS.UNSUPPORTED);
     return () => {};
   }
 
-  activeListeners.add(onUpdate);
+  let stopped = false;
+  let watchId = null;
+  let hadFix = false;
+  let lastFixAt = Date.now();   // also the "started waiting" time
+  let lastEmitAt = 0;
+  let asking = false;           // a one-shot request is in flight
+  let permission = null;
 
-  let lastEmitTime = 0;
+  const deliver = (location, force = false) => {
+    if (stopped) return;
+    hadFix = true;
+    lastFixAt = Date.now();
+    lastKnown = location;
+    report(location.accuracy != null && location.accuracy > WEAK_ACCURACY_M ? GPS.WEAK : GPS.OK);
 
-  const watchId = navigator.geolocation.watchPosition(
-    (pos) => {
-      const loc = posToLocation(pos);
-      lastKnownLocation = loc; // keep the newest REAL fix
+    if (!force && lastFixAt - lastEmitAt < THROTTLE_MS) return;
+    lastEmitAt = lastFixAt;
+    try { onUpdate(location); } catch (err) { console.error("[locationService] update handler failed:", err); }
+  };
 
-      const now = Date.now();
-      if (now - lastEmitTime < THROTTLE_MS) return;
-      lastEmitTime = now;
-      onUpdate(loc);
-    },
-    (err) => {
-      // Permission denied / position unavailable / timeout. Callers show a
-      // banner and the rider is reported as "location unavailable" — no
-      // position is invented.
-      console.warn("[locationService] GPS error:", err.message);
-      if (onError) onError(err);
-    },
-    GPS_OPTIONS
-  );
+  // Ask the device once, outside the watch.
+  const askOnce = (options) => {
+    if (asking || stopped || state === GPS.DENIED) return;
+    asking = true;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { asking = false; deliver(toLocation(pos)); },
+      (err) => {
+        asking = false;
+        if (stopped) return;
+        if (err?.code === PERMISSION_DENIED) report(GPS.DENIED);
+        else report(hadFix ? GPS.LOST : GPS.SEARCHING);
+      },
+      options,
+    );
+  };
+
+  const start = () => {
+    if (stopped) return;
+    if (watchId != null) navigator.geolocation.clearWatch(watchId);
+    watchId = navigator.geolocation.watchPosition(
+      (pos) => deliver(toLocation(pos)),
+      (err) => {
+        if (stopped) return;
+        if (err?.code === PERMISSION_DENIED) { report(GPS.DENIED); return; }
+        // The watch itself keeps running after these; get a position some
+        // other way in the meantime.
+        if (err?.code === TIMEOUT) askOnce(COARSE);
+        else report(hadFix ? GPS.LOST : GPS.SEARCHING);
+      },
+      PRECISE,
+    );
+  };
+
+  report(GPS.SEARCHING);
+  start();
+
+  // Heartbeat: silence is not the same as a lost signal.
+  const heartbeat = setInterval(() => {
+    if (stopped || state === GPS.DENIED) return;
+    if (Date.now() - lastFixAt > SILENCE_MS) askOnce(HEARTBEAT);
+  }, 4000);
+
+  // Permission granted after being blocked → start tracking again.
+  const onPermissionChange = () => {
+    if (stopped || !permission) return;
+    if (permission.state === "granted" && state === GPS.DENIED) {
+      state = null;
+      report(GPS.SEARCHING);
+      lastFixAt = Date.now();
+      start();
+    } else if (permission.state === "denied") {
+      report(GPS.DENIED);
+    }
+  };
+  if (navigator.permissions?.query) {
+    navigator.permissions.query({ name: "geolocation" })
+      .then((status) => {
+        if (stopped) return;
+        permission = status;
+        status.addEventListener?.("change", onPermissionChange);
+      })
+      .catch(() => { /* Permissions API not available for geolocation */ });
+  }
+
+  const watcher = { deliver };
+  watchers.add(watcher);
 
   return () => {
-    navigator.geolocation.clearWatch(watchId);
-    activeListeners.delete(onUpdate);
+    stopped = true;
+    watchers.delete(watcher);
+    clearInterval(heartbeat);
+    if (watchId != null) navigator.geolocation.clearWatch(watchId);
+    permission?.removeEventListener?.("change", onPermissionChange);
   };
+}
+
+// ============================================================
+// requestFreshFix — used by the re-center button
+//
+// Asks the hardware for a brand-new position and gives it to every
+// active watcher immediately (bypassing the throttle). Resolves to the
+// position, or null when none could be obtained. Never rejects.
+// ============================================================
+export function requestFreshFix() {
+  return new Promise((resolve) => {
+    if (!supported()) { resolve(null); return; }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const location = toLocation(pos);
+        lastKnown = location;
+        watchers.forEach((watcher) => watcher.deliver(location, true));
+        resolve(location);
+      },
+      () => resolve(null),
+      PRECISE,
+    );
+  });
 }

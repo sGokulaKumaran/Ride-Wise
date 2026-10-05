@@ -1,0 +1,15 @@
+{
+  "name": "RideWise",
+  "short_name": "RideWise",
+  "description": "Plan a ride, follow turn-by-turn directions, and ride together with your group's live location on the map.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0B0B0C",
+  "theme_color": "#0B0B0C",
+  "icons": [
+    { "src": "/ridewise-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/ridewise-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

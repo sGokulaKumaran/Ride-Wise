@@ -6,7 +6,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import vehicle.ridewise.dto.UserResponse;
+import vehicle.ridewise.config.UserStatusCache;
 import vehicle.ridewise.entity.Ride;
 import vehicle.ridewise.entity.RideParticipant;
 import vehicle.ridewise.entity.User;
@@ -17,26 +17,33 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * AdminService — Business logic for admin dashboard, user management,
- * and ride monitoring. Uses existing repositories without creating
- * duplicate data access patterns.
+ * AdminService — business logic for the admin dashboard, user management
+ * and ride monitoring. Never returns password hashes.
  */
 @Service
 public class AdminService {
+
+    private static final int MAX_PAGE_SIZE = 100;
 
     private final UserRepository userRepository;
     private final RideRepository rideRepository;
     private final RideParticipantRepository rideParticipantRepository;
     private final ConnectionRepository connectionRepository;
+    private final UserLocationRepository userLocationRepository;
+    private final UserStatusCache userStatusCache;
 
     public AdminService(UserRepository userRepository,
                         RideRepository rideRepository,
                         RideParticipantRepository rideParticipantRepository,
-                        ConnectionRepository connectionRepository) {
+                        ConnectionRepository connectionRepository,
+                        UserLocationRepository userLocationRepository,
+                        UserStatusCache userStatusCache) {
         this.userRepository = userRepository;
         this.rideRepository = rideRepository;
         this.rideParticipantRepository = rideParticipantRepository;
         this.connectionRepository = connectionRepository;
+        this.userLocationRepository = userLocationRepository;
+        this.userStatusCache = userStatusCache;
     }
 
     // ── Dashboard Stats ──────────────────────────────────────────────
@@ -55,34 +62,27 @@ public class AdminService {
     // ── User Management ──────────────────────────────────────────────
 
     /**
-     * Get paginated list of all users. Optionally filtered by search query.
-     * Never returns password hashes.
+     * A page of users, optionally filtered by a search text.
+     *
+     * Search results are a real page too: `totalUsers` is the number of
+     * MATCHES, not the size of the current page — it used to be the page
+     * size, so a search with more results than one page could never be
+     * paged through.
      */
     public Map<String, Object> getUsers(String search, int page, int size) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
-        List<User> users;
-        long totalUsers;
+        Pageable pageable = PageRequest.of(Math.max(0, page), clampSize(size), Sort.by(Sort.Direction.DESC, "id"));
+        String query = search == null ? "" : search.trim();
 
-        if (search != null && !search.trim().isEmpty()) {
-            users = userRepository.adminSearchUsers(search.trim(), pageable);
-            // For search results, we don't have exact total count from the query,
-            // so we return the list size as an approximation
-            totalUsers = users.size();
-        } else {
-            Page<User> userPage = userRepository.findAll(pageable);
-            users = userPage.getContent();
-            totalUsers = userPage.getTotalElements();
-        }
-
-        List<Map<String, Object>> userList = users.stream()
-                .map(this::toUserMap)
-                .collect(Collectors.toList());
+        Page<User> users = query.isEmpty()
+                ? userRepository.findAll(pageable)
+                : userRepository.adminSearchUsers(query, pageable);
 
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("users", userList);
-        result.put("totalUsers", totalUsers);
-        result.put("page", page);
-        result.put("size", size);
+        result.put("users", users.getContent().stream().map(this::toUserMap).collect(Collectors.toList()));
+        result.put("totalUsers", users.getTotalElements());
+        result.put("totalPages", users.getTotalPages());
+        result.put("page", users.getNumber());
+        result.put("size", users.getSize());
         return result;
     }
 
@@ -94,20 +94,21 @@ public class AdminService {
                 .orElseThrow(() -> ApiException.notFound("User not found"));
 
         Map<String, Object> detail = toUserMap(user);
-
-        // Add ride count
-        List<Ride> userRides = rideRepository.findByUserIdOrderByCreatedAtDesc(userId);
-        detail.put("rideCount", userRides.size());
-
-        // Add connection count
-        List<Long> connectionIds = connectionRepository.findConnectedUserIds(userId);
-        detail.put("connectionCount", connectionIds.size());
-
+        detail.put("rideCount", rideRepository.findByUserIdOrderByCreatedAtDesc(userId).size());
+        detail.put("connectionCount", connectionRepository.findConnectedUserIds(userId).size());
         return detail;
     }
 
     /**
-     * Toggle user enabled/disabled status. Cannot disable own admin account.
+     * Suspend or re-enable an account.
+     *
+     *   • an admin cannot suspend themself, and admin accounts cannot be
+     *     suspended at all (the UI already disables that button — the
+     *     server now refuses it too)
+     *   • a suspension takes effect immediately: the account's cached
+     *     status is dropped, so its very next request is refused even
+     *     though it is still "logged in", and its live position is removed
+     *     from any group map
      */
     @Transactional
     public Map<String, Object> updateUserStatus(Long userId, Boolean enabled, Long adminUserId) {
@@ -117,9 +118,14 @@ public class AdminService {
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> ApiException.notFound("User not found"));
+        if ("ADMIN".equals(user.getRole())) {
+            throw ApiException.forbidden("Admin accounts cannot be suspended");
+        }
 
         user.setEnabled(enabled);
         userRepository.save(user);
+        userStatusCache.evict(userId);
+        if (!enabled) userLocationRepository.deleteByUserId(userId);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("id", user.getId());
@@ -134,7 +140,7 @@ public class AdminService {
      * Get paginated list of all rides with optional status and type filters.
      */
     public Map<String, Object> getRides(String status, String type, int page, int size) {
-        Pageable pageable = PageRequest.of(page, size);
+        Pageable pageable = PageRequest.of(Math.max(0, page), clampSize(size));
         Page<Ride> ridePage;
 
         boolean hasStatus = status != null && !status.trim().isEmpty();
@@ -150,16 +156,19 @@ public class AdminService {
             ridePage = rideRepository.findAllByOrderByCreatedAtDesc(pageable);
         }
 
-        // Enrich rides with creator info
-        List<Map<String, Object>> rideList = ridePage.getContent().stream()
-                .map(this::toRideMap)
-                .collect(Collectors.toList());
+        // All creators of the page in ONE query (it used to be one per ride)
+        Map<Long, User> creators = usersById(ridePage.getContent().stream()
+                .map(Ride::getUserId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet()));
 
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("rides", rideList);
+        result.put("rides", ridePage.getContent().stream()
+                .map(ride -> toRideMap(ride, creators.get(ride.getUserId())))
+                .collect(Collectors.toList()));
         result.put("totalRides", ridePage.getTotalElements());
-        result.put("page", page);
-        result.put("size", size);
+        result.put("page", ridePage.getNumber());
+        result.put("size", ridePage.getSize());
         result.put("totalPages", ridePage.getTotalPages());
         return result;
     }
@@ -171,35 +180,45 @@ public class AdminService {
         Ride ride = rideRepository.findById(rideId)
                 .orElseThrow(() -> ApiException.notFound("Ride not found"));
 
-        Map<String, Object> detail = toRideMap(ride);
+        Map<String, Object> detail = toRideMap(ride,
+                ride.getUserId() == null ? null : userRepository.findById(ride.getUserId()).orElse(null));
 
-        // Add participants for group rides
         if ("group".equals(ride.getRideType())) {
             List<RideParticipant> participants = rideParticipantRepository.findByRideId(rideId);
-            List<Map<String, Object>> participantList = participants.stream().map(p -> {
+            Map<Long, User> users = usersById(participants.stream()
+                    .map(RideParticipant::getUserId)
+                    .collect(Collectors.toSet()));
+
+            detail.put("participants", participants.stream().map(p -> {
                 Map<String, Object> pMap = new LinkedHashMap<>();
                 pMap.put("id", p.getId());
                 pMap.put("userId", p.getUserId());
                 pMap.put("role", p.getRole());
                 pMap.put("status", p.getStatus());
                 pMap.put("joinedAt", p.getJoinedAt());
-
-                // Enrich with user info
-                userRepository.findById(p.getUserId()).ifPresent(u -> {
+                User u = users.get(p.getUserId());
+                if (u != null) {
                     pMap.put("username", u.getUsername());
                     pMap.put("email", u.getEmail());
-                });
-
+                }
                 return pMap;
-            }).collect(Collectors.toList());
-
-            detail.put("participants", participantList);
+            }).collect(Collectors.toList()));
         }
 
         return detail;
     }
 
     // ── Private helpers ──────────────────────────────────────────────
+
+    private static int clampSize(int size) {
+        return Math.min(MAX_PAGE_SIZE, Math.max(1, size));
+    }
+
+    private Map<Long, User> usersById(Collection<Long> ids) {
+        if (ids.isEmpty()) return Map.of();
+        return userRepository.findAllById(ids).stream()
+                .collect(Collectors.toMap(User::getId, user -> user));
+    }
 
     /**
      * Convert User entity to a safe map (no password hash).
@@ -218,10 +237,10 @@ public class AdminService {
     }
 
     /**
-     * Convert Ride entity to a map with creator info (no route coordinates
-     * in list view to keep payloads small).
+     * Convert Ride entity to a map with creator info (no route coordinates,
+     * to keep payloads small).
      */
-    private Map<String, Object> toRideMap(Ride ride) {
+    private Map<String, Object> toRideMap(Ride ride, User creator) {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("id", ride.getId());
         map.put("userId", ride.getUserId());
@@ -234,13 +253,10 @@ public class AdminService {
         map.put("durationSeconds", ride.getDurationSeconds());
         map.put("createdAt", ride.getCreatedAt());
         map.put("endedAt", ride.getEndedAt());
-
-        // Enrich with creator info
-        userRepository.findById(ride.getUserId()).ifPresent(creator -> {
+        if (creator != null) {
             map.put("creatorUsername", creator.getUsername());
             map.put("creatorEmail", creator.getEmail());
-        });
-
+        }
         return map;
     }
 }

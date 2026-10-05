@@ -63,13 +63,19 @@ public class DataInitializer implements CommandLineRunner {
         admin.setEnabled(true);
         userRepository.save(admin);
 
+        boolean customPassword = envPassword != null && !envPassword.isBlank();
         System.out.println("═══════════════════════════════════════════════════════");
-        System.out.println("  [RideWise] Default admin account created:");
-        System.out.println("  Email:    " + email);
-        System.out.println("  Password: " + password);
-        System.out.println("  ");
-        System.out.println("  Set RIDEWISE_ADMIN_EMAIL and RIDEWISE_ADMIN_PASSWORD");
-        System.out.println("  environment variables to customize these credentials.");
+        System.out.println("  [RideWise] Admin account created: " + email);
+        if (customPassword) {
+            // A password someone chose must never end up in the server logs.
+            System.out.println("  Password: taken from RIDEWISE_ADMIN_PASSWORD");
+        } else {
+            System.out.println("  Password: " + password + "   <-- the built-in default");
+            System.out.println("  ");
+            System.out.println("  WARNING: anyone can look this default up. Before putting");
+            System.out.println("  the app online, set RIDEWISE_ADMIN_EMAIL and");
+            System.out.println("  RIDEWISE_ADMIN_PASSWORD so the admin account is yours alone.");
+        }
         System.out.println("═══════════════════════════════════════════════════════");
     }
 }

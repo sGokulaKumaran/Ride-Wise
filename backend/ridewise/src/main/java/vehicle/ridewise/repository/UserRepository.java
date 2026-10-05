@@ -1,6 +1,7 @@
 package vehicle.ridewise.repository;
 
 import vehicle.ridewise.entity.User;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -19,23 +20,33 @@ public interface UserRepository extends JpaRepository<User, Long> {
     // Username uniqueness checks (used during onboarding/profile edit)
     Optional<User> findByUsernameIgnoreCase(String username);
 
-    // Search users by username OR email (for Add Rider search)
-    // Excludes the current user so you don't find yourself.
+    // Search riders by username OR email (for the Riders page).
+    // Excludes the current user, suspended accounts, riders who switched
+    // "Public profile" off, and accounts that never finished signing up
+    // (no username yet — there is nobody to ride with behind them).
     // Top-20: search-as-you-type must stay cheap even with thousands of
     // users (the UI only ever renders a short list anyway).
     // NOTE: LIMIT is intentionally NOT in the JPQL string — HQL supports
     // LIMIT only on newer Hibernate versions and breaks on others, so the
     // cap is applied via Pageable (see RidersService.searchRiders).
-    @Query("SELECT u FROM User u WHERE u.id != :currentUserId AND " +
-           "(LOWER(u.username) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-           "LOWER(u.email) LIKE LOWER(CONCAT('%', :query, '%'))) " +
+    // The caller escapes % and _ in :query with a backslash (ESCAPE '\'),
+    // so they are matched literally.
+    @Query("SELECT u FROM User u WHERE u.id <> :currentUserId " +
+           "AND u.username IS NOT NULL " +
+           "AND (u.enabled IS NULL OR u.enabled = true) " +
+           "AND (u.profilePublic IS NULL OR u.profilePublic = true) AND " +
+           "(LOWER(u.username) LIKE LOWER(CONCAT('%', :query, '%')) ESCAPE '\\' OR " +
+           "LOWER(u.email) LIKE LOWER(CONCAT('%', :query, '%')) ESCAPE '\\') " +
            "ORDER BY u.id DESC")
     List<User> searchUsers(@Param("query") String query, @Param("currentUserId") Long currentUserId, Pageable pageable);
 
-    // Find users within a lat/lng radius (for Near Riders)
-    // Uses Haversine formula in SQL — 50 km radius
-    @Query(value = "SELECT * FROM users WHERE id != :userId AND lat IS NOT NULL " +
-                   "AND lng IS NOT NULL AND " +
+    // Riders within a radius of a point (for "near me").
+    // Haversine formula in SQL. Suspended accounts, riders who switched
+    // "Public profile" off and accounts without a username are left out.
+    @Query(value = "SELECT * FROM users WHERE id <> :userId AND lat IS NOT NULL " +
+                   "AND lng IS NOT NULL AND username IS NOT NULL " +
+                   "AND (enabled IS NULL OR enabled = true) " +
+                   "AND (profile_public IS NULL OR profile_public = true) AND " +
                    "(6371 * acos(LEAST(GREATEST(cos(radians(:lat)) * cos(radians(lat)) * " +
                    "cos(radians(lng) - radians(:lng)) + sin(radians(:lat)) * " +
                    "sin(radians(lat)), -1.0), 1.0))) <= :radiusKm",
@@ -50,10 +61,11 @@ public interface UserRepository extends JpaRepository<User, Long> {
     // Check if any admin account exists (used by DataInitializer)
     List<User> findByRole(String role);
 
-    // Admin user search — search all users by username or email (no self-exclusion)
+    // Admin user search — all users by username or email, as a real page
+    // (so the total count and "next page" work for search results too).
+    // Sorting comes from the Pageable.
     @Query("SELECT u FROM User u WHERE " +
            "LOWER(u.username) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
-           "LOWER(u.email) LIKE LOWER(CONCAT('%', :query, '%')) " +
-           "ORDER BY u.id DESC")
-    List<User> adminSearchUsers(@Param("query") String query, Pageable pageable);
+           "LOWER(u.email) LIKE LOWER(CONCAT('%', :query, '%'))")
+    Page<User> adminSearchUsers(@Param("query") String query, Pageable pageable);
 }

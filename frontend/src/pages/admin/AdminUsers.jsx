@@ -2,13 +2,15 @@
 // AdminUsers — User management page
 //
 // Features:
-//   - Paginated user table
+//   - Paginated user table (the server does the paging, also for searches)
 //   - Search by username/email
 //   - View user details (role, enabled status, created date)
-//   - Enable/disable user accounts
+//   - Suspend / re-enable user accounts. Suspending asks for a second tap
+//     on the same button instead of a browser pop-up.
 //   - Does NOT expose passwords or password hashes
 // ============================================================
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
+import { toast } from "react-toastify";
 import { getUsers, updateUserStatus } from "../../services/adminApi";
 import { useTheme } from "../hooks/useTheme";
 import AdminLayout from "./AdminLayout";
@@ -16,63 +18,98 @@ import { useAuth } from "../../context/AuthContext";
 import Icon from "../components/ui/Icon";
 import Button from "../components/ui/Button";
 
+const SIZE = 15;
+const SEARCH_DELAY_MS = 400;   // wait for a pause in typing before asking
+const CONFIRM_WINDOW_MS = 4000; // how long "Confirm suspend" stays armed
+
 export default function AdminUsers() {
   const { user } = useAuth();
   // Pass user?.id so the admin panel uses the same saved theme as the app
   const { tc } = useTheme(user?.id);
   const [users, setUsers] = useState([]);
   const [totalUsers, setTotalUsers] = useState(0);
-  const [page, setPage] = useState(0);
-  const [search, setSearch] = useState("");
+  const [totalPages, setTotalPages] = useState(0);
+  // One object: a new search always starts on the first page.
+  const [query, setQuery] = useState({ search: "", page: 0 });
   const [searchInput, setSearchInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [actionLoading, setActionLoading] = useState(null); // userId being toggled
-  const SIZE = 15;
+  const [confirmId, setConfirmId] = useState(null);         // userId waiting for the second tap
+  const searchTimer = useRef(null);
+  const confirmTimer = useRef(null);
+  // The latest query, readable from the debounce timer without a stale closure.
+  const queryRef = useRef(query);
 
-  const loadUsers = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await getUsers(search, page, SIZE);
-      setUsers(data.users || []);
-      setTotalUsers(data.totalUsers || 0);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+  const { search, page } = query;
+
+  useEffect(() => () => {
+    clearTimeout(searchTimer.current);
+    clearTimeout(confirmTimer.current);
+  }, []);
+
+  // Load the page; a slow answer for an older search is ignored.
+  useEffect(() => {
+    let cancelled = false;
+    getUsers(search, page, SIZE)
+      .then((data) => {
+        if (cancelled) return;
+        setUsers(data.users || []);
+        setTotalUsers(data.totalUsers || 0);
+        setTotalPages(data.totalPages ?? Math.ceil((data.totalUsers || 0) / SIZE));
+        setError(null);
+      })
+      .catch((err) => { if (!cancelled) setError(err.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [search, page]);
 
-  useEffect(() => { loadUsers(); }, [loadUsers]);
+  // Only a real change starts a load (otherwise "Loading…" would never clear).
+  const changeQuery = (next) => {
+    if (next.search === queryRef.current.search && next.page === queryRef.current.page) return;
+    queryRef.current = next;
+    setLoading(true);
+    setConfirmId(null);
+    setQuery(next);
+  };
 
   // Debounced search
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setSearch(searchInput);
-      setPage(0);
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [searchInput]);
+  const handleSearchInput = (value) => {
+    setSearchInput(value);
+    clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(
+      () => changeQuery({ search: value.trim(), page: 0 }),
+      SEARCH_DELAY_MS,
+    );
+  };
 
-  const handleToggleStatus = async (userId, currentEnabled) => {
+  const setPage = (toPage) => changeQuery({ search: queryRef.current.search, page: toPage });
+
+  const handleToggleStatus = async (target) => {
     if (actionLoading) return;
-    const action = currentEnabled ? "suspend" : "enable";
-    if (!confirm(`Are you sure you want to ${action} this user?`)) return;
+
+    // Suspending signs the rider out everywhere — ask for a second tap.
+    if (target.enabled && confirmId !== target.id) {
+      setConfirmId(target.id);
+      clearTimeout(confirmTimer.current);
+      confirmTimer.current = setTimeout(() => setConfirmId(null), CONFIRM_WINDOW_MS);
+      return;
+    }
+    clearTimeout(confirmTimer.current);
+    setConfirmId(null);
 
     try {
-      setActionLoading(userId);
-      await updateUserStatus(userId, !currentEnabled);
-      // Refresh the list
-      await loadUsers();
+      setActionLoading(target.id);
+      await updateUserStatus(target.id, !target.enabled);
+      setUsers((list) => list.map((u) => (u.id === target.id ? { ...u, enabled: !target.enabled } : u)));
+      const name = target.username || target.email;
+      toast.success(target.enabled ? `${name} is suspended.` : `${name} can sign in again.`);
     } catch (err) {
-      alert("Failed: " + err.message);
+      toast.error(err.message || "Couldn't change that account. Please try again.");
     } finally {
       setActionLoading(null);
     }
   };
-
-  const totalPages = Math.ceil(totalUsers / SIZE);
 
   const formatDate = (dateStr) => {
     if (!dateStr) return "—";
@@ -91,7 +128,9 @@ export default function AdminUsers() {
           <div>
             <h1 className="text-2xl font-bold">User Management</h1>
             <p className={`text-sm ${tc.sub} mt-1`}>
-              {totalUsers} total user{totalUsers !== 1 ? "s" : ""} registered
+              {search
+                ? `${totalUsers} user${totalUsers !== 1 ? "s" : ""} matching “${search}”`
+                : `${totalUsers} total user${totalUsers !== 1 ? "s" : ""} registered`}
             </p>
           </div>
 
@@ -99,10 +138,11 @@ export default function AdminUsers() {
           <div className="relative w-full sm:w-72">
             <Icon name="search" size={16} className={`absolute left-3 top-1/2 -translate-y-1/2 ${tc.sub}`} />
             <input
-              type="text"
+              type="search"
               value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
+              onChange={(e) => handleSearchInput(e.target.value)}
               placeholder="Search by username or email…"
+              aria-label="Search users by username or email"
               className={`w-full pl-9 pr-4 py-2.5 rounded-lg border text-sm ${tc.input}`}
             />
           </div>
@@ -156,58 +196,62 @@ export default function AdminUsers() {
                   </tr>
                 )}
 
-                {!loading && users.map((u) => (
-                  <tr
-                    key={u.id}
-                    className={`border-b ${tc.divider} transition-colors ${tc.cardHover}`}
-                  >
-                    <td className={`px-4 py-3 font-mono text-xs ${tc.sub}`}>#{u.id}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${tc.button}`}>
-                          {(u.username?.[0] || u.email?.[0] || "?").toUpperCase()}
+                {!loading && users.map((u) => {
+                  const isAdminAccount = u.role === "ADMIN";
+                  const confirming = confirmId === u.id;
+                  return (
+                    <tr
+                      key={u.id}
+                      className={`border-b ${tc.divider} transition-colors ${tc.cardHover}`}
+                    >
+                      <td className={`px-4 py-3 font-mono text-xs ${tc.sub}`}>#{u.id}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${tc.button}`}>
+                            {(u.username?.[0] || u.email?.[0] || "?").toUpperCase()}
+                          </span>
+                          <span className="font-medium truncate max-w-[120px]">
+                            {u.username || <span className={`italic ${tc.sub}`}>Not set</span>}
+                          </span>
+                        </div>
+                      </td>
+                      <td className={`px-4 py-3 hidden sm:table-cell truncate max-w-[200px] ${tc.sub}`}>
+                        {u.email}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-semibold ${tc.surface2} ${tc.sub} ${tc.divider}`}>
+                          {isAdminAccount && <Icon name="shield" size={14} />}
+                          {u.role}
                         </span>
-                        <span className="font-medium truncate max-w-[120px]">
-                          {u.username || <span className={`italic ${tc.sub}`}>Not set</span>}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${
+                          u.enabled ? tc.ok : tc.danger
+                        }`}>
+                          <span className="w-2 h-2 rounded-full bg-current" />
+                          {u.enabled ? "Active" : "Suspended"}
                         </span>
-                      </div>
-                    </td>
-                    <td className={`px-4 py-3 hidden sm:table-cell truncate max-w-[200px] ${tc.sub}`}>
-                      {u.email}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-semibold ${tc.surface2} ${tc.sub} ${tc.divider}`}>
-                        {u.role === "ADMIN" && <Icon name="shield" size={14} />}
-                        {u.role}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${
-                        u.enabled ? tc.ok : tc.danger
-                      }`}>
-                        <span className="w-2 h-2 rounded-full bg-current" />
-                        {u.enabled ? "Active" : "Suspended"}
-                      </span>
-                    </td>
-                    <td className={`px-4 py-3 hidden md:table-cell text-xs ${tc.sub}`}>
-                      {formatDate(u.createdAt)}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <Button
-                        variant={u.enabled ? "danger" : "secondary"}
-                        size="sm"
-                        icon={u.enabled ? "ban" : "check"}
-                        loading={actionLoading === u.id}
-                        onClick={() => handleToggleStatus(u.id, u.enabled)}
-                        disabled={u.role === "ADMIN"}
-                        title={u.role === "ADMIN" ? "Cannot modify admin accounts" : ""}
-                        tc={tc}
-                      >
-                        {u.enabled ? "Suspend" : "Enable"}
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className={`px-4 py-3 hidden md:table-cell text-xs ${tc.sub}`}>
+                        {formatDate(u.createdAt)}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <Button
+                          variant={u.enabled ? "danger" : "secondary"}
+                          size="sm"
+                          icon={u.enabled ? "ban" : "check"}
+                          loading={actionLoading === u.id}
+                          onClick={() => handleToggleStatus(u)}
+                          disabled={isAdminAccount}
+                          title={isAdminAccount ? "Admin accounts can't be suspended" : undefined}
+                          tc={tc}
+                        >
+                          {u.enabled ? (confirming ? "Tap again to suspend" : "Suspend") : "Enable"}
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -223,7 +267,7 @@ export default function AdminUsers() {
                   variant="ghost"
                   size="sm"
                   icon="chevronLeft"
-                  onClick={() => setPage(p => Math.max(0, p - 1))}
+                  onClick={() => setPage(Math.max(0, page - 1))}
                   disabled={page === 0}
                   tc={tc}
                 >
@@ -234,7 +278,7 @@ export default function AdminUsers() {
                   size="sm"
                   icon="chevronRight"
                   iconRight
-                  onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                  onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
                   disabled={page >= totalPages - 1}
                   tc={tc}
                 >

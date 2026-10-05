@@ -43,4 +43,16 @@ public interface LocationUpdateRepository extends JpaRepository<LocationUpdate, 
     @Transactional
     @Modifying
     void deleteByReceivedAtBefore(LocalDateTime cutoff);
+
+    // GPS breadcrumbs of rides that ended before a cutoff — one DELETE in
+    // the database (the old version counted and deleted ride by ride, for
+    // every ride that had ever ended, on every run).
+    @Transactional
+    @Modifying
+    @org.springframework.data.jpa.repository.Query(
+            "DELETE FROM LocationUpdate l WHERE l.rideId IN (" +
+            "SELECT r.id FROM Ride r WHERE r.status IN :statuses AND r.endedAt < :cutoff)")
+    int deleteForRidesEndedBefore(
+            @org.springframework.data.repository.query.Param("statuses") java.util.Collection<String> statuses,
+            @org.springframework.data.repository.query.Param("cutoff") LocalDateTime cutoff);
 } // End of interface
