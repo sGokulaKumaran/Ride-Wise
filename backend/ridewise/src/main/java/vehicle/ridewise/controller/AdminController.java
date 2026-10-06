@@ -4,7 +4,10 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import vehicle.ridewise.config.SessionAuthInterceptor;
+import vehicle.ridewise.dto.OrgDtos.AdminOrgPatch;
+import vehicle.ridewise.dto.OrgDtos.PageDto;
 import vehicle.ridewise.service.AdminService;
+import vehicle.ridewise.service.OrganizationService;
 
 import java.util.Map;
 
@@ -22,15 +25,19 @@ import java.util.Map;
  *   PATCH  /api/admin/users/{id}/status       → Enable/disable user
  *   GET    /api/admin/rides?status=&type=&page=&size= → Paginated ride list
  *   GET    /api/admin/rides/{id}              → Single ride detail
+ *   GET    /api/admin/organizations?search=&page=&size= → Paginated organization list
+ *   PATCH  /api/admin/organizations/{id}      → Verify / suspend / restore an organization
  */
 @RestController
 @RequestMapping("/api/admin")
 public class AdminController {
 
     private final AdminService adminService;
+    private final OrganizationService organizationService;
 
-    public AdminController(AdminService adminService) {
+    public AdminController(AdminService adminService, OrganizationService organizationService) {
         this.adminService = adminService;
+        this.organizationService = organizationService;
     }
 
     // ── Dashboard ────────────────────────────────────────────────────
@@ -98,5 +105,29 @@ public class AdminController {
             HttpServletRequest request) {
         SessionAuthInterceptor.requireAdminRole(request);
         return ResponseEntity.ok(adminService.getRideDetail(id));
+    }
+
+    // ── Organizations ────────────────────────────────────────────────
+
+    @GetMapping("/organizations")
+    public ResponseEntity<PageDto<Map<String, Object>>> getOrganizations(
+            @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            HttpServletRequest request) {
+        SessionAuthInterceptor.requireAdminRole(request);
+        return ResponseEntity.ok(organizationService.adminList(search, page, size));
+    }
+
+    // Body: { "verified": true|false } and/or { "status": "ACTIVE"|"SUSPENDED" }
+    @PatchMapping("/organizations/{id}")
+    public ResponseEntity<Void> updateOrganization(
+            @PathVariable Long id,
+            @RequestBody AdminOrgPatch body,
+            HttpServletRequest request) {
+        SessionAuthInterceptor.requireAdminRole(request);
+        Long adminUserId = SessionAuthInterceptor.requireUserId(request);
+        organizationService.adminPatch(id, adminUserId, body);
+        return ResponseEntity.noContent().build();
     }
 }

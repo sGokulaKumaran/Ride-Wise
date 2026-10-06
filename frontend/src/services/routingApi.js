@@ -325,6 +325,7 @@ export function stepIconName(step) {
   const legacy = String(step.icon || "");
 
   if (type === "rejoin") return "maneuverMerge";
+  if (type === "waypoint") return "pin";
   if (type === "arrive" || legacy.includes("flag")) return "maneuverArrive";
   if (type === "depart" || legacy.includes("location-dot")) return "maneuverDepart";
   if (type.includes("roundabout") || type.includes("rotary")) return "maneuverRoundabout";
@@ -424,14 +425,40 @@ async function fetchWithTimeout(url, { signal, ms, headers } = {}) {
 }
 
 // Convert one OSRM route into the RideWise shape.
-function toRoute(route) {
-  const rawSteps = route.legs?.flatMap((leg) => leg.steps || []) || [];
+//
+// A route through stops comes back as several LEGS, each ending in an
+// "arrive" and (after the first) starting with a "depart". Read out as
+// they are, a bus driver would be told "arrive at your destination" at
+// every stop. So inside the route, each arrival becomes "Stop: <name>"
+// and the departures after it are dropped.
+function toRoute(route, via = []) {
+  const legs = route.legs || [];
+  const steps = [];
+  legs.forEach((leg, legIndex) => {
+    const parsed = parseRouteSteps(leg.steps || []);
+    const lastLeg = legIndex === legs.length - 1;
+    parsed.forEach((step, stepIndex) => {
+      if (legIndex > 0 && stepIndex === 0 && step.maneuverType === "depart") return;
+      if (!lastLeg && stepIndex === parsed.length - 1 && step.maneuverType === "arrive") {
+        const name = via[legIndex]?.name;
+        steps.push({
+          ...step,
+          maneuverType: "waypoint",
+          instruction: name ? `Stop: ${name}` : `Stop ${legIndex + 1}`,
+          icon: "pin",
+        });
+        return;
+      }
+      steps.push(step);
+    });
+  });
+
   return {
     coordinates: route.geometry?.coordinates || [], // [[lng, lat], ...]
     distance: route.distance,                       // metres
     duration: route.duration,                       // seconds
-    steps: parseRouteSteps(rawSteps),
-    summary: route.legs?.map((leg) => leg.summary).filter(Boolean).join(", ") || "",
+    steps,
+    summary: legs.map((leg) => leg.summary).filter(Boolean).join(", ") || "",
   };
 }
 
@@ -450,19 +477,24 @@ let preferredEndpoint = 0;
 //   signal        AbortSignal to cancel the request
 //   priority      1 = the rider is waiting for it (default)
 //                 0 = background work that may wait its turn
+//   via           places the route must pass through, in order
+//                 ([{ lat, lng, name }]) — a bus route and its stops.
+//                 (No alternatives then: there is one way through them.)
 //
 // Resolves to an ARRAY of routes (best first).
 // Rejects with RoutingError ("no-route" | "unavailable") or AbortError.
 // ============================================================
-export function fetchRoutes(from, to, { alternatives = false, bearing = null, signal, priority = 1 } = {}) {
+export function fetchRoutes(from, to, { alternatives = false, bearing = null, signal, priority = 1, via = [] } = {}) {
   const valid = (p) => p && Number.isFinite(p.lat) && Number.isFinite(p.lng);
   if (!valid(from) || !valid(to)) {
     return Promise.reject(new RoutingError("A start and a destination are required.", "no-route"));
   }
+  const through = (Array.isArray(via) ? via : []).filter(valid);
 
-  const coords = `${from.lng},${from.lat};${to.lng},${to.lat}`;
-  const base = `overview=full&geometries=geojson&steps=true${alternatives ? "&alternatives=true" : ""}`;
-  const withBearing = Number.isFinite(bearing)
+  const coords = [from, ...through, to].map((p) => `${p.lng},${p.lat}`).join(";");
+  const base = `overview=full&geometries=geojson&steps=true${
+    alternatives && through.length === 0 ? "&alternatives=true" : ""}`;
+  const withBearing = Number.isFinite(bearing) && through.length === 0
     ? `${base}&bearings=${Math.round(((bearing % 360) + 360) % 360)},60;&radiuses=80;unlimited`
     : null;
 
@@ -486,7 +518,7 @@ export function fetchRoutes(from, to, { alternatives = false, bearing = null, si
 
         if (data?.code === "Ok" && data.routes?.length) {
           preferredEndpoint = index;
-          return data.routes.map(toRoute);
+          return data.routes.map((found) => toRoute(found, through));
         }
         // "NoRoute" / "NoSegment" is a real answer, not an outage. With a
         // heading it may only mean "no road going that way" → fall through

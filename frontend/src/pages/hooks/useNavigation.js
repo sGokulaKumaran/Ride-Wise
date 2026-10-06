@@ -6,6 +6,12 @@
 //   const { nav, pushFix } = useNavigation(ride);
 //   watchLocation((fix) => pushFix(fix), …);
 //
+//   useNavigation(trip, { rejoin: false, persist: false })
+//             the same engine for a vehicle somebody ELSE is driving
+//             (tracking a bus): its fixes give progress, distance left
+//             and ETA — but nobody needs a way back computed for it, and
+//             nothing about it belongs in this device's storage.
+//
 //   nav       one plain object with everything the map screen shows:
 //             status, next turn + distance, remaining distance/time, ETA,
 //             distance ridden, the rejoin line when off-route … (see
@@ -71,20 +77,28 @@ export function clearNavProgress(rideId) {
 }
 
 // Forget stored progress for rides that are no longer active.
+// (Vehicle trips keep theirs under "vs-<id>" and clean up on their own —
+// the list of personal rides knows nothing about them.)
+const VEHICLE_TRIP_PREFIX = `${STORE_PREFIX}vs-`;
 export function pruneNavProgress(activeRideIds) {
   try {
     const keep = new Set((activeRideIds || []).map((id) => STORE_PREFIX + id));
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const key = localStorage.key(i);
-      if (key && key.startsWith(STORE_PREFIX) && !keep.has(key)) localStorage.removeItem(key);
+      if (!key || !key.startsWith(STORE_PREFIX) || key.startsWith(VEHICLE_TRIP_PREFIX)) continue;
+      if (!keep.has(key)) localStorage.removeItem(key);
     }
   } catch {
     // storage unavailable
   }
 }
 
-export function useNavigation(ride) {
+// options.rejoin   (default true)  work out the way back when off the route
+// options.persist  (default true)  remember progress on this device
+export function useNavigation(ride, options) {
   const rideId = ride?.id ?? null;
+  const wantRejoin = options?.rejoin !== false;
+  const wantPersist = options?.persist !== false;
 
   // The indexed route — rebuilt only when the ride's geometry changes
   // (for example when the full route arrives after a lightweight list row).
@@ -95,16 +109,18 @@ export function useNavigation(ride) {
 
   // What the screen shows before the first GPS fix.
   const idle = useMemo(
-    () => describeNav(route, createNavState(loadNavProgress(rideId)), null, ride),
-    [route, rideId, ride],
+    () => describeNav(route, createNavState(wantPersist ? loadNavProgress(rideId) : null), null, ride),
+    [route, rideId, ride, wantPersist],
   );
 
   // Latest props for the GPS callback, which must keep a stable identity.
   const routeRef = useRef(route);
   const rideRef = useRef(ride);
+  const modeRef = useRef({ rejoin: wantRejoin, persist: wantPersist });
   useEffect(() => {
     routeRef.current = route;
     rideRef.current = ride;
+    modeRef.current = { rejoin: wantRejoin, persist: wantPersist };
   });
 
   const stateRef = useRef(null);      // tracker state
@@ -209,7 +225,7 @@ export function useNavigation(ride) {
     if (!stateRef.current || !tracked || tracked.route !== current || tracked.rideId !== currentRideId) {
       const sameRide = tracked && tracked.rideId === currentRideId;
       const previous = sameRide ? stateRef.current : null;
-      const fresh = createNavState(loadNavProgress(currentRideId));
+      const fresh = createNavState(modeRef.current.persist ? loadNavProgress(currentRideId) : null);
       if (previous) {
         // Same ride, new geometry: keep what was measured so far.
         fresh.traveled = Math.max(fresh.traveled, previous.traveled);
@@ -228,7 +244,7 @@ export function useNavigation(ride) {
     stateRef.current = state;
 
     const now = Date.now();
-    if (current) {
+    if (current && modeRef.current.rejoin) {
       if (!state.offRoute) {
         // Back on the route (or never left): no rejoin leg needed.
         if (rejoinRef.current || planRef.current.controller) {
@@ -255,7 +271,7 @@ export function useNavigation(ride) {
       }
     }
 
-    if (now - savedAtRef.current >= SAVE_EVERY_MS) {
+    if (modeRef.current.persist && now - savedAtRef.current >= SAVE_EVERY_MS) {
       savedAtRef.current = now;
       saveNavProgress(currentRideId, state);
     }
@@ -279,7 +295,9 @@ export function useNavigation(ride) {
   // Leaving the map: stop any request in flight and remember where we were.
   const persist = useCallback(() => {
     const tracked = trackedRef.current;
-    if (tracked && stateRef.current) saveNavProgress(tracked.rideId, stateRef.current);
+    if (modeRef.current.persist && tracked && stateRef.current) {
+      saveNavProgress(tracked.rideId, stateRef.current);
+    }
   }, []);
 
   useEffect(() => {

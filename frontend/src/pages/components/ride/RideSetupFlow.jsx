@@ -16,6 +16,15 @@
 //   onRideCreated   (ride) → the ride was created
 //   onCancel        leave the flow
 //   tc              theme classes
+//
+// THE SAME THREE STEPS, FOR SOMETHING ELSE
+//   A driver choosing where a vehicle trip goes plans a route exactly the
+//   same way. Pass `onRoutePlanned` and the last step hands the planned
+//   route over instead of creating a ride:
+//     onRoutePlanned  async ({ from, destination, route, routeCoordinates,
+//                     routeSteps }) — may throw; the message is shown here
+//     submitLabel / submitBusyLabel / submitIcon   the last button
+//     vehicleLabel    what the third number says instead of "Solo"
 // ============================================================
 
 import { useMemo, useState } from "react";
@@ -57,7 +66,18 @@ const POPULAR_PLACES = [
 const STEP = { FROM: 1, DESTINATION: 2, PREVIEW: 3 };
 const STEP_LABELS = ["From", "To", "Review"];
 
-export default function RideSetupFlow({ rideType, participantIds = [], onRideCreated, onCancel, tc }) {
+export default function RideSetupFlow({
+  rideType,
+  participantIds = [],
+  onRideCreated,
+  onCancel,
+  tc,
+  onRoutePlanned = null,
+  submitLabel = "Start ride",
+  submitBusyLabel = "Starting…",
+  submitIcon = "ride",
+  vehicleLabel = null,
+}) {
   const [step, setStep] = useState(STEP.FROM);
 
   // FROM
@@ -181,6 +201,12 @@ export default function RideSetupFlow({ rideType, participantIds = [], onRideCre
       const routeCoordinates = JSON.stringify(route.coordinates);
       const routeSteps = JSON.stringify(route.steps || []);
 
+      // Planning for something other than a ride: hand the route over.
+      if (onRoutePlanned) {
+        await onRoutePlanned({ from: fromCoords, destination: destCoords, route, routeCoordinates, routeSteps });
+        return;
+      }
+
       const saved = await createRide({
         fromName: fromCoords.name,
         fromLat: fromCoords.lat,
@@ -203,7 +229,7 @@ export default function RideSetupFlow({ rideType, participantIds = [], onRideCre
         routeSteps: saved.routeSteps || routeSteps,
       });
     } catch (err) {
-      setError(err.message || "Couldn't start the ride. Please try again.");
+      setError(err.message || (onRoutePlanned ? "That didn't work. Please try again." : "Couldn't start the ride. Please try again."));
     } finally {
       setLoading(false);
     }
@@ -410,9 +436,11 @@ export default function RideSetupFlow({ rideType, participantIds = [], onRideCre
             {[
               { icon: "road",   label: "Distance",  value: formatDistance(route.distance) },
               { icon: "clock",  label: "Ride time", value: formatDuration(route.duration) },
-              { icon: rideType === "group" ? "riders" : "ride",
-                label: rideType === "group" ? "Riders" : "Ride",
-                value: rideType === "group" ? String(participantIds.length + 1) : "Solo" },
+              vehicleLabel
+                ? { icon: "bus", label: "Vehicle", value: vehicleLabel }
+                : { icon: rideType === "group" ? "riders" : "ride",
+                    label: rideType === "group" ? "Riders" : "Ride",
+                    value: rideType === "group" ? String(participantIds.length + 1) : "Solo" },
             ].map((stat) => (
               <div key={stat.label} className={`rounded-lg border px-2 py-2.5 text-center ${tc.record}`}>
                 <Icon name={stat.icon} size={15} className={`mx-auto ${tc.sub}`} />
@@ -471,8 +499,8 @@ export default function RideSetupFlow({ rideType, participantIds = [], onRideCre
             <Button variant="ghost" size="lg" tc={tc} onClick={() => { setStep(STEP.DESTINATION); setError(""); }} disabled={loading}>
               Back
             </Button>
-            <Button variant="accent" size="lg" full tc={tc} icon="ride" loading={loading} onClick={handleStartRide}>
-              {loading ? "Starting…" : "Start ride"}
+            <Button variant="accent" size="lg" full tc={tc} icon={submitIcon} loading={loading} onClick={handleStartRide}>
+              {loading ? submitBusyLabel : submitLabel}
             </Button>
           </div>
         </div>

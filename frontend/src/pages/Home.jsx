@@ -4,6 +4,8 @@
 // TOP TO BOTTOM
 //   1. Greeting + the one main action: "Start a ride"
 //   2. Continue riding — rides that are still active (one tap back to the map)
+//   2b. Organizations — the trip I am driving, invitations, my organizations
+//       with the vehicles they have on the road (HomeOrganizations)
 //   3. Your numbers — rides, distance ridden, completed, this month
 //   4. Recent rides — the last three, with a link to the full history
 //   5. A first-ride guide for new riders, and a daily tip
@@ -38,6 +40,7 @@ import Icon from "./components/ui/Icon";
 import Button from "./components/ui/Button";
 import ActiveRideOverlay from "./components/ride/ActiveRideOverlay";
 import RideHistoryPanel from "./components/ride/RideHistoryPanel";
+import HomeOrganizations from "./components/org/HomeOrganizations";
 import { getUserRides, endRide, deleteRide, getRide } from "../services/rideApi";
 import {
   formatDistance,
@@ -305,6 +308,9 @@ function HomeScreen({ user }) {
               </div>
             </section>
           )}
+
+          {/* ── Organizations: follow · drive · manage ─────── */}
+          <HomeOrganizations tc={tc} userId={userId} />
 
           {/* ── Your numbers ───────────────────────────────── */}
           <section aria-label="Your riding numbers" className="grid grid-cols-2 gap-3 sm:grid-cols-4">

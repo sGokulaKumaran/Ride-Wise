@@ -51,6 +51,16 @@ export default function Onboarding() {
   const { user, isAuthenticated, isFullyOnboarded, loading: authLoading, updateProfile } = useAuth();
   const { tc } = useTheme(user?.id);
 
+  // Signed up "for an organization" (chosen on the sign-up form)? Then the
+  // last step leads to creating it instead of the dashboard. Read once.
+  const [nextPath] = useState(() => {
+    try {
+      return sessionStorage.getItem("ridewise-signup-intent") === "organization" ? "/create-organization" : "/home";
+    } catch {
+      return "/home";
+    }
+  });
+
   const [step, setStep] = useState(1);
   const [username, setUsername] = useState("");
   const [mobile, setMobile] = useState("");
@@ -70,7 +80,7 @@ export default function Onboarding() {
     );
   }
   if (!isAuthenticated) return <Navigate to="/" replace />;
-  if (isFullyOnboarded) return <Navigate to="/home" replace />;
+  if (isFullyOnboarded) return <Navigate to={nextPath} replace />;
 
   const current = STEPS[step - 1];
   const usernameValid = USERNAME.test(username);
@@ -85,7 +95,7 @@ export default function Onboarding() {
         ...(values.address ? { address: values.address } : {}),
         ...(coords ? { lat: coords.lat, lng: coords.lng } : {}),
       });
-      navigate("/home", { replace: true });
+      navigate(nextPath, { replace: true });
     } catch (err) {
       setError(err.message || "Something went wrong. Please try again.");
       setSaving(false);

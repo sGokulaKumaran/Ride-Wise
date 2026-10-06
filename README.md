@@ -130,6 +130,54 @@ Think of it as a **universal ride management system**: instead of building separ
 - Riders who leave the route are marked **Off route** and get their own way-back line on everyone's map
 - Everyone is told at once when a rider joins or leaves, and when the admin ends the ride
 
+### 🏢 Organizations & Live Fleet Tracking
+One account does everything: ride for yourself, **follow** an organization's vehicles, **drive** for one,
+**run** one. What you may do is decided per organization, never by an "account type".
+
+**For people waiting for a vehicle**
+- **Find** public organizations by name; **open a private one** with its code *and* access password
+  (a wrong code and a wrong password give the same answer, and guessing is slowed down)
+- Every vehicle with what it is doing right now — live, signal lost, not on a trip — on a list and a map
+- **Track one vehicle**: its position gliding along the route, **time and distance left, arrival time**,
+  each stop with when the vehicle reaches it, how full it is, the driver's name
+- **"Tell me when it's near"** — pick a stop (or where you stand) and a distance; the server notifies you
+  once per trip, even with the app closed
+- The screen keeps following the *vehicle*: when its next trip starts, it goes live again by itself
+- **Announcements** from the organization (delays, route changes) as notifications
+
+**For drivers**
+- Start a trip in three taps: vehicle → saved route (or any destination) → start
+- **One vehicle, one driver, one trip** — a vehicle that is out shows who has it; the database itself
+  refuses a second trip even when two drivers tap *Start* in the same instant
+- The full navigation screen (turn-by-turn, voice, the purple way back) plus **seats** (free / filling up /
+  full), an **SOS** button that alerts the admins, and a warning when over the organization's speed limit
+- The trip is tracked **app-wide**: the position keeps flowing whatever page is open, with a floating
+  "you are driving BUS-01" pill; only *End trip* stops it
+
+**For the organization's admins** (`/org-admin/:orgId`)
+- **Overview** — on a trip now, trips and distance today, emergencies first, an activity log
+- **Live map** — the whole fleet, the selected vehicle's route, call the driver, end a forgotten trip
+- **Vehicles** — add, edit, Active / Servicing / Repair, retire (history is kept)
+- **Routes** — saved routes **with stops**, planned as a road *through* the stops in order
+- **People** — invite by username or email (they must accept), roles Owner / Admin / Driver / Viewer,
+  suspend, remove, hand the ownership over; for private organizations, who holds access
+- **Trips** — history with filters, **replay** of the path really driven, CSV export
+- **Announce**, **Statistics** (per day / driver / vehicle, speeding counted by the server), **Settings**
+  (public ⇄ private, access password, speed limit, show drivers' numbers, delete)
+
+**For RideWise's own admins** — every organization: **verify** it (green tick, listed first) or
+**suspend** it (trips end, tracking stops at once).
+
+**What keeps it honest**
+- Distance, top speed and speeding are **measured by the server** from the positions — never taken from
+  what a phone claims
+- No position for 45 seconds → the vehicle is shown as *signal lost* where it was last seen, and no
+  arrival time is invented
+- A trip nobody ended is ended automatically once its driver's phone has been silent for 30 minutes
+  (`ridewise.fleet.session-timeout-minutes`), and the vehicle is free again
+- A driver's phone number is visible to the organization's admins only, unless the organization
+  switches "show driver phone" on
+
 ---
 
 ## 🛠️ Tech Stack
@@ -200,7 +248,7 @@ RideWise/
 │       │   ├── config/
 │       │   │   ├── SecurityConfig.java  # BCrypt + Spring Security
 │       │   │   ├── WebConfig.java       # CORS + session check for /api/**
-│       │   │   ├── WebSocketConfig.java # /ws/rides
+│       │   │   ├── WebSocketConfig.java # /ws/rides + /ws/fleet
 │       │   │   ├── AllowedOrigins.java  # The one list of allowed websites (REST + socket)
 │       │   │   ├── JacksonConfig.java   # Timestamps as UTC ("…Z")
 │       │   │   ├── UserStatusCache.java # Suspended accounts lose access at once
@@ -212,18 +260,26 @@ RideWise/
 │       │   │   ├── RideController.java         # /api/rides/*
 │       │   │   ├── RidersController.java       # /api/riders/*
 │       │   │   ├── AdminController.java        # /api/admin/*
-│       │   │   └── NotificationController.java # /api/notifications/*
+│       │   │   ├── NotificationController.java # /api/notifications/*
+│       │   │   ├── OrganizationController.java # /api/organizations/* (orgs, people, fleet, insight)
+│       │   │   └── VehicleSessionController.java # /api/vehicle-sessions/* + /api/vehicle-alerts
 │       │   ├── entity/                  # JPA entities → DB tables
 │       │   │   ├── User.java
 │       │   │   ├── Ride.java
 │       │   │   ├── Connection.java
 │       │   │   ├── LocationUpdate.java
 │       │   │   ├── RideParticipant.java
-│       │   │   └── Notification.java
-│       │   ├── dto/                     # Request/Response objects
+│       │   │   ├── Notification.java
+│       │   │   ├── Organization.java · OrgMember.java · OrgAccess.java
+│       │   │   ├── Vehicle.java · OrgRoute.java
+│       │   │   ├── VehicleSession.java · VehicleSessionRoute.java · VehicleSessionPoint.java
+│       │   │   └── VehicleAlert.java · OrgAnnouncement.java · OrgAuditLog.java
+│       │   ├── dto/                     # Request/Response objects (OrgDtos.java = the fleet API contract)
 │       │   ├── repository/              # Spring Data JPA repos
 │       │   ├── service/                 # Business logic (+ login throttling, stale-ride sweeper)
-│       │   ├── websocket/               # Live group-ride socket
+│       │   │                            #   OrgGuard = every "may this person do that here?" rule, once
+│       │   │                            #   VehicleSessionService = trips: the lock, positions, SOS, ending
+│       │   ├── websocket/               # Live sockets: group rides, and the fleet (FleetBroadcaster)
 │       │   └── exception/               # Custom exceptions
 │       └── resources/
 │           └── application.properties   # DB, port, session config
@@ -238,7 +294,9 @@ RideWise/
 │       ├── App.jsx                      # Router + routes
 │       ├── index.css                    # Global + theme styles
 │       ├── context/
-│       │   └── AuthContext.jsx          # Global auth state
+│       │   ├── AuthContext.jsx          # Global auth state
+│       │   ├── OrgContext.jsx           # Which organizations am I part of? (drives the navigation)
+│       │   └── DriverTripContext.jsx    # The vehicle trip I am driving — tracked app-wide
 │       ├── services/
 │       │   ├── http.js                  # One fetch wrapper: errors, offline, expired session
 │       │   ├── navigation.js            # Navigation engine (pure, unit-tested)
@@ -248,7 +306,9 @@ RideWise/
 │       │   ├── rideSocket.js            # Live group-ride socket client
 │       │   ├── ridersApi.js             # Connections API
 │       │   ├── adminApi.js              # Admin endpoints
-│       │   └── notificationApi.js       # Notifications
+│       │   ├── notificationApi.js       # Notifications
+│       │   ├── orgApi.js                # Organizations, fleets, vehicle trips
+│       │   └── fleetSocket.js           # Live fleet socket client (watch + drive)
 │       └── pages/
 │           ├── Home.jsx                 # Main dashboard
 │           ├── Riders.jsx               # Community & connections
@@ -256,14 +316,18 @@ RideWise/
 │           ├── Settings.jsx             # Theme, voice, preferences
 │           ├── Onboarding.jsx           # Post-signup setup
 │           ├── landing-page/Login.jsx   # Login + Signup
-│           ├── admin/                   # Admin dashboard, users, rides
+│           ├── admin/                   # Admin dashboard, users, rides, organizations
+│           ├── org/                     # Organizations hub, organization page, TrackVehicle,
+│           │   │                        #   Driver, DriverSession, CreateOrganization, OrgAdmin
+│           │   └── admin/               # The nine tabs of /org-admin/:orgId
 │           ├── hooks/                   # useTheme, useNavigation, useRideAssist (voice, wake lock)…
 │           └── components/
 │               ├── layout/              # Sidebar, TopBar, MobileNav
 │               ├── ride/               # RideMap, ActiveRideOverlay, ManeuverBanner, RideStatsSheet…
+│               ├── org/                 # FleetMapView, TripReplay, TripPill, kit (forms, dialogs), rows
 │               ├── shared/              # Modals, protected routes, voice
 │               └── ui/                  # Button, Icon, styles
-│   └── tests/                           # node --test (navigation engine, place search)
+│   └── tests/                           # node --test (navigation engine, place search, fleet logic)
 │
 └── README.md                            # ← You are here
 ```
@@ -330,13 +394,18 @@ cd backend/ridewise
 mvnw.cmd test                 # Windows   (./mvnw test on Linux / macOS)
 
 cd frontend
-npm test                      # navigation engine + place search
+npm test                      # navigation engine + place search + fleet logic
 npm run lint
 ```
 
 The backend tests run on a throw-away **in-memory H2 database**
 (`src/test/resources/application.properties`) — they never connect to your
 PostgreSQL database, so they cannot change or delete real data.
+
+`OrgFleetTests` covers the organization platform end to end over the real REST API and the
+`/ws/fleet` socket: who may see a private organization, roles and invitations, the
+one-trip-per-vehicle-and-driver lock, server-measured distance and speeding, every way a trip
+ends, alerts, announcements, suspension, and that live events reach only people allowed to see them.
 
 The same file gives you a zero-setup backend when you just want to try the app
 without PostgreSQL (empty database, gone when it stops):
@@ -473,6 +542,61 @@ without coordinates or phone number, and with a masked email unless you are conn
 | `PATCH` | `/api/admin/users/{id}/status` | Enable/disable user |
 | `GET` | `/api/admin/rides` | Paginated ride list |
 | `GET` | `/api/admin/rides/{id}` | Ride detail with participants |
+| `GET` | `/api/admin/organizations` | Every organization (search, pages) |
+| `PATCH` | `/api/admin/organizations/{id}` | Verify · suspend · restore |
+
+### Organizations — `/api/organizations`
+
+Who may do what is decided per organization (`OrgGuard`): **view** (anyone for a public one; members and
+people who entered code + password for a private one) · **drive** (active members except viewers) ·
+**manage** (owner, admins) · **own** (the owner).
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/me` | My organizations at a glance: managed, driving, invitations, active trip |
+| `GET` | `/search?q=` | Public organizations by name |
+| `POST` | `/access` | Open a private organization `{ orgCode, password }` |
+| `GET` | `/saved` · `PUT`/`DELETE` `/{id}/saved` | My list |
+| `POST` | `/` · `GET`/`PATCH`/`DELETE` `/{id}` | Create · read · edit · delete (owner) |
+| `PUT` | `/{id}/access-password` | New access password (optionally revoking everyone's access) |
+| `GET` | `/{id}/access` · `DELETE` `/{id}/access/{userId}` | Who holds access · revoke |
+| `GET`/`POST` | `/{id}/members` | List · invite `{ identifier, role }` |
+| `PATCH`/`DELETE` | `/{id}/members/{memberId}` | Role, suspend/reactivate · remove |
+| `POST` | `/invitations/{memberId}/accept` · `/reject` | Answer an invitation |
+| `POST` | `/{id}/leave` · `/{id}/transfer` | Leave · hand the ownership over |
+| `GET`/`POST` | `/{id}/vehicles` | The fleet with running trips · add a vehicle |
+| `GET`/`PATCH`/`DELETE` | `/{id}/vehicles/{vehicleId}` | Tracking detail · edit · remove (retires when it has history) |
+| `PUT` | `/{id}/vehicles/{vehicleId}/status` | `ACTIVE` · `IN_SERVICE` · `REPAIR` · `RETIRED` |
+| `GET`/`POST`/`PATCH`/`DELETE` | `/{id}/routes[/{routeId}]` | Saved routes with stops |
+| `GET` | `/{id}/trips` | Trip history (filters, pages) |
+| `GET`/`POST`/`DELETE` | `/{id}/announcements[/{id}]` | Announcements |
+| `GET` | `/{id}/dashboard` · `/analytics?days=` · `/activity` | The admins' overview (`tz` = browser offset in minutes) |
+
+### Vehicle trips — `/api/vehicle-sessions`
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/` | Start a trip `{ orgId, vehicleId, routeId }` or with a custom destination |
+| `GET` | `/active` · `/mine` | The trip I am driving (204 when none) · my history |
+| `POST` | `/{id}/position` | One GPS fix (HTTP twin of the socket message) |
+| `PUT` | `/{id}/sos` · `/{id}/crowd` | Emergency on/off · seats |
+| `POST` | `/{id}/stop` · `/{id}/end` | Driver ends · admin ends |
+| `GET` | `/{id}/track` | The trip with the path it really took |
+| `PUT`/`DELETE` | `/api/vehicle-alerts[/{vehicleId}]` | "Tell me when it's near" |
+
+### Live fleet socket — `/ws/fleet`
+
+```
+client → { "type": "watch-vehicle", "vehicleId": 12 }      follow one vehicle
+client → { "type": "watch-org", "orgId": 3 }               follow a whole fleet
+client → { "type": "position", "sessionId": 40, "lat": …, "lng": …, "accuracy": …, "speed": …, "heading": … }
+client → { "type": "alive", "sessionId": 40 }              driver's screen open, no GPS signal
+server → position · session-started · session-ended · sos · crowd · vehicle-changed · announcement
+server → access-changed                                    you may no longer watch this
+```
+
+People watch a **vehicle** or an **organization**, never a trip — so a watcher is still there when the
+vehicle's next trip starts. Every watch is checked like the REST API.
 
 ### Notifications — `/api/notifications`
 
@@ -522,6 +646,21 @@ without coordinates or phone number, and with a masked email unless you are conn
 > per tick), which is what makes live tracking cheap. The per-tick ride history
 > is a different table (`location_updates`).
 
+> **Organizations and fleets** (created automatically on the next backend start)
+>
+> | Table | What it holds |
+> |---|---|
+> | `organizations` | name, kind, `org_code` (unique, `RW-XXXXXX`), visibility, access-password **hash**, speed limit, verified, status |
+> | `org_members` | one row per person per organization: role `OWNER` / `ADMIN` / `DRIVER` / `VIEWER`, status `PENDING` / `ACTIVE` / `SUSPENDED` / `REMOVED` |
+> | `org_access` | "on my list": a saved public organization, or a private one opened with its password |
+> | `vehicles` | code (unique per organization), kind, registration, seats, status, last known position |
+> | `org_routes` | saved routes: geometry, turn-by-turn steps, stops |
+> | `vehicle_sessions` | trips: vehicle, driver, route, latest position, measured distance / top speed / speeding, SOS, seats. `active_vehicle_key` and `active_driver_key` are **unique** and set only while the trip runs — that is the lock |
+> | `vehicle_session_routes` | the planned road of a trip (its own copy; kept 7 days after it ends) |
+> | `vehicle_session_points` | the path really driven, thinned out (replay; kept 90 days) |
+> | `vehicle_alerts` | "tell me when it's near": one place and distance per person per vehicle |
+> | `org_announcements` · `org_audit_logs` | announcements · the activity log |
+
 ---
 
 ## 🧠 Key Design Decisions
@@ -542,12 +681,24 @@ without coordinates or phone number, and with a masked email unless you are conn
 | **Raw WebSocket (no STOMP)** | One `/ws/rides` endpoint, no extra client dependency; the handshake reuses the existing session cookie, so there is a single auth mechanism |
 | **Same-origin socket** | The browser connects to its own origin and a Cloudflare Pages function forwards the upgrade to the backend — a first-party cookie is always sent, unlike a cross-site socket |
 | **No Lombok** | Removed for Java 21+ compatibility — all getters/setters are hand-written |
+| **Roles per organization, not per account** | The same person can own one organization, drive for another and simply ride. There is no "organization account" to get stuck in |
+| **The vehicle lock lives in the database** | Two unique columns make a second running trip for a vehicle (or a driver) impossible, even when two requests arrive in the same instant. The check in code only produces the friendly message |
+| **Watch the vehicle, not the trip** | A trip ends and the next begins; somebody following "Bus 01" must simply see it go live again |
+| **Positions: broadcast from memory, store every 5 s** | Ten people or ten thousand following a bus cost the database the same. Statistics are added up inside the database, never row by row |
+| **The server measures** | Distance, top speed and speeding come from the accepted fixes — a modified app cannot report a nicer trip |
+| **ETA is computed where it is shown** | The browser runs the vehicle's fixes through the same navigation engine as a rider's own position, so following a bus needs no routing request per watcher |
+| **Private means private** | No lookup by code, one generic error, attempts rate-limited, access revocable, and a live map that loses access is cut off at once |
 
 ---
 
 ## 🔮 Future Vision — The Big Idea
 
 RideWise is not just a personal ride tracker. The vision is to make it a **universal, multi-tenant GPS tracking platform** that any organisation can adopt — without needing to build a separate system.
+
+> **Where this stands:** the organization platform described below is **built** — organizations,
+> roles, vehicles, routes with stops, driver trips, live tracking with arrival times, alerts,
+> announcements, statistics (see [Organizations & Live Fleet Tracking](#-organizations--live-fleet-tracking)).
+> The table at the end lists what is still ahead.
 
 ### 🎓 College Transport
 
@@ -586,17 +737,21 @@ Each organisation gets:
 
 ### 📋 Planned Features
 
-| Feature | Description |
+| Feature | Status |
 |---|---|
-| **Multi-tenant workspaces** | Each organisation gets an isolated workspace |
-| **Custom roles & permissions** | Admin, Driver, Member, Viewer — configurable per workspace |
-| **Live multi-user map** | See all active members on one map in real time |
-| **Driver assignment** | Assign drivers to rides with vehicle details |
-| **Geofencing & alerts** | Notifications when a vehicle enters/leaves a zone |
-| **Route optimisation** | Suggest optimal routes for multi-stop rides |
-| **Mobile app (PWA → Native)** | Installable today (web-app manifest); offline app shell next, then React Native |
-| **Analytics dashboard** | Distance covered, active hours, ride patterns per org |
-| **Export & reports** | CSV / PDF reports for ride history and GPS logs |
+| **Multi-tenant workspaces** | ✅ Built — organizations, public or private |
+| **Roles & permissions** | ✅ Built — Owner, Admin, Driver, Viewer, per organization |
+| **Live fleet map** | ✅ Built — every vehicle on one map, live |
+| **Driver trips with vehicle locking** | ✅ Built |
+| **"Near me" alerts** | ✅ Built — a place and a distance per vehicle. Free-form zones (enter / leave a drawn area) are next |
+| **Analytics dashboard** | ✅ Built — per day, driver and vehicle; speeding counted by the server |
+| **Export** | ✅ CSV of trips. PDF reports are next |
+| **Driver schedules** | Planned — timetables per route, "expected at 7:40" |
+| **Push notifications** | Planned — today notifications appear in the app; web push would reach a closed browser |
+| **Organization logo** | Planned — needs file storage; an initials tile is used today |
+| **Route optimisation** | Planned — suggest the best order of stops |
+| **Several backend servers** | Planned — live state is held in one server's memory; more than one instance needs a shared message bus |
+| **Mobile app (PWA → Native)** | Installable today (web-app manifest); a native app is the way to keep GPS running with the screen off |
 
 ---
 

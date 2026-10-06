@@ -30,6 +30,10 @@ public class AdminService {
     private final RideParticipantRepository rideParticipantRepository;
     private final ConnectionRepository connectionRepository;
     private final UserLocationRepository userLocationRepository;
+    private final OrganizationRepository organizationRepository;
+    private final VehicleRepository vehicleRepository;
+    private final VehicleSessionRepository vehicleSessionRepository;
+    private final VehicleSessionService vehicleSessionService;
     private final UserStatusCache userStatusCache;
 
     public AdminService(UserRepository userRepository,
@@ -37,12 +41,20 @@ public class AdminService {
                         RideParticipantRepository rideParticipantRepository,
                         ConnectionRepository connectionRepository,
                         UserLocationRepository userLocationRepository,
+                        OrganizationRepository organizationRepository,
+                        VehicleRepository vehicleRepository,
+                        VehicleSessionRepository vehicleSessionRepository,
+                        VehicleSessionService vehicleSessionService,
                         UserStatusCache userStatusCache) {
         this.userRepository = userRepository;
         this.rideRepository = rideRepository;
         this.rideParticipantRepository = rideParticipantRepository;
         this.connectionRepository = connectionRepository;
         this.userLocationRepository = userLocationRepository;
+        this.organizationRepository = organizationRepository;
+        this.vehicleRepository = vehicleRepository;
+        this.vehicleSessionRepository = vehicleSessionRepository;
+        this.vehicleSessionService = vehicleSessionService;
         this.userStatusCache = userStatusCache;
     }
 
@@ -56,6 +68,11 @@ public class AdminService {
         stats.put("completedRides", rideRepository.countByStatus("completed"));
         stats.put("totalSoloRides", rideRepository.countByRideType("solo"));
         stats.put("totalGroupRides", rideRepository.countByRideType("group"));
+        // Organizations and their fleets
+        stats.put("totalOrganizations", organizationRepository.count() - organizationRepository.countByStatus("DELETED"));
+        stats.put("suspendedOrganizations", organizationRepository.countByStatus("SUSPENDED"));
+        stats.put("totalVehicles", vehicleRepository.count());
+        stats.put("activeVehicleTrips", vehicleSessionRepository.countByStatus("ACTIVE"));
         return stats;
     }
 
@@ -125,7 +142,12 @@ public class AdminService {
         user.setEnabled(enabled);
         userRepository.save(user);
         userStatusCache.evict(userId);
-        if (!enabled) userLocationRepository.deleteByUserId(userId);
+        if (!enabled) {
+            userLocationRepository.deleteByUserId(userId);
+            // A suspended driver cannot end their own trip any more: end it
+            // here, so the vehicle is free for someone else straight away.
+            vehicleSessionService.endForUser(userId, adminUserId);
+        }
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("id", user.getId());

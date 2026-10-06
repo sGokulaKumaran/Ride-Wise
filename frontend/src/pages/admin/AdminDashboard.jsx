@@ -8,6 +8,7 @@
 //   - Completed Rides
 //   - Solo Rides
 //   - Group Rides
+//   - Organizations · Vehicles · Vehicles on a Trip
 // ============================================================
 import { useState, useEffect } from "react";
 import { getDashboardStats } from "../../services/adminApi";
@@ -48,6 +49,12 @@ export default function AdminDashboard() {
     { label: "Completed Rides", value: stats.completedRides,  icon: "chart" },
     { label: "Solo Rides",      value: stats.totalSoloRides,  icon: "user" },
     { label: "Group Rides",     value: stats.totalGroupRides, icon: "riders" },
+    // Organizations and their fleets (absent on a backend that predates them)
+    ...(stats.totalOrganizations != null ? [
+      { label: "Organizations",       value: stats.totalOrganizations,  icon: "building" },
+      { label: "Vehicles",            value: stats.totalVehicles,       icon: "bus" },
+      { label: "Vehicles on a Trip",  value: stats.activeVehicleTrips,  icon: "signal" },
+    ] : []),
   ] : [];
 
   return (

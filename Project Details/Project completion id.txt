@@ -1,1 +1,0 @@
-1. Project is successfully create the login, signup, simple homepage with rider section to see the connections, add, remove, and find other riders mainly the start rider CTA is created but implementation is not start

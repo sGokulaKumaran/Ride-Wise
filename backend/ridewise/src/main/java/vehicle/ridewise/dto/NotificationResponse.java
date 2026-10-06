@@ -10,6 +10,7 @@ public class NotificationResponse {
     private String title;
     private String message;
     private Long rideId;
+    private String link; // in-app path to open, for notifications that are not about a ride
     private Boolean isRead;
     private LocalDateTime createdAt;
 
@@ -20,6 +21,7 @@ public class NotificationResponse {
         res.setTitle(notification.getTitle());
         res.setMessage(notification.getMessage());
         res.setRideId(notification.getRideId());
+        res.setLink(notification.getLink());
         res.setIsRead(notification.getIsRead());
         res.setCreatedAt(notification.getCreatedAt());
         return res;
@@ -63,6 +65,14 @@ public class NotificationResponse {
 
     public void setRideId(Long rideId) {
         this.rideId = rideId;
+    }
+
+    public String getLink() {
+        return link;
+    }
+
+    public void setLink(String link) {
+        this.link = link;
     }
 
     public Boolean getIsRead() {

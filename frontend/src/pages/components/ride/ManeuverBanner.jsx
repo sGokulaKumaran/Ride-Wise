@@ -17,13 +17,15 @@
 //   tc           theme classes
 //   onMinimize   shrink the map to a floating pill
 //   onClose      close the map (the ride stays active)
+//   verb         "Ride" (default) or "Drive" — for a route without
+//                turn-by-turn steps the card says "<verb> to <destination>"
 // ============================================================
 
 import Icon from "../ui/Icon";
 import { IconButton } from "../ui/Button";
 import { formatManeuverDistance, stepIconName } from "../../../services/routingApi";
 
-export default function ManeuverBanner({ nav, destination, tc, onMinimize, onClose }) {
+export default function ManeuverBanner({ nav, destination, tc, onMinimize, onClose, verb = "Ride" }) {
   const step = nav.step;
   const offRoute = nav.status === "off-route";
 
@@ -49,7 +51,7 @@ export default function ManeuverBanner({ nav, destination, tc, onMinimize, onClo
   } else {
     // A ride without stored turn-by-turn steps
     icon = "navigate";
-    instruction = `Ride to ${destination}`;
+    instruction = `${verb} to ${destination}`;
     if (nav.remainingDistance != null) headline = formatManeuverDistance(nav.remainingDistance);
   }
 

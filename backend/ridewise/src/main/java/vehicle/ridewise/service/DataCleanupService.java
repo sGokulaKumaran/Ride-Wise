@@ -24,6 +24,10 @@ import java.util.List;
  *      (names, distance and duration are kept)
  *    - GPS breadcrumbs left behind by rides that have ended
  *    - live positions that have not been refreshed for hours
+ *    - organization fleets: the planned road of vehicle trips that ended
+ *      more than 7 days ago, recorded trip paths older than 90 days,
+ *      activity-log entries older than 180 days, announcements older
+ *      than 90 days
  *
  *    Every one of these is a SINGLE statement run inside the database.
  *    The previous version loaded every ended ride — route blobs included —
@@ -45,13 +49,25 @@ public class DataCleanupService {
     private final RideParticipantRepository rideParticipantRepository;
     private final ConnectionRepository connectionRepository;
     private final RideRepository rideRepository;
+    private final VehicleSessionRouteRepository vehicleSessionRouteRepository;
+    private final VehicleSessionPointRepository vehicleSessionPointRepository;
+    private final OrgAuditLogRepository orgAuditLogRepository;
+    private final OrgAnnouncementRepository orgAnnouncementRepository;
 
     public DataCleanupService(LocationUpdateRepository locationUpdateRepository,
                               UserLocationRepository userLocationRepository,
                               NotificationRepository notificationRepository,
                               RideParticipantRepository rideParticipantRepository,
                               ConnectionRepository connectionRepository,
-                              RideRepository rideRepository) {
+                              RideRepository rideRepository,
+                              VehicleSessionRouteRepository vehicleSessionRouteRepository,
+                              VehicleSessionPointRepository vehicleSessionPointRepository,
+                              OrgAuditLogRepository orgAuditLogRepository,
+                              OrgAnnouncementRepository orgAnnouncementRepository) {
+        this.vehicleSessionRouteRepository = vehicleSessionRouteRepository;
+        this.vehicleSessionPointRepository = vehicleSessionPointRepository;
+        this.orgAuditLogRepository = orgAuditLogRepository;
+        this.orgAnnouncementRepository = orgAnnouncementRepository;
         this.locationUpdateRepository = locationUpdateRepository;
         this.userLocationRepository = userLocationRepository;
         this.notificationRepository = notificationRepository;
@@ -98,6 +114,20 @@ public class DataCleanupService {
                 () -> locationUpdateRepository.deleteForRidesEndedBefore(ENDED, now.minusHours(6)));
         int livePositions = run("stale live positions",
                 () -> (int) userLocationRepository.deleteByUpdatedAtBefore(now.minusHours(6)));
+
+        // Organization fleets
+        int tripRoads = run("planned roads of old vehicle trips",
+                () -> vehicleSessionRouteRepository.deleteForSessionsEndedBefore(now.minusDays(7)));
+        int tripPaths = run("recorded paths of old vehicle trips",
+                () -> vehicleSessionPointRepository.deleteForSessionsEndedBefore(now.minusDays(90)));
+        int activity = run("old organization activity",
+                () -> orgAuditLogRepository.deleteByCreatedAtBefore(now.minusDays(180)));
+        int announcements = run("old announcements",
+                () -> orgAnnouncementRepository.deleteByCreatedAtBefore(now.minusDays(90)));
+        if (tripRoads + tripPaths + activity + announcements > 0) {
+            log.info("Fleet cleanup removed {} planned roads, {} path points, {} activity entries, {} announcements",
+                    tripRoads, tripPaths, activity, announcements);
+        }
 
         int total = readNotifications + oldNotifications + routeData + breadcrumbs + livePositions;
         if (total > 0) {

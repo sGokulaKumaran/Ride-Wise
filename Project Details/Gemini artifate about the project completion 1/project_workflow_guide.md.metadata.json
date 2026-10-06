@@ -1,5 +1,0 @@
-{
-  "summary":  "A beginner-friendly, detailed guide explaining the full-stack workflow of the RideWise project. It covers the architecture, the backend layers (Controller, Service, Repository, Entity, DTO), and traces the step-by-step journeys of Signup and Login.",
-  "updatedAt":  "2026-08-30T14:49:45.097431700Z",
-  "userFacing":  true
-}

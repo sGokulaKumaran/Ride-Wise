@@ -30,6 +30,12 @@ public class Notification {
     @Column(name = "ride_id")
     private Long rideId;
 
+    // Where tapping the notification leads inside the app, e.g.
+    // "/organizations/5/track/12". Null for ride notifications (those use
+    // rideId) and for rows written before this column existed.
+    @Column(name = "link", length = 200)
+    private String link;
+
     @Column(name = "is_read")
     private Boolean isRead;
 
@@ -91,6 +97,14 @@ public class Notification {
 
     public void setRideId(Long rideId) {
         this.rideId = rideId;
+    }
+
+    public String getLink() {
+        return link;
+    }
+
+    public void setLink(String link) {
+        this.link = link;
     }
 
     public Boolean getIsRead() {

@@ -57,6 +57,9 @@ const STRENGTH = [
   { label: "Strong", tone: "ok" },
 ];
 
+// Remembered across the onboarding steps (this tab only).
+const SIGNUP_INTENT_KEY = "ridewise-signup-intent";
+
 export default function LoginPage() {
   const navigate = useNavigate();
   const { login, signup, isAuthenticated, isFullyOnboarded } = useAuth();
@@ -75,6 +78,10 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  // Sign up only: "for myself" or "for an organization". It is NOT a kind
+  // of account — every account can do everything. It only decides where
+  // the first steps lead: straight to creating the organization.
+  const [signupFor, setSignupFor] = useState("personal");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState(() => {
@@ -167,6 +174,10 @@ export default function LoginPage() {
         navigate("/home");
       } else {
         await signup(email, password);
+        try {
+          if (signupFor === "organization") sessionStorage.setItem(SIGNUP_INTENT_KEY, "organization");
+          else sessionStorage.removeItem(SIGNUP_INTENT_KEY);
+        } catch { /* storage unavailable — onboarding simply ends on Home */ }
         navigate("/onboarding");
       }
     } catch (err) {
@@ -390,6 +401,40 @@ export default function LoginPage() {
                   </div>
                 )}
               </div>
+
+              {/* What brings you here? (sign up only) */}
+              {!isLogin && (
+                <div>
+                  <p className={`mb-2 text-xs font-medium ${tc.sub}`}>I&apos;m signing up</p>
+                  <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="What are you signing up for?">
+                    {[
+                      { id: "personal", icon: "user", label: "For myself", hint: "Ride, and follow vehicles" },
+                      { id: "organization", icon: "building", label: "For an organization", hint: "Put a fleet on the map" },
+                    ].map((option) => {
+                      const selected = signupFor === option.id;
+                      return (
+                        <button
+                          key={option.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          onClick={() => setSignupFor(option.id)}
+                          className={`rounded-lg border p-3 text-left transition-colors ${
+                            selected ? tc.accentSoft : `${tc.card} ${tc.cardHover}`
+                          }`}
+                        >
+                          <Icon name={option.icon} size={18} />
+                          <span className={`mt-1.5 block text-sm font-semibold ${selected ? "" : tc.text}`}>{option.label}</span>
+                          <span className={`block text-[11px] ${selected ? "opacity-90" : tc.sub}`}>{option.hint}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className={`mt-2 text-[11px] ${tc.sub}`}>
+                    One account does both — you can create or join an organization at any time.
+                  </p>
+                </div>
+              )}
 
               {isLogin && (
                 <div className="flex items-center justify-between text-sm">

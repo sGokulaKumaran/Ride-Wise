@@ -4,12 +4,15 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
+import vehicle.ridewise.websocket.FleetSocketHandler;
 import vehicle.ridewise.websocket.RideLocationSocketHandler;
 
 // ============================================================
-// WebSocketConfig — registers the live group-ride socket
+// WebSocketConfig — registers the live sockets
 //
-// ENDPOINT: /ws/rides
+// ENDPOINTS
+//   /ws/rides   group rides: riders see each other
+//   /ws/fleet   organization vehicles: drivers report, everyone else watches
 //
 // A raw WebSocket (not STOMP) is used deliberately: the frontend needs no
 // extra dependency, and the handshake rides on the existing HttpSession
@@ -25,13 +28,16 @@ import vehicle.ridewise.websocket.RideLocationSocketHandler;
 public class WebSocketConfig implements WebSocketConfigurer {
 
     private final RideLocationSocketHandler rideLocationSocketHandler;
+    private final FleetSocketHandler fleetSocketHandler;
     private final SessionHandshakeInterceptor sessionHandshakeInterceptor;
     private final AllowedOrigins allowedOrigins;
 
     public WebSocketConfig(RideLocationSocketHandler rideLocationSocketHandler,
+                           FleetSocketHandler fleetSocketHandler,
                            SessionHandshakeInterceptor sessionHandshakeInterceptor,
                            AllowedOrigins allowedOrigins) {
         this.rideLocationSocketHandler = rideLocationSocketHandler;
+        this.fleetSocketHandler = fleetSocketHandler;
         this.sessionHandshakeInterceptor = sessionHandshakeInterceptor;
         this.allowedOrigins = allowedOrigins;
     }
@@ -46,6 +52,10 @@ public class WebSocketConfig implements WebSocketConfigurer {
                 // the handshake instead of being rejected with 403.
                 // ridewise.websocket.allowed-origins (or ridewise.allowed-origins)
                 // changes the list without a code change.
+                .setAllowedOriginPatterns(allowedOrigins.forWebSocket());
+
+        registry.addHandler(fleetSocketHandler, "/ws/fleet")
+                .addInterceptors(sessionHandshakeInterceptor)
                 .setAllowedOriginPatterns(allowedOrigins.forWebSocket());
     }
 } // End of class

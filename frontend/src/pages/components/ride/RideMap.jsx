@@ -29,6 +29,8 @@
 //   compact         small preview map: only the style switcher is shown
 //   padding         { top, bottom } pixels covered by the overlay's bars
 //   extraControls   extra buttons for the top-right control rail
+//   stops           [{ name, lat, lng }] numbered stops along the route
+//                   (a vehicle trip on a saved route)
 //   tc              theme classes (resolved here when omitted)
 //   ref             { panTo(lat, lng), followMe(), fitRoute() }
 // ============================================================
@@ -145,6 +147,16 @@ const DESTINATION_ICON = L.divIcon({
   popupAnchor: [0, -38],
 });
 
+function stopIcon(number) {
+  return L.divIcon({
+    className: "",
+    html: `<div class="rw-stop">${number}</div>`,
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+    popupAnchor: [0, -12],
+  });
+}
+
 const MERGE_ICON = L.divIcon({
   className: "",
   html: '<div class="rw-merge"></div>',
@@ -208,6 +220,9 @@ if (typeof document !== "undefined" && !document.getElementById("rw-map-css")) {
     .rw-destination { display:block; filter:drop-shadow(0 2px 3px rgba(0,0,0,0.35)); }
     .rw-merge { width:16px; height:16px; border-radius:50%; background:#fff; border:4px solid var(--rw-rejoin,#7C3AED);
       box-sizing:border-box; box-shadow:0 1px 4px rgba(0,0,0,0.35); }
+    .rw-stop { width:22px; height:22px; border-radius:50%; background:#fff; color:#111827; border:2.5px solid #111827;
+      box-sizing:border-box; display:flex; align-items:center; justify-content:center;
+      font:700 10px/1 Inter,system-ui,sans-serif; box-shadow:0 1px 4px rgba(0,0,0,0.35); }
 
     /* ── The rider ── */
     .rw-puck { position:relative; width:44px; height:44px; }
@@ -397,6 +412,7 @@ export default function RideMap({
   compact = false,
   padding = null,
   extraControls = null,
+  stops = null,
   tc: tcProp,
   ref,
 }) {
@@ -818,6 +834,22 @@ export default function RideMap({
       );
     return () => marker.remove();
   }, [map, destLat, destLng, destName, plannedDistance, plannedDuration]);
+
+  // ── Stops along the route (vehicle trips on a saved route) ──
+  useEffect(() => {
+    if (!map || !Array.isArray(stops) || !stops.length) return undefined;
+    const markers = stops
+      .filter((stop) => Number.isFinite(stop?.lat) && Number.isFinite(stop?.lng))
+      .map((stop, index) => L.marker([stop.lat, stop.lng], {
+        icon: stopIcon(index + 1), keyboard: false, zIndexOffset: 220,
+      })
+        .addTo(map)
+        .bindPopup(
+          `<div class="rw-popup__title">${escapeHtml(stop.name)}</div><div class="rw-popup__meta">Stop ${index + 1}</div>`,
+          { className: "rw-popup" },
+        ));
+    return () => markers.forEach((marker) => marker.remove());
+  }, [map, stops]);
 
   // ====================================================================
   // THE RIDER — position dot, heading arrow, accuracy ring

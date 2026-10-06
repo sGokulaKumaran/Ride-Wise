@@ -112,3 +112,10 @@ html.rw-high-contrast .border-white\/20 { border-color: rgba(255, 255, 255, 0.45
   }
 }
 
+
+/* ── Sheets and dialogs slide up into place ─────────────────── */
+@keyframes rw-sheet-up {
+  from { transform: translateY(24px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+.rw-sheet { animation: rw-sheet-up 0.26s cubic-bezier(0.32, 0.72, 0, 1); }

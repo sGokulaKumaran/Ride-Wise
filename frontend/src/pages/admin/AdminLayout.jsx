@@ -1,7 +1,7 @@
 // ============================================================
 // AdminLayout — Wrapper layout for all admin pages
 //
-// Provides a simple tab navigation (Dashboard, Users, Rides)
+// Provides a simple tab navigation (Dashboard, Users, Rides, Organizations)
 // and a "Back to RideWise" link. Uses the existing theme system.
 // ============================================================
 import { useNavigate, useLocation } from "react-router-dom";
@@ -22,6 +22,7 @@ export default function AdminLayout({ children }) {
     { path: "/admin",       label: "Dashboard", icon: "gauge" },
     { path: "/admin/users", label: "Users",     icon: "riders" },
     { path: "/admin/rides", label: "Rides",     icon: "road" },
+    { path: "/admin/organizations", label: "Organizations", icon: "building" },
   ];
 
   const isActive = (path) => {

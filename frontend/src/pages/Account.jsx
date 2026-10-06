@@ -19,6 +19,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { useAuth } from "../context/AuthContext";
+import { useOrgs } from "../context/OrgContext";
 import MobileNav from "./components/layout/MobileNav";
 import Sidebar from "./components/layout/Sidebar";
 import TopBar from "./components/layout/TopBar";
@@ -73,11 +74,34 @@ function Field({ icon, label, value, editValue, onChange, editing, type = "text"
   );
 }
 
+// ── One shortcut row (phones: there is no sidebar to reach these from) ──
+function Shortcut({ icon, title, text, onClick, tc }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex w-full items-center gap-3 rounded-xl border p-4 text-left transition-colors lg:hidden ${tc.card} ${tc.cardHover}`}
+    >
+      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${tc.surface2}`}>
+        <Icon name={icon} size={17} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold">{title}</span>
+        <span className={`block truncate text-xs ${tc.sub}`}>{text}</span>
+      </span>
+      <Icon name="chevronRight" size={18} className={tc.sub} />
+    </button>
+  );
+}
+
 export default function Account() {
-  const { user, avatarLetter, updateProfile, logout } = useAuth();
+  const { user, avatarLetter, updateProfile, logout, isAdmin } = useAuth();
   const userId = user?.id;
   const { theme, setTheme, tc } = useTheme(userId);
   const navigate = useNavigate();
+  const { summary } = useOrgs();
+  const canDrive = summary.driving.length > 0 || summary.managed.length > 0;
+  const canManage = summary.managed.length > 0;
 
   // ── Editing ──
   // The form holds its own copy of the fields only WHILE editing; it is
@@ -231,6 +255,20 @@ export default function Account() {
             </span>
             <Icon name="chevronRight" size={18} className={tc.sub} />
           </button>
+
+          {/* ── Organizations: drive · manage · platform admin (phones) ── */}
+          {canDrive && (
+            <Shortcut tc={tc} icon="steering" title="Drive" text="Take one of your organization's vehicles out"
+              onClick={() => navigate("/driver")} />
+          )}
+          {canManage && (
+            <Shortcut tc={tc} icon="building" title="Manage your organization" text="Vehicles, drivers, live map, trips"
+              onClick={() => navigate("/org-admin")} />
+          )}
+          {isAdmin && (
+            <Shortcut tc={tc} icon="shield" title="RideWise admin" text="Users, rides and organizations of the platform"
+              onClick={() => navigate("/admin")} />
+          )}
 
           {/* ── Profile details ───────────────────────────── */}
           <section className={`rounded-xl border p-5 ${tc.card}`} aria-labelledby="profile-details-title">

@@ -39,7 +39,22 @@ const NOTIFICATION_ICON = {
   group_ride_invite: "riders",
   group_ride_ended: "finish",
   group_ride_member_left: "leave",
+  // Organizations and their vehicles
+  org_invite: "building",
+  org_member: "riders",
+  org_notice: "building",
+  org_announcement: "megaphone",
+  vehicle_alert: "bus",
+  vehicle_sos: "sos",
+  vehicle_session_ended: "finish",
 };
+
+// Kinds that deserve the accent tile (they ask for attention / an answer).
+const NOTIFICATION_ACCENT = new Set(["group_ride_invite", "org_invite", "vehicle_alert"]);
+
+// Only paths inside the app are followed (a notification's link comes from
+// the server, but it is still data — never navigate anywhere else with it).
+const safeLink = (link) => (typeof link === "string" && /^\/(?!\/)/.test(link) ? link : null);
 
 export default function TopBar({
   theme,
@@ -261,7 +276,13 @@ export default function TopBar({
                             setUnreadCount(prev => Math.max(0, prev - 1));
                             setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, isRead: true } : x));
                           }
-                          if (n.rideId) {
+                          const link = safeLink(n.link);
+                          if (link) {
+                            // Organization / vehicle notifications say where they lead
+                            // (an invitation, a vehicle's tracking screen, the fleet map).
+                            setShowNotifDropdown(false);
+                            navigate(link);
+                          } else if (n.rideId) {
                             setShowNotifDropdown(false);
                             // Navigate to Home with the ride id in the URL so it
                             // works from ANY page (Account/Riders/Settings too).
@@ -270,12 +291,13 @@ export default function TopBar({
                           }
                         }}
                         className={`px-4 py-3 border-b transition-colors ${tc.divider} ${tc.cardHover} ${
-                          n.rideId ? "cursor-pointer" : "cursor-default"
+                          n.rideId || safeLink(n.link) ? "cursor-pointer" : "cursor-default"
                         }`}
                       >
                         <div className="flex items-start gap-2.5">
                           <div className={`w-8 h-8 rounded-lg border flex items-center justify-center shrink-0 ${
-                            n.type === "group_ride_invite" ? tc.accentSoft : `${tc.surface2} ${tc.divider}`
+                            n.type === "vehicle_sos" ? tc.dangerSoft
+                              : NOTIFICATION_ACCENT.has(n.type) ? tc.accentSoft : `${tc.surface2} ${tc.divider}`
                           }`}>
                             <Icon name={NOTIFICATION_ICON[n.type] || "bell"} size={14} />
                           </div>
