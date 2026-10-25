@@ -24,13 +24,13 @@
 //   itself — this function only forwards.
 // ============================================================
 
-const BACKEND = "https://ride-wise-kif0.onrender.com";
+const BACKEND = "https://ride-wise-9am5.onrender.com";
 
 export async function onRequest(context) {
   const { request } = context;
   const url = new URL(request.url);
 
-  // /ws/rides?x=1 → https://ride-wise-kif0.onrender.com/ws/rides?x=1
+  // /ws/rides?x=1 →https://ride-wise-9am5.onrender.com/ws/rides?x=1
   const target = `${BACKEND}${url.pathname}${url.search}`;
 
   try {

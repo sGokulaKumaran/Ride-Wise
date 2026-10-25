@@ -24,7 +24,7 @@
 //   Functions, so this file intentionally owns the /api namespace.
 // ============================================================
 
-const BACKEND = "https://ride-wise-kif0.onrender.com";
+const BACKEND = "https://ride-wise-9am5.onrender.com";
 
 // Hop-by-hop / transport headers that must NOT be forwarded.
 const HOP_BY_HOP = new Set([
