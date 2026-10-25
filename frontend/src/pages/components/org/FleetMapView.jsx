@@ -709,17 +709,7 @@ export default function FleetMapView({
         ))}
       </div>
 
-      {/* ── Map data credit (required by the tile providers' terms) ── */}
-      <div
-        className="pointer-events-none absolute left-2 z-[999] rounded px-1.5 py-0.5 text-[10px] leading-tight"
-        style={{
-          bottom: `${(padding?.bottom ?? 0) + 4}px`,
-          background: styleDef.dark ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.75)",
-          color: styleDef.dark ? "rgba(255,255,255,0.8)" : "rgba(0,0,0,0.7)",
-        }}
-      >
-        {tiles.credit}
-      </div>
+
     </div>
   );
 }
