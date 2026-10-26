@@ -39,6 +39,7 @@ import Icon from "./components/ui/Icon";
 import Button, { Chip } from "./components/ui/Button";
 import SecuritySettings from "./components/account/SecuritySettings";
 import HelpAndFeedback from "./components/account/HelpAndFeedback";
+import AdminEmailSettings from "./components/account/AdminEmailSettings";
 import DeleteAccount from "./components/account/DeleteAccount";
 import { exportMyData } from "../services/accountApi";
 import Sidebar from "./components/layout/Sidebar";
@@ -402,6 +403,13 @@ function SettingsScreen() {
             </p>
             <HelpAndFeedback tc={tc} />
           </section>
+
+          {/* ── ADMIN: FEEDBACK & GMAIL ALERTS ── */}
+          {user?.role === "ADMIN" && (
+            <section id="admin-email-alerts" className={`mb-4 scroll-mt-24 rounded-xl border p-5 ${tc.card}`}>
+              <AdminEmailSettings tc={tc} />
+            </section>
+          )}
 
           {/* ── ACCOUNT & SECURITY ── */}
           <section className={`mb-4 rounded-xl border p-5 ${tc.card}`}>

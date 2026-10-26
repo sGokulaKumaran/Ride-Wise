@@ -93,5 +93,13 @@ public class FeedbackController {
         SessionAuthInterceptor.requireAdminRole(request);
         return ResponseEntity.ok(feedbackService.updateAdminSettings(body));
     }
+
+    @PostMapping("/api/admin/feedback/test-email")
+    public ResponseEntity<Map<String, Object>> testAdminFeedbackEmail(
+            @RequestBody(required = false) Map<String, Object> body,
+            HttpServletRequest request) {
+        SessionAuthInterceptor.requireAdminRole(request);
+        return ResponseEntity.ok(feedbackService.testEmail(body != null ? body : Map.of()));
+    }
 }
 

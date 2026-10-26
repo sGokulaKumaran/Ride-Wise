@@ -16,12 +16,12 @@ import { useLoad } from "../hooks/useFleet";
 import AdminLayout from "./AdminLayout";
 import Icon from "../components/ui/Icon";
 import Button, { Chip } from "../components/ui/Button";
-import { Badge, ConfirmButton, Field, TextArea, TextInput } from "../components/org/kit";
+import { Badge, ConfirmButton, Field, TextArea } from "../components/org/kit";
+import AdminEmailSettings from "../components/account/AdminEmailSettings";
 import {
   adminDeleteFeedback,
   adminGetFeedback,
   adminGetFeedbackSettings,
-  adminSaveFeedbackSettings,
   adminUpdateFeedback,
 } from "../../services/feedbackApi";
 
@@ -92,11 +92,6 @@ export default function AdminFeedback() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
 
-  // ── Admin Gmail setting state ──
-  const settingsLoad = useLoad("admin-feedback-settings", adminGetFeedbackSettings);
-  const [emailDraft, setEmailDraft] = useState(null);
-  const [savingEmail, setSavingEmail] = useState(false);
-
   // ── Per-item reply / action state ──
   const [replyingId, setReplyingId] = useState(null);
   const [replyText, setReplyText] = useState("");
@@ -115,24 +110,8 @@ export default function AdminFeedback() {
     () => adminGetFeedback({ status, category, search, page, size: PAGE_SIZE }),
   );
   const data = list.data;
+  const settingsLoad = useLoad("admin-feedback-settings", adminGetFeedbackSettings);
   const savedEmail = settingsLoad.data?.alertEmail || "";
-  const currentEmailInput = emailDraft !== null ? emailDraft : savedEmail;
-
-  const handleSaveEmail = async (event) => {
-    event.preventDefault();
-    const next = currentEmailInput.trim().toLowerCase();
-    setSavingEmail(true);
-    try {
-      const updated = await adminSaveFeedbackSettings(next);
-      settingsLoad.setData(updated);
-      setEmailDraft(null);
-      toast.success(next ? `Feedback alerts set to ${next}` : "Forwarding email cleared.");
-    } catch (err) {
-      toast.error(err.message || "Couldn't save the Gmail address.");
-    } finally {
-      setSavingEmail(false);
-    }
-  };
 
   const handleUpdate = async (item, patch, successMsg) => {
     setBusyId(item.id);
@@ -211,43 +190,9 @@ export default function AdminFeedback() {
           </div>
         </div>
 
-        {/* ── Admin Gmail Forwarding Card ── */}
+        {/* ── Admin Gmail & App Password Forwarding Card ── */}
         <section className={`rounded-xl border p-5 ${tc.card}`}>
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <Icon name="mail" size={17} className={tc.sub} />
-                <h2 className="text-sm font-bold">Admin Gmail for feedback alerts</h2>
-                {savedEmail && <Badge tone="ok" tc={tc}>{savedEmail}</Badge>}
-              </div>
-              <p className={`mt-1 text-xs ${tc.sub}`}>
-                Every user bug report or feedback item is delivered here, alerts your admin notification bell, and forwards to your Gmail address.
-              </p>
-            </div>
-
-            <form onSubmit={handleSaveEmail} className="flex w-full flex-col gap-2 sm:flex-row sm:items-center lg:w-auto">
-              <TextInput
-                tc={tc}
-                type="email"
-                value={currentEmailInput}
-                onChange={(event) => setEmailDraft(event.target.value)}
-                placeholder="yourname@gmail.com"
-                aria-label="Admin Gmail address"
-                className="sm:w-72"
-              />
-              <Button
-                type="submit"
-                variant="primary"
-                size="md"
-                icon="check"
-                tc={tc}
-                loading={savingEmail}
-                disabled={emailDraft === null || currentEmailInput.trim().toLowerCase() === savedEmail}
-              >
-                Save Gmail
-              </Button>
-            </form>
-          </div>
+          <AdminEmailSettings tc={tc} />
         </section>
 
         {/* ── Filter Strips ── */}

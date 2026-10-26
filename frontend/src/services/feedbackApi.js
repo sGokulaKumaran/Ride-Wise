@@ -36,6 +36,11 @@ export const adminDeleteFeedback = (id) =>
 export const adminGetFeedbackSettings = () =>
   apiJson("/api/admin/feedback/settings");
 
-export const adminSaveFeedbackSettings = (alertEmail) =>
-  apiJson("/api/admin/feedback/settings", jsonBody("PUT", { alertEmail }));
+export const adminSaveFeedbackSettings = (payload) => {
+  const body = typeof payload === "string" ? { alertEmail: payload } : (payload || {});
+  return apiJson("/api/admin/feedback/settings", jsonBody("PUT", body));
+};
+
+export const adminTestFeedbackEmail = (payload = {}) =>
+  apiJson("/api/admin/feedback/test-email", jsonBody("POST", payload));
 

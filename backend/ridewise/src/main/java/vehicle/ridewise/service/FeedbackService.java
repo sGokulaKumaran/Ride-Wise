@@ -7,6 +7,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vehicle.ridewise.entity.Feedback;
@@ -26,6 +27,7 @@ import java.util.stream.Collectors;
 public class FeedbackService {
 
     public static final String SETTING_ADMIN_EMAIL = "admin_feedback_email";
+    public static final String SETTING_ADMIN_SMTP_PASSWORD = "admin_smtp_password";
     private static final Set<String> VALID_CATEGORIES = Set.of("BUG", "FEEDBACK", "FEATURE", "HELP");
     private static final Set<String> VALID_STATUSES = Set.of("OPEN", "REVIEWED", "RESOLVED");
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
@@ -34,10 +36,10 @@ public class FeedbackService {
     private final PlatformSettingRepository platformSettingRepository;
     private final UserRepository userRepository;
     private final NotificationService notificationService;
-    private final JavaMailSender mailSender;
+    private final JavaMailSender defaultMailSender;
 
     @Value("${spring.mail.username:}")
-    private String smtpUsername;
+    private String defaultSmtpUsername;
 
     @Value("${ridewise.admin.alert-email:}")
     private String defaultAlertEmail;
@@ -46,13 +48,15 @@ public class FeedbackService {
                            PlatformSettingRepository platformSettingRepository,
                            UserRepository userRepository,
                            NotificationService notificationService,
-                           @Autowired(required = false) JavaMailSender mailSender) {
+                           @Autowired(required = false) JavaMailSender defaultMailSender) {
         this.feedbackRepository = feedbackRepository;
         this.platformSettingRepository = platformSettingRepository;
         this.userRepository = userRepository;
         this.notificationService = notificationService;
-        this.mailSender = mailSender;
+        this.defaultMailSender = defaultMailSender;
     }
+
+    private record SmtpSenderInfo(String fromEmail, JavaMailSender sender) {}
 
     @Transactional
     public Map<String, Object> submit(Long userId, Map<String, Object> body) {
@@ -110,8 +114,9 @@ public class FeedbackService {
 
         // 2. Forward to the admin's configured Gmail address (asynchronously so UI never blocks)
         String targetEmail = resolveAlertEmail();
-        if (!targetEmail.isBlank() && isSmtpConfigured()) {
-            sendAlertEmailAsync(targetEmail, saved);
+        SmtpSenderInfo activeSmtp = getActiveSmtp();
+        if (!targetEmail.isBlank() && activeSmtp != null) {
+            sendAlertEmailAsync(targetEmail, saved, activeSmtp);
         }
 
         return toMap(saved);
@@ -200,46 +205,143 @@ public class FeedbackService {
 
     public Map<String, Object> getAdminSettings() {
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("alertEmail", resolveAlertEmail());
-        out.put("smtpConfigured", isSmtpConfigured());
+        String email = resolveAlertEmail();
+        String pass = getSetting(SETTING_ADMIN_SMTP_PASSWORD);
+        boolean hasAppPassword = !pass.isBlank();
+        boolean smtpActive = (hasAppPassword && !email.isBlank())
+                || (defaultMailSender != null && defaultSmtpUsername != null && !defaultSmtpUsername.isBlank());
+
+        out.put("alertEmail", email);
+        out.put("hasAppPassword", hasAppPassword);
+        out.put("smtpConfigured", smtpActive);
         return out;
     }
 
     @Transactional
     public Map<String, Object> updateAdminSettings(Map<String, Object> body) {
-        String email = stringField(body, "alertEmail").toLowerCase(Locale.ROOT);
-        if (!email.isEmpty() && !EMAIL_PATTERN.matcher(email).matches()) {
-            throw ApiException.badRequest("Enter a valid email address (for example, yourname@gmail.com).");
+        if (body.containsKey("alertEmail")) {
+            String email = stringField(body, "alertEmail").toLowerCase(Locale.ROOT);
+            if (!email.isEmpty() && !EMAIL_PATTERN.matcher(email).matches()) {
+                throw ApiException.badRequest("Enter a valid email address (for example, yourname@gmail.com).");
+            }
+            saveSetting(SETTING_ADMIN_EMAIL, email);
         }
 
-        PlatformSetting setting = platformSettingRepository.findById(SETTING_ADMIN_EMAIL)
-                .orElseGet(() -> {
-                    PlatformSetting created = new PlatformSetting();
-                    created.setSettingKey(SETTING_ADMIN_EMAIL);
-                    return created;
-                });
-        setting.setSettingValue(email);
-        platformSettingRepository.save(setting);
+        if (body.containsKey("clearPassword") && Boolean.TRUE.equals(body.get("clearPassword"))) {
+            saveSetting(SETTING_ADMIN_SMTP_PASSWORD, "");
+        } else if (body.containsKey("appPassword")) {
+            String password = stringField(body, "appPassword").replaceAll("\\s+", "");
+            if (!password.isEmpty()) {
+                if (password.length() < 8 || password.length() > 64) {
+                    throw ApiException.badRequest("Google App Passwords are 16 characters (found " + password.length() + ").");
+                }
+                saveSetting(SETTING_ADMIN_SMTP_PASSWORD, password);
+            }
+        }
 
         return getAdminSettings();
     }
 
+    public Map<String, Object> testEmail(Map<String, Object> body) {
+        String email = stringField(body, "alertEmail").toLowerCase(Locale.ROOT);
+        String pass = stringField(body, "appPassword").replaceAll("\\s+", "");
+
+        if (email.isEmpty()) {
+            email = resolveAlertEmail();
+        }
+        if (pass.isEmpty()) {
+            pass = getSetting(SETTING_ADMIN_SMTP_PASSWORD);
+        }
+
+        if (email.isEmpty()) {
+            throw ApiException.badRequest("Please enter or save your Gmail address first.");
+        }
+        if (pass.isEmpty() && (defaultMailSender == null || defaultSmtpUsername == null || defaultSmtpUsername.isBlank())) {
+            throw ApiException.badRequest("Please enter your 16-character Google App Password.");
+        }
+
+        JavaMailSender sender = !pass.isEmpty()
+                ? createDynamicMailSender(email, pass)
+                : defaultMailSender;
+
+        try {
+            SimpleMailMessage mail = new SimpleMailMessage();
+            mail.setFrom(email);
+            mail.setTo(email);
+            mail.setSubject("[RideWise] Test email — Gmail alert configuration");
+            mail.setText("Hello Admin,\n\n"
+                    + "This is a test email confirming that your Gmail address and Google App Password "
+                    + "are working correctly in RideWise!\n\n"
+                    + "From now on, user feedback, bug reports, and help questions submitted on RideWise "
+                    + "will be automatically forwarded to this inbox.\n\n"
+                    + "Sent at: " + new Date() + "\n"
+                    + "RideWise Platform");
+            sender.send(mail);
+
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("ok", true);
+            out.put("message", "Test email sent successfully to " + email + "! Check your Gmail inbox.");
+            return out;
+        } catch (Exception ex) {
+            String msg = ex.getMessage() != null ? ex.getMessage() : ex.toString();
+            if (msg.contains("AuthenticationFailed") || msg.contains("535") || msg.contains("Username and Password not accepted")) {
+                throw ApiException.badRequest("Google rejected the credentials (535 Authentication Failed). Make sure 2-Step Verification is turned ON and you generated a 16-character App Password at myaccount.google.com/apppasswords.");
+            }
+            throw ApiException.badRequest("Failed to send test email: " + msg);
+        }
+    }
+
     public String resolveAlertEmail() {
-        return platformSettingRepository.findById(SETTING_ADMIN_EMAIL)
-                .map(PlatformSetting::getSettingValue)
-                .filter(v -> v != null && !v.isBlank())
-                .orElse(defaultAlertEmail == null ? "" : defaultAlertEmail.trim());
+        String email = getSetting(SETTING_ADMIN_EMAIL);
+        if (!email.isBlank()) return email;
+        if (defaultAlertEmail != null && !defaultAlertEmail.isBlank()) return defaultAlertEmail.trim();
+        if (defaultSmtpUsername != null && !defaultSmtpUsername.isBlank()) return defaultSmtpUsername.trim();
+        return "";
     }
 
-    private boolean isSmtpConfigured() {
-        return mailSender != null && smtpUsername != null && !smtpUsername.isBlank();
+    public boolean isSmtpConfigured() {
+        return getActiveSmtp() != null;
     }
 
-    private void sendAlertEmailAsync(String toEmail, Feedback f) {
+    private SmtpSenderInfo getActiveSmtp() {
+        String dbEmail = getSetting(SETTING_ADMIN_EMAIL);
+        String dbPassword = getSetting(SETTING_ADMIN_SMTP_PASSWORD);
+
+        if (!dbEmail.isBlank() && !dbPassword.isBlank()) {
+            return new SmtpSenderInfo(dbEmail.trim(), createDynamicMailSender(dbEmail.trim(), dbPassword.trim()));
+        }
+
+        if (defaultMailSender != null && defaultSmtpUsername != null && !defaultSmtpUsername.isBlank()) {
+            return new SmtpSenderInfo(defaultSmtpUsername.trim(), defaultMailSender);
+        }
+
+        return null;
+    }
+
+    private JavaMailSender createDynamicMailSender(String email, String appPassword) {
+        JavaMailSenderImpl sender = new JavaMailSenderImpl();
+        sender.setHost("smtp.gmail.com");
+        sender.setPort(587);
+        sender.setUsername(email);
+        sender.setPassword(appPassword != null ? appPassword.replaceAll("\\s+", "") : "");
+
+        Properties props = sender.getJavaMailProperties();
+        props.put("mail.transport.protocol", "smtp");
+        props.put("mail.smtp.auth", "true");
+        props.put("mail.smtp.starttls.enable", "true");
+        props.put("mail.smtp.starttls.required", "true");
+        props.put("mail.smtp.ssl.trust", "smtp.gmail.com");
+        props.put("mail.smtp.connectiontimeout", "6000");
+        props.put("mail.smtp.timeout", "6000");
+        props.put("mail.smtp.writetimeout", "6000");
+        return sender;
+    }
+
+    private void sendAlertEmailAsync(String toEmail, Feedback f, SmtpSenderInfo senderInfo) {
         CompletableFuture.runAsync(() -> {
             try {
                 SimpleMailMessage mail = new SimpleMailMessage();
-                mail.setFrom(smtpUsername);
+                mail.setFrom(senderInfo.fromEmail());
                 mail.setTo(toEmail);
                 if (f.getUserEmail() != null && !f.getUserEmail().isBlank()) {
                     mail.setReplyTo(f.getUserEmail());
@@ -259,11 +361,29 @@ public class FeedbackService {
                 sb.append("--------------------------------------------------\n");
                 sb.append("Manage in RideWise Admin -> Feedback (/admin/feedback)");
                 mail.setText(sb.toString());
-                mailSender.send(mail);
+                senderInfo.sender().send(mail);
             } catch (Exception ex) {
                 System.err.println("[FeedbackService] Failed to forward feedback email to " + toEmail + ": " + ex.getMessage());
             }
         });
+    }
+
+    private String getSetting(String key) {
+        return platformSettingRepository.findById(key)
+                .map(PlatformSetting::getSettingValue)
+                .filter(v -> v != null && !v.isBlank())
+                .orElse("");
+    }
+
+    private void saveSetting(String key, String value) {
+        PlatformSetting setting = platformSettingRepository.findById(key)
+                .orElseGet(() -> {
+                    PlatformSetting created = new PlatformSetting();
+                    created.setSettingKey(key);
+                    return created;
+                });
+        setting.setSettingValue(value == null ? "" : value.trim());
+        platformSettingRepository.save(setting);
     }
 
     private static String categoryLabel(String category) {
@@ -296,4 +416,3 @@ public class FeedbackService {
         return map;
     }
 }
-
