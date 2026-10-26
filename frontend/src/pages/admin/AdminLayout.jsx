@@ -23,6 +23,7 @@ export default function AdminLayout({ children }) {
     { path: "/admin/users", label: "Users",     icon: "riders" },
     { path: "/admin/rides", label: "Rides",     icon: "road" },
     { path: "/admin/organizations", label: "Organizations", icon: "building" },
+    { path: "/admin/feedback",      label: "Feedback",      icon: "message" },
   ];
 
   const isActive = (path) => {

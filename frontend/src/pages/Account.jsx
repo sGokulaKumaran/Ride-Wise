@@ -262,6 +262,22 @@ export default function Account() {
             <Icon name="chevronRight" size={18} className={tc.sub} />
           </button>
 
+          {/* ── Help & feedback (phones) ── */}
+          <button
+            type="button"
+            onClick={() => navigate("/settings#help-feedback")}
+            className={`flex w-full items-center gap-3 rounded-xl border p-4 text-left transition-colors lg:hidden ${tc.card} ${tc.cardHover}`}
+          >
+            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${tc.surface2}`}>
+              <Icon name="help" size={17} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold">Help & feedback</span>
+              <span className={`block truncate text-xs ${tc.sub}`}>Report a bug, send feedback or read guides</span>
+            </span>
+            <Icon name="chevronRight" size={18} className={tc.sub} />
+          </button>
+
           {/* ── Organizations: drive · manage · platform admin (phones) ── */}
           {canDrive && (
             <Shortcut tc={tc} icon="steering" title="Drive" text="Take one of your organization's vehicles out"

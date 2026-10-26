@@ -22,7 +22,7 @@
 //   public profile, email, password                → the rider's account (server)
 // ============================================================
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { useTheme, themes } from "./hooks/useTheme";
 import {
@@ -38,6 +38,7 @@ import { useAuth } from "../context/AuthContext";
 import Icon from "./components/ui/Icon";
 import Button, { Chip } from "./components/ui/Button";
 import SecuritySettings from "./components/account/SecuritySettings";
+import HelpAndFeedback from "./components/account/HelpAndFeedback";
 import DeleteAccount from "./components/account/DeleteAccount";
 import { exportMyData } from "../services/accountApi";
 import Sidebar from "./components/layout/Sidebar";
@@ -127,6 +128,13 @@ function SettingsScreen() {
   const { user, updateProfile } = useAuth();
   const userId = user?.id;
   const navigate = useNavigate();
+  const location = useLocation();
+  useEffect(() => {
+    if (location.hash === "#help-feedback") {
+      const el = document.getElementById("help-feedback");
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [location.hash]);
   const { theme, setTheme, tc } = useTheme(userId);
 
   // ── Accessibility (this device) ──
@@ -384,6 +392,15 @@ function SettingsScreen() {
               Other riders never see your exact location or phone number. In a group ride your live
               position is shared only with that ride&apos;s riders, and only while you ride.
             </p>
+          </section>
+
+          {/* ── HELP & FEEDBACK ── */}
+          <section id="help-feedback" className={`mb-4 scroll-mt-24 rounded-xl border p-5 ${tc.card}`}>
+            <SectionHeader icon="help" title="Help & feedback" tc={tc} />
+            <p className={`mb-3 text-xs ${tc.sub}`}>
+              Report a bug, share an idea, or browse answers to common questions.
+            </p>
+            <HelpAndFeedback tc={tc} />
           </section>
 
           {/* ── ACCOUNT & SECURITY ── */}

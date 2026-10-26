@@ -48,10 +48,12 @@ const NOTIFICATION_ICON = {
   vehicle_alert: "bus",
   vehicle_sos: "sos",
   vehicle_session_ended: "finish",
+  feedback_received: "message",
+  feedback_reply: "message",
 };
 
 // Kinds that deserve the accent tile (they ask for attention / an answer).
-const NOTIFICATION_ACCENT = new Set(["group_ride_invite", "org_invite", "vehicle_alert"]);
+const NOTIFICATION_ACCENT = new Set(["group_ride_invite", "org_invite", "vehicle_alert", "feedback_received", "feedback_reply"]);
 
 // Only paths inside the app are followed (a notification's link comes from
 // the server, but it is still data — never navigate anywhere else with it).

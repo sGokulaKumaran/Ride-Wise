@@ -55,6 +55,10 @@ export default function AdminDashboard() {
       { label: "Organizations",       value: stats.totalOrganizations,  icon: "building" },
       { label: "Vehicles",            value: stats.totalVehicles,       icon: "bus" },
       { label: "Vehicles on a Trip",  value: stats.activeVehicleTrips,  icon: "signal" },
+      ...(stats.totalFeedback != null ? [
+        { label: "Open Feedback",       value: stats.openFeedback ?? 0,   icon: "message" },
+        { label: "Total Feedback",      value: stats.totalFeedback,       icon: "help" },
+      ] : []),
     ] : []),
   ] : [];
 

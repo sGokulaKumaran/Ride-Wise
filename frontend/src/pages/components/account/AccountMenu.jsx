@@ -43,7 +43,8 @@ export default function AccountMenu({ tc }) {
   // Settings is ONLY accessible via this dropdown (not in the sidebar nav)
   const menuItems = [
     { icon: "user",     label: "My Profile", action: () => navigate("/account")  },
-    { icon: "settings", label: "Settings",   action: () => navigate("/settings") },
+    { icon: "settings", label: "Settings",        action: () => navigate("/settings")                },
+    { icon: "help",     label: "Help & feedback", action: () => navigate("/settings#help-feedback") },
   ];
 
   // ── Handle logout: close menu, then call logout ──────────────

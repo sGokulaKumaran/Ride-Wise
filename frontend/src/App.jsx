@@ -72,6 +72,7 @@ const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
 const AdminUsers = lazy(() => import("./pages/admin/AdminUsers"));
 const AdminRides = lazy(() => import("./pages/admin/AdminRides"));
 const AdminOrganizations = lazy(() => import("./pages/admin/AdminOrganizations"));
+const AdminFeedback = lazy(() => import("./pages/admin/AdminFeedback"));
 
 import ProtectedRoute from "./pages/components/shared/ProtectedRoute";
 // The "security guard" — checks auth before allowing access
@@ -148,6 +149,7 @@ export default function App() {
               <Route path="/admin/users"         element={adminOnly(<AdminUsers />)} />
               <Route path="/admin/rides"         element={adminOnly(<AdminRides />)} />
               <Route path="/admin/organizations" element={adminOnly(<AdminOrganizations />)} />
+              <Route path="/admin/feedback"      element={adminOnly(<AdminFeedback />)} />
 
               {/* ─── REDIRECTS (old URLs → new) ─── */}
               <Route path="/saved"   element={<Navigate to="/home" replace />} />

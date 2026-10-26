@@ -33,6 +33,7 @@ public class AdminService {
     private final OrganizationRepository organizationRepository;
     private final VehicleRepository vehicleRepository;
     private final VehicleSessionRepository vehicleSessionRepository;
+    private final FeedbackRepository feedbackRepository;
     private final VehicleSessionService vehicleSessionService;
     private final UserStatusCache userStatusCache;
 
@@ -44,6 +45,7 @@ public class AdminService {
                         OrganizationRepository organizationRepository,
                         VehicleRepository vehicleRepository,
                         VehicleSessionRepository vehicleSessionRepository,
+                        FeedbackRepository feedbackRepository,
                         VehicleSessionService vehicleSessionService,
                         UserStatusCache userStatusCache) {
         this.userRepository = userRepository;
@@ -54,6 +56,7 @@ public class AdminService {
         this.organizationRepository = organizationRepository;
         this.vehicleRepository = vehicleRepository;
         this.vehicleSessionRepository = vehicleSessionRepository;
+        this.feedbackRepository = feedbackRepository;
         this.vehicleSessionService = vehicleSessionService;
         this.userStatusCache = userStatusCache;
     }
@@ -73,6 +76,8 @@ public class AdminService {
         stats.put("suspendedOrganizations", organizationRepository.countByStatus("SUSPENDED"));
         stats.put("totalVehicles", vehicleRepository.count());
         stats.put("activeVehicleTrips", vehicleSessionRepository.countByStatus("ACTIVE"));
+        stats.put("totalFeedback", feedbackRepository.count());
+        stats.put("openFeedback", feedbackRepository.countByStatus("OPEN"));
         return stats;
     }
 

@@ -66,6 +66,12 @@
             <artifactId>spring-session-jdbc</artifactId>
         </dependency>
 
+        <!-- Mail: forwards user feedback & bug reports to the admin's Gmail when configured -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
         <!-- H2: In-memory database for testing only -->
         <dependency>
             <groupId>com.h2database</groupId>
