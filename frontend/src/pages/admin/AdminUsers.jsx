@@ -12,6 +12,7 @@
 import { useState, useEffect, useRef } from "react";
 import { toast } from "react-toastify";
 import { getUsers, updateUserStatus } from "../../services/adminApi";
+import { peekCache, writeCache } from "../../services/pageCache";
 import { useTheme } from "../hooks/useTheme";
 import AdminLayout from "./AdminLayout";
 import { useAuth } from "../../context/AuthContext";
@@ -26,13 +27,14 @@ export default function AdminUsers() {
   const { user } = useAuth();
   // Pass user?.id so the admin panel uses the same saved theme as the app
   const { tc } = useTheme(user?.id);
-  const [users, setUsers] = useState([]);
-  const [totalUsers, setTotalUsers] = useState(0);
-  const [totalPages, setTotalPages] = useState(0);
+  const cachedInit = peekCache("admin-users--0");
+  const [users, setUsers] = useState(() => cachedInit?.users || []);
+  const [totalUsers, setTotalUsers] = useState(() => cachedInit?.totalUsers || 0);
+  const [totalPages, setTotalPages] = useState(() => cachedInit?.totalPages || 0);
   // One object: a new search always starts on the first page.
   const [query, setQuery] = useState({ search: "", page: 0 });
   const [searchInput, setSearchInput] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => cachedInit === undefined);
   const [error, setError] = useState(null);
   const [actionLoading, setActionLoading] = useState(null); // userId being toggled
   const [confirmId, setConfirmId] = useState(null);         // userId waiting for the second tap
@@ -54,7 +56,11 @@ export default function AdminUsers() {
     getUsers(search, page, SIZE)
       .then((data) => {
         if (cancelled) return;
-        setUsers(data.users || []);
+        const nextUsers = data.users || [];
+        const nextTotal = data.totalUsers || 0;
+        const nextPages = data.totalPages ?? Math.ceil(nextTotal / SIZE);
+        setUsers(nextUsers);
+        writeCache(`admin-users-${search}-${page}`, { users: nextUsers, totalUsers: nextTotal, totalPages: nextPages });
         setTotalUsers(data.totalUsers || 0);
         setTotalPages(data.totalPages ?? Math.ceil((data.totalUsers || 0) / SIZE));
         setError(null);
@@ -68,7 +74,15 @@ export default function AdminUsers() {
   const changeQuery = (next) => {
     if (next.search === queryRef.current.search && next.page === queryRef.current.page) return;
     queryRef.current = next;
-    setLoading(true);
+    const hit = peekCache(`admin-users-${next.search}-${next.page}`);
+    if (hit) {
+      setUsers(hit.users);
+      setTotalUsers(hit.totalUsers);
+      setTotalPages(hit.totalPages);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setConfirmId(null);
     setQuery(next);
   };

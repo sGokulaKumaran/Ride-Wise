@@ -19,6 +19,7 @@ import ThemeDropdown from "../shared/ThemeDropdown";
 import Icon from "../ui/Icon";
 import { IconButton } from "../ui/Button";
 import { getNotifications, getUnreadCount, markAsRead, markAllAsRead } from "../../../services/notificationApi";
+import { peekCache, writeCache } from "../../../services/pageCache";
 
 // "just now" · "12 min ago" · "3 h ago" · "2 d ago" · "14 Sep"
 function timeAgo(iso, now) {
@@ -75,7 +76,9 @@ export default function TopBar({
   const [searchQuery,       setSearchQuery]       = useState("");
   const [mobileSearchOpen,  setMobileSearchOpen]  = useState(false);
   const [notifications, setNotifications] = useState([]);
-  const [unreadCount, setUnreadCount] = useState(0);
+  // Kept in the session cache: every page has its own TopBar, and the badge
+  // used to flash back to 0 on each navigation until the count arrived.
+  const [unreadCount, setUnreadCount] = useState(() => peekCache(`unread-${userId}`) ?? 0);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
 
   // Unread count: now, every 30 s, and whenever the tab becomes visible
@@ -85,7 +88,11 @@ export default function TopBar({
     let cancelled = false;
     const fetchCount = () => {
       if (document.hidden) return;
-      getUnreadCount().then((count) => { if (!cancelled) setUnreadCount(count); });
+      getUnreadCount().then((count) => {
+        if (cancelled) return;
+        setUnreadCount(count);
+        writeCache(`unread-${userId}`, count);
+      });
     };
     fetchCount();
     const interval = setInterval(fetchCount, 30000);

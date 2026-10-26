@@ -11,6 +11,7 @@
 import { Fragment, useState, useEffect } from "react";
 import { toast } from "react-toastify";
 import { getRides, getRideDetail } from "../../services/adminApi";
+import { peekCache, writeCache } from "../../services/pageCache";
 import { useTheme } from "../hooks/useTheme";
 import AdminLayout from "./AdminLayout";
 import { useAuth } from "../../context/AuthContext";
@@ -23,12 +24,13 @@ export default function AdminRides() {
   const { user } = useAuth();
   // Pass user?.id so the admin panel uses the same saved theme as the app
   const { tc } = useTheme(user?.id);
-  const [rides, setRides] = useState([]);
-  const [totalRides, setTotalRides] = useState(0);
-  const [totalPages, setTotalPages] = useState(0);
+  const initCache = peekCache("admin-rides---0");
+  const [rides, setRides] = useState(() => initCache?.rides || []);
+  const [totalRides, setTotalRides] = useState(() => initCache?.totalRides || 0);
+  const [totalPages, setTotalPages] = useState(() => initCache?.totalPages || 0);
   // One object: changing a filter always goes back to the first page.
   const [query, setQuery] = useState({ status: "", type: "", page: 0 });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => initCache === undefined);
   const [error, setError] = useState(null);
   const [expandedRide, setExpandedRide] = useState(null); // { id, data }
   const [expandLoading, setExpandLoading] = useState(null);
@@ -38,7 +40,15 @@ export default function AdminRides() {
   const changeQuery = (patch) => {
     const next = { ...query, ...patch };
     if (next.status === query.status && next.type === query.type && next.page === query.page) return;
-    setLoading(true);
+    const hit = peekCache(`admin-rides-${next.status}-${next.type}-${next.page}`);
+    if (hit) {
+      setRides(hit.rides);
+      setTotalRides(hit.totalRides);
+      setTotalPages(hit.totalPages);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setExpandedRide(null);
     setQuery(next);
   };
@@ -52,7 +62,15 @@ export default function AdminRides() {
     getRides(statusFilter, typeFilter, page, SIZE)
       .then((data) => {
         if (cancelled) return;
-        setRides(data.rides || []);
+        const nextRides = data.rides || [];
+        const nextTotal = data.totalRides || 0;
+        const nextPages = data.totalPages || 0;
+        setRides(nextRides);
+        writeCache(`admin-rides-${statusFilter}-${typeFilter}-${page}`, {
+          rides: nextRides,
+          totalRides: nextTotal,
+          totalPages: nextPages,
+        });
         setTotalRides(data.totalRides || 0);
         setTotalPages(data.totalPages || 0);
         setError(null);

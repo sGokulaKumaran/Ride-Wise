@@ -30,6 +30,7 @@ import { getUserRides } from "../services/rideApi";
 import { rideRiddenMeters } from "../services/routingApi";
 import { getConnectionsFull } from "../services/ridersApi";
 import { getCurrentLocation } from "../services/locationService";
+import { peekCache, writeCache } from "../services/pageCache";
 
 // ── One profile field: text when viewing, an input when editing ──
 // Defined at module scope on purpose: a component created inside Account()
@@ -113,7 +114,12 @@ export default function Account() {
   const setField = (key) => (value) => setForm((current) => ({ ...current, [key]: value }));
 
   // ── Numbers from the server ──
-  const [stats, setStats] = useState({ rides: null, km: null, connections: null });
+  // Seeded from the session cache so the numbers don't blank out on every visit.
+  const statsKey = `account-stats-${userId}`;
+  const [stats, setStats] = useState(() => peekCache(statsKey) ?? { rides: null, km: null, connections: null });
+  useEffect(() => {
+    if (stats.rides !== null || stats.connections !== null) writeCache(statsKey, stats);
+  }, [statsKey, stats]);
   const [locating, setLocating] = useState(false);
 
   useEffect(() => {

@@ -27,6 +27,7 @@ import Sidebar from "./components/layout/Sidebar";
 import TopBar from "./components/layout/TopBar";
 import MobileNav from "./components/layout/MobileNav";
 import { getCurrentLocation } from "../services/locationService";
+import { peekCache, writeCache } from "../services/pageCache";
 import {
   searchRiders,
   addRider,
@@ -96,8 +97,13 @@ export default function Riders() {
   const [tab, setTab] = useState("mine");
   const [query, setQuery] = useState("");
 
-  const [connections, setConnections] = useState([]);
-  const [loadingConnections, setLoadingConnections] = useState(true);
+  const connectionsKey = `riders-connections-${userId}`; // session cache (services/pageCache.js)
+  const [connections, setConnectionsState] = useState(() => peekCache(connectionsKey) ?? []);
+  const setConnections = useCallback((list) => {
+    setConnectionsState(list);
+    writeCache(connectionsKey, list);
+  }, [connectionsKey]);
+  const [loadingConnections, setLoadingConnections] = useState(() => peekCache(connectionsKey) === undefined);
 
   const [results, setResults] = useState({ query: "", riders: [] }); // tagged with their query
   const [searching, setSearching] = useState(false);
@@ -128,7 +134,7 @@ export default function Riders() {
       .then((list) => setConnections(Array.isArray(list) ? list : []))
       .catch((err) => toast.error(err.message || "Couldn't load your riders."))
       .finally(() => setLoadingConnections(false));
-  }, []);
+  }, [setConnections]);
 
   useEffect(() => {
     if (!userId) return undefined;
@@ -138,7 +144,7 @@ export default function Riders() {
       .catch((err) => { if (!cancelled) toast.error(err.message || "Couldn't load your riders."); })
       .finally(() => { if (!cancelled) setLoadingConnections(false); });
     return () => { cancelled = true; };
-  }, [userId]);
+  }, [userId, setConnections]);
 
   const connectedIds = new Set(connections.map((rider) => rider.id));
 

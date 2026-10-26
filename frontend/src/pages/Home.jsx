@@ -42,6 +42,7 @@ import ActiveRideOverlay from "./components/ride/ActiveRideOverlay";
 import RideHistoryPanel from "./components/ride/RideHistoryPanel";
 import HomeOrganizations from "./components/org/HomeOrganizations";
 import { getUserRides, endRide, deleteRide, getRide } from "../services/rideApi";
+import { peekCache, writeCache } from "../services/pageCache";
 import {
   formatDistance,
   formatDuration,
@@ -97,8 +98,9 @@ function HomeScreen({ user }) {
   const [mapRide, setMapRide] = useState(null); // the ride shown on the full-screen map
 
   // ── Rides ──
-  const [rides, setRides] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const ridesKey = `home-rides-${userId}`; // session cache: revisits show the list at once (services/pageCache.js)
+  const [rides, setRides] = useState(() => peekCache(ridesKey) ?? []);
+  const [loading, setLoading] = useState(() => peekCache(ridesKey) === undefined);
   const [loadFailed, setLoadFailed] = useState(false);
 
   // Computed once per visit (reading the clock is not a pure render step)
@@ -107,10 +109,10 @@ function HomeScreen({ user }) {
 
   // ── Load the ride list ──
   const applyRides = useCallback((result) => {
-    if (result.rides) setRides(result.rides); // keep the current list when a refresh fails
+    if (result.rides) { setRides(result.rides); writeCache(ridesKey, result.rides); } // keep the current list when a refresh fails
     setLoadFailed(result.failed);
     setLoading(false);
-  }, []);
+  }, [ridesKey]);
 
   const refreshRides = useCallback(() => {
     if (userId) fetchRides(userId).then(applyRides);

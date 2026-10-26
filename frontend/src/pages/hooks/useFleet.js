@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { watchFleet } from "../../services/fleetSocket";
+import { peekCache, writeCache } from "../../services/pageCache";
 
 // ── useLoad ──────────────────────────────────────────────────
 // const { data, error, loading, reload, setData } = useLoad(key, load)
@@ -23,6 +24,13 @@ import { watchFleet } from "../../services/fleetSocket";
 //
 // An answer that arrives after the key changed, or after a newer request
 // was started, is dropped.
+//
+// INSTANT REVISITS (pageCache)
+//   Every answer is also kept in the session cache under its key. When a
+//   screen is opened again, the kept data is shown at once — loading is
+//   false, no spinner — while the request still runs and swaps in the
+//   fresh answer (stale-while-revalidate). A real page reload
+//   (pull-to-refresh, F5) empties the cache, so it then loads fresh.
 export function useLoad(key, load) {
   const loadRef = useRef(load);
   useEffect(() => { loadRef.current = load; });
@@ -35,28 +43,40 @@ export function useLoad(key, load) {
     let cancelled = false;
     Promise.resolve()
       .then(() => loadRef.current())
-      .then((data) => { if (!cancelled) setResult({ key, data, error: null }); })
+      .then((data) => {
+        if (cancelled) return;
+        writeCache(key, data);
+        setResult({ key, data, error: null });
+      })
       .catch((error) => {
         if (cancelled) return;
-        // A failed RELOAD keeps what is on screen; a failed first load has nothing to keep.
-        setResult((previous) => ({ key, data: previous.key === key ? previous.data : null, error }));
+        // A failed RELOAD keeps what is on screen (or what the cache had);
+        // a failed first load with nothing kept has nothing to show.
+        setResult((previous) => ({
+          key,
+          data: previous.key === key ? previous.data : (peekCache(key) ?? null),
+          error,
+        }));
       });
     return () => { cancelled = true; };
   }, [key, tick]);
 
   const reload = useCallback(() => setTick((value) => value + 1), []);
   const setData = useCallback((next) => {
-    setResult((previous) => ({
-      ...previous,
-      data: typeof next === "function" ? next(previous.data) : next,
-    }));
+    setResult((previous) => {
+      const data = typeof next === "function" ? next(previous.data) : next;
+      if (previous.key != null) writeCache(previous.key, data); // live updates stay in the cache too
+      return { ...previous, data };
+    });
   }, []);
 
   const current = key != null && result.key === key;
+  // Not answered yet for this key → show what the cache kept, if anything.
+  const cached = key != null && !current ? peekCache(key) : undefined;
   return {
-    data: current ? result.data : null,
+    data: current ? result.data : (cached ?? null),
     error: current ? result.error : null,
-    loading: key != null && !current,
+    loading: key != null && !current && cached === undefined,
     reload,
     setData,
   };

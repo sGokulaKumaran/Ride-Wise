@@ -29,6 +29,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { AUTH_EXPIRED_EVENT, apiFetch, apiJson, isOffline, jsonBody } from "../services/http";
+import { setCacheOwner } from "../services/pageCache";
 import { changeEmail as changeAccountEmail, deleteAccount as deleteAccountOnServer } from "../services/accountApi";
 
 const AuthContext = createContext(null);
@@ -111,6 +112,7 @@ export function AuthProvider({ children }) {
 
   const applyUser = useCallback((next) => {
     rememberUser(next);
+    setCacheOwner(next?.id); // another account → its screens' cached data goes
     sessionStorage.setItem("ridewise-session-active", "true");
     setUser(next);
     setIsAuthenticated(true);
@@ -118,6 +120,7 @@ export function AuthProvider({ children }) {
 
   const clearUser = useCallback(() => {
     forgetUser();
+    setCacheOwner(null); // signed out → nothing cached may outlive the session
     setUser(null);
     setIsAuthenticated(false);
   }, []);

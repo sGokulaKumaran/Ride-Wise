@@ -12,6 +12,7 @@
 // ============================================================
 import { useState, useEffect } from "react";
 import { getDashboardStats } from "../../services/adminApi";
+import { peekCache, writeCache } from "../../services/pageCache";
 import { useTheme } from "../hooks/useTheme";
 import AdminLayout from "./AdminLayout";
 import { useAuth } from "../../context/AuthContext";
@@ -21,17 +22,17 @@ export default function AdminDashboard() {
   const { user } = useAuth();
   // Pass user?.id so the admin panel uses the same saved theme as the app
   const { tc } = useTheme(user?.id);
-  const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState(() => peekCache("admin-dashboard") ?? null); // session cache
+  const [loading, setLoading] = useState(() => peekCache("admin-dashboard") === undefined);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       try {
-        setLoading(true);
+        if (peekCache("admin-dashboard") === undefined) setLoading(true); // revisit: keep the cached numbers on screen
         const data = await getDashboardStats();
-        if (!cancelled) setStats(data);
+        if (!cancelled) { setStats(data); writeCache("admin-dashboard", data); }
       } catch (err) {
         if (!cancelled) setError(err.message);
       } finally {
