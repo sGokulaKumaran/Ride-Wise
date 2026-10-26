@@ -19,7 +19,8 @@ import java.io.IOException;
 //
 // A request is let through only when
 //   1. the session carries a user id, AND
-//   2. that account still exists and is not suspended (UserStatusCache).
+//   2. that account still exists and is not suspended, and the session was
+//      not signed out from another device (UserStatusCache).
 // Otherwise the answer is 401, which the frontend treats as "signed out".
 @Component
 public class SessionAuthInterceptor implements HandlerInterceptor {
@@ -52,14 +53,18 @@ public class SessionAuthInterceptor implements HandlerInterceptor {
         }
 
         long userId = ((Number) value).longValue();
-        if (!userStatusCache.isActive(userId)) {
-            // Suspended (or deleted) while logged in: end the session now.
+        UserStatusCache.SessionState state = userStatusCache.check(userId, session.getCreationTime());
+        if (state != UserStatusCache.SessionState.VALID) {
+            // Suspended or deleted while logged in, or signed out from another
+            // device: end this session now.
             try {
                 session.invalidate();
             } catch (IllegalStateException ignored) {
                 // already invalidated
             }
-            return reject(response, "This account has been suspended. Please contact an administrator.");
+            return reject(response, state == UserStatusCache.SessionState.SIGNED_OUT
+                    ? "You were signed out of this device. Please log in again."
+                    : "This account has been suspended. Please contact an administrator.");
         }
 
         request.setAttribute(REQUEST_USER_ID, userId);

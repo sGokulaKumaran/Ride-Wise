@@ -14,7 +14,9 @@ import java.util.Optional;
 import java.util.regex.Pattern;
 
 // ============================================================
-// AuthService — accounts: sign up, sign in, profile
+// AuthService — accounts: sign up, sign in, profile, and the account
+// settings that need the password (change password, change email,
+// sign out of other devices)
 //
 // Everything a client sends is validated here before it reaches the
 // database, so a bad value becomes a clear 400 message instead of a
@@ -150,6 +152,83 @@ public class AuthService {
         }
 
         return toResponse(userRepository.save(user));
+    }
+
+    // ============================================================
+    // ACCOUNT SETTINGS
+    // ============================================================
+
+    /**
+     * Change the password. The current one must be given; afterwards every
+     * other device is signed out (the caller starts a fresh session for the
+     * device that asked).
+     */
+    @Transactional
+    public void changePassword(Long userId, String currentPassword, String newPassword) {
+        User user = findUser(userId);
+        verifyPassword(user, currentPassword);
+        validateNewPassword(newPassword);
+        if (passwordEncoder.matches(newPassword, user.getPassword())) {
+            throw ApiException.badRequest("The new password must be different from the current one");
+        }
+        user.setPassword(passwordEncoder.encode(newPassword));
+        user.setSessionsValidAfter(System.currentTimeMillis());
+        userRepository.save(user);
+    }
+
+    /** Change the email used to sign in. The password confirms it. */
+    @Transactional
+    public UserResponse changeEmail(Long userId, String newEmail, String password) {
+        User user = findUser(userId);
+        verifyPassword(user, password);
+
+        String email = normalizeEmail(newEmail);
+        if (email == null || email.length() > MAX_EMAIL || !EMAIL.matcher(email).matches()) {
+            throw ApiException.badRequest("A valid email is required");
+        }
+        if (email.equals(user.getEmail())) {
+            throw ApiException.badRequest("That is already your email");
+        }
+        if (userRepository.existsByEmailIgnoreCase(email)) {
+            throw ApiException.conflict("Email already registered");
+        }
+        user.setEmail(email);
+        return toResponse(userRepository.save(user));
+    }
+
+    /**
+     * End every session of this account that started before now. The caller
+     * starts a fresh session for the device that asked, so it stays signed in.
+     */
+    @Transactional
+    public void signOutOtherDevices(Long userId) {
+        User user = findUser(userId);
+        user.setSessionsValidAfter(System.currentTimeMillis());
+        userRepository.save(user);
+    }
+
+    /**
+     * Check a signed-in person's password before a sensitive change. Wrong
+     * guesses count towards a lock-out of their own, so a session left open
+     * on someone else's device cannot be used to guess the password.
+     */
+    public void verifyPassword(User user, String password) {
+        String key = "account:" + user.getId();
+        loginAttempts.assertAllowed(key);
+        if (password == null || password.isEmpty() || !passwordEncoder.matches(password, user.getPassword())) {
+            loginAttempts.recordFailure(key);
+            throw ApiException.badRequest("Your password is not correct");
+        }
+        loginAttempts.recordSuccess(key);
+    }
+
+    private void validateNewPassword(String password) {
+        if (password == null || password.length() < MIN_PASSWORD) {
+            throw ApiException.badRequest("Password must be at least " + MIN_PASSWORD + " characters");
+        }
+        if (password.length() > MAX_PASSWORD) {
+            throw ApiException.badRequest("Password must be at most " + MAX_PASSWORD + " characters");
+        }
     }
 
     private User findUser(Long userId) {

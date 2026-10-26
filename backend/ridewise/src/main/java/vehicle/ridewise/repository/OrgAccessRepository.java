@@ -45,4 +45,9 @@ public interface OrgAccessRepository extends JpaRepository<OrgAccess, Long> {
     @Transactional
     @Query("DELETE FROM OrgAccess a WHERE a.orgId = :orgId")
     int deleteAllForOrg(@Param("orgId") Long orgId);
+
+    // Account deletion: the person's saved / unlocked organizations
+    @Modifying
+    @Transactional
+    long deleteByUserId(Long userId);
 }

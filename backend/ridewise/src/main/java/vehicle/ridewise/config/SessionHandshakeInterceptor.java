@@ -20,8 +20,9 @@ import java.util.Map;
 // the WebSocket session attributes.
 //
 // The handshake is rejected (beforeHandshake returns false) when there is
-// no authenticated session, or when the account has been suspended — so
-// neither an anonymous browser nor a suspended rider can open a ride socket.
+// no authenticated session, when the account has been suspended, or when
+// the session was signed out from another device — so none of them can
+// open a ride socket.
 // ============================================================
 @Component
 public class SessionHandshakeInterceptor implements HandshakeInterceptor {
@@ -47,7 +48,8 @@ public class SessionHandshakeInterceptor implements HandshakeInterceptor {
                     ? session.getAttribute(SessionAuthInterceptor.SESSION_USER_ID)
                     : null;
 
-            if (value instanceof Number number && userStatusCache.isActive(number.longValue())) {
+            if (value instanceof Number number
+                    && userStatusCache.check(number.longValue(), session.getCreationTime()) == UserStatusCache.SessionState.VALID) {
                 attributes.put(WS_USER_ID, number.longValue());
                 return true; // authenticated — allow the upgrade
             }

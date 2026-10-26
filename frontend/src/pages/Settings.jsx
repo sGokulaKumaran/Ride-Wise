@@ -5,26 +5,41 @@
 // Every control on this page does something:
 //
 //   Appearance     theme (applies at once, remembered per account)
-//   Rides & map    spoken directions on/off, and the map style — the same
-//                  two choices the ride map itself offers
+//   Rides & map    spoken directions on/off and how fast they are spoken,
+//                  keeping the screen awake, and the map style
 //   Accessibility  text size, reduced motion, high contrast (applied
 //                  app-wide by utils/a11y.js)
 //   Privacy        "Public profile" — saved on the server; when off, riders
 //                  who are not already connected with you cannot find you
 //                  in search or "near me"
+//   Account & security  email, password, sign out other devices
+//                  (components/account/SecuritySettings)
+//   Your data      download everything the account holds, as JSON
+//   Delete account (components/account/DeleteAccount)
 //
 // WHERE THINGS ARE STORED
-//   theme, accessibility, voice, map style → this device (localStorage)
-//   public profile                         → the rider's account (server)
+//   theme, accessibility, voice, screen, map style → this device (localStorage)
+//   public profile, email, password                → the rider's account (server)
 // ============================================================
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { useTheme, themes } from "./hooks/useTheme";
-import { usePersistentFlag, voiceSupported } from "./hooks/useRideAssist";
+import {
+  KEEP_AWAKE_KEY,
+  VOICE_RATES,
+  loadVoiceRate,
+  previewVoice,
+  saveVoiceRate,
+  usePersistentFlag,
+  voiceSupported,
+} from "./hooks/useRideAssist";
 import { useAuth } from "../context/AuthContext";
 import Icon from "./components/ui/Icon";
-import { Chip } from "./components/ui/Button";
+import Button, { Chip } from "./components/ui/Button";
+import SecuritySettings from "./components/account/SecuritySettings";
+import DeleteAccount from "./components/account/DeleteAccount";
+import { exportMyData } from "../services/accountApi";
 import Sidebar from "./components/layout/Sidebar";
 import TopBar from "./components/layout/TopBar";
 import MobileNav from "./components/layout/MobileNav";
@@ -37,6 +52,8 @@ import {
 } from "./components/ride/mapStyles";
 
 const A11Y_DEFAULTS = { textSize: "medium", reduceMotion: false, highContrast: false };
+
+const wakeLockSupported = typeof navigator !== "undefined" && "wakeLock" in navigator;
 
 function settingsKey(userId) {
   return userId ? `ridewise-settings-${userId}` : "ridewise-settings";
@@ -128,6 +145,13 @@ function SettingsScreen() {
 
   // ── Rides & map (this device) ──
   const [voiceOn, setVoiceOn] = usePersistentFlag("ridewise-voice-guidance", true);
+  const [voiceRate, setVoiceRate] = useState(loadVoiceRate);
+  const chooseVoiceRate = (id) => {
+    setVoiceRate(id);
+    saveVoiceRate(id);
+    previewVoice();
+  };
+  const [keepAwake, setKeepAwake] = usePersistentFlag(KEEP_AWAKE_KEY, true);
   const [mapStyle, setMapStyle] = useState(loadMapStyleChoice);
   const chooseMapStyle = (choice) => {
     setMapStyle(choice);
@@ -148,6 +172,29 @@ function SettingsScreen() {
       toast.error(err.message || "Couldn't save that. Please try again.");
     } finally {
       setSavingPrivacy(false);
+    }
+  };
+
+  // ── Your data (the account) ──
+  const [exporting, setExporting] = useState(false);
+  const downloadMyData = async () => {
+    setExporting(true);
+    try {
+      const data = await exportMyData();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `ridewise-data-${user?.username || "account"}-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast.success("Your data was downloaded.");
+    } catch (err) {
+      toast.error(err.message || "Couldn't prepare your data. Please try again.");
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -229,6 +276,39 @@ function SettingsScreen() {
               tc={tc}
             />
 
+            {voiceSupported && (
+              <div className={`pb-3 ${voiceOn ? "" : "opacity-50"}`}>
+                <p className="text-sm font-semibold">Voice speed</p>
+                <p className={`mb-2.5 mt-0.5 text-xs ${tc.sub}`}>Pick one to hear a sample.</p>
+                <div className="flex gap-2">
+                  {VOICE_RATES.map((option) => (
+                    <Chip
+                      key={option.id}
+                      selected={voiceRate === option.id}
+                      onClick={() => chooseVoiceRate(option.id)}
+                      disabled={!voiceOn}
+                      tc={tc}
+                      className="flex-1 justify-center"
+                    >
+                      {option.label}
+                    </Chip>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className={`border-t ${tc.divider}`} />
+            <Toggle
+              checked={keepAwake && wakeLockSupported}
+              onChange={setKeepAwake}
+              disabled={!wakeLockSupported}
+              label="Keep the screen on while riding"
+              sub={wakeLockSupported
+                ? "Stops the phone locking mid-ride, so GPS keeps working. Turn off to save battery."
+                : "This browser can't keep the screen on."}
+              tc={tc}
+            />
+
             <div className={`border-t ${tc.divider}`} />
             <div className="py-3">
               <p className="text-sm font-semibold">Map style</p>
@@ -304,6 +384,31 @@ function SettingsScreen() {
               Other riders never see your exact location or phone number. In a group ride your live
               position is shared only with that ride&apos;s riders, and only while you ride.
             </p>
+          </section>
+
+          {/* ── ACCOUNT & SECURITY ── */}
+          <section className={`mb-4 rounded-xl border p-5 ${tc.card}`}>
+            <SectionHeader icon="shield" title="Account & security" tc={tc} />
+            <SecuritySettings tc={tc} />
+          </section>
+
+          {/* ── YOUR DATA ── */}
+          <section className={`mb-4 rounded-xl border p-5 ${tc.card}`}>
+            <SectionHeader icon="download" title="Your data" tc={tc} />
+            <div className="flex flex-wrap items-center justify-between gap-3 py-2">
+              <p className={`max-w-md text-xs ${tc.sub}`}>
+                A copy of your profile, rides, connections, organizations and the trips you drove, as a JSON file.
+              </p>
+              <Button variant="secondary" size="sm" icon="download" tc={tc} loading={exporting} onClick={downloadMyData}>
+                Download my data
+              </Button>
+            </div>
+          </section>
+
+          {/* ── DELETE ACCOUNT ── */}
+          <section className={`mb-4 rounded-xl border p-5 ${tc.card}`}>
+            <SectionHeader icon="trash" title="Delete account" tc={tc} />
+            <DeleteAccount tc={tc} />
           </section>
 
           <p className={`py-4 text-center text-xs ${tc.sub}`}>RideWise v1.0</p>

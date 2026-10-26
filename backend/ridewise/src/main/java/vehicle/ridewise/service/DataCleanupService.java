@@ -154,7 +154,7 @@ public class DataCleanupService {
 
     // ═══════════════════════════════════════════════════════════════
     // 3. USER CLEANUP: remove all data of a deleted user
-    //    (pre-wired for a future "delete account" feature)
+    //    (used by AccountService.deleteAccount)
     // ═══════════════════════════════════════════════════════════════
 
     /**

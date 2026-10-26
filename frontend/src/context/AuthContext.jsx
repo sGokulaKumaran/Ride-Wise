@@ -6,6 +6,8 @@
 //   login          POST  /api/auth/login
 //   restore        GET   /api/auth/me        (on app load)
 //   updateProfile  PATCH /api/auth/profile/{userId}
+//   changeEmail    PATCH /api/auth/email                  (services/accountApi)
+//   deleteAccount  POST  /api/auth/account/delete         (services/accountApi)
 //   logout         POST  /api/auth/logout
 //
 // THE SESSION lives on the server (an HttpOnly cookie the browser sends
@@ -27,6 +29,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { AUTH_EXPIRED_EVENT, apiFetch, apiJson, isOffline, jsonBody } from "../services/http";
+import { changeEmail as changeAccountEmail, deleteAccount as deleteAccountOnServer } from "../services/accountApi";
 
 const AuthContext = createContext(null);
 
@@ -214,6 +217,35 @@ export function AuthProvider({ children }) {
     return merged;
   };
 
+  // ── CHANGE EMAIL ── (the password confirms it)
+  const changeEmail = async (email, password) => {
+    if (!user) throw new Error("You're not logged in.");
+    const updated = await changeAccountEmail(email, password);
+    const merged = { ...user, ...updated };
+    rememberUser(merged);
+    setUser(merged);
+    return merged;
+  };
+
+  // ── DELETE ACCOUNT ──
+  // The account is gone on the server, so everything this device kept for
+  // it goes too — including the per-user theme and settings that a normal
+  // logout leaves in place.
+  const deleteAccount = async (password, confirm) => {
+    if (!user) throw new Error("You're not logged in.");
+    const id = user.id;
+    await deleteAccountOnServer(password, confirm);
+    try {
+      localStorage.removeItem("ridewise-remember-me");
+      localStorage.removeItem(`ridewise-theme-${id}`);
+      localStorage.removeItem(`ridewise-settings-${id}`);
+    } catch {
+      // storage unavailable
+    }
+    clearRideCaches();
+    clearUser();
+  };
+
   // ── LOGOUT ──
   const logout = async () => {
     try {
@@ -236,7 +268,7 @@ export function AuthProvider({ children }) {
   return (
     <AuthContext.Provider value={{
       user, isAuthenticated, isFullyOnboarded, loading, avatarLetter, isAdmin,
-      login, signup, updateProfile, logout,
+      login, signup, updateProfile, changeEmail, deleteAccount, logout,
     }}>
       {children}
     </AuthContext.Provider>

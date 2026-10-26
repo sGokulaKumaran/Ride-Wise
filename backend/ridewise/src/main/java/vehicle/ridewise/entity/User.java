@@ -41,6 +41,12 @@ public class User {
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
+    // Sessions started before this moment (epoch milliseconds) are no longer
+    // accepted — set by "sign out of other devices" and by a password change.
+    // NULL: every session is accepted.
+    @Column(name = "sessions_valid_after")
+    private Long sessionsValidAfter;
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
@@ -61,6 +67,7 @@ public class User {
     public Boolean getEnabled()          { return enabled; }
     public Boolean getProfilePublic()    { return profilePublic; }
     public LocalDateTime getCreatedAt()  { return createdAt; }
+    public Long getSessionsValidAfter()  { return sessionsValidAfter; }
 
     // ---- Setters ----
     public void setId(Long id)                         { this.id = id; }
@@ -75,4 +82,5 @@ public class User {
     public void setEnabled(Boolean enabled)            { this.enabled = enabled; }
     public void setProfilePublic(Boolean profilePublic) { this.profilePublic = profilePublic; }
     public void setCreatedAt(LocalDateTime createdAt)  { this.createdAt = createdAt; }
+    public void setSessionsValidAfter(Long sessionsValidAfter) { this.sessionsValidAfter = sessionsValidAfter; }
 }

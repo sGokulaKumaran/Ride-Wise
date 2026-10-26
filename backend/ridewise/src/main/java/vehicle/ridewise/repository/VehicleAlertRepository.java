@@ -45,4 +45,9 @@ public interface VehicleAlertRepository extends JpaRepository<VehicleAlert, Long
     @Query("DELETE FROM VehicleAlert a WHERE a.orgId = :orgId AND a.userId NOT IN " +
            "(SELECT m.userId FROM OrgMember m WHERE m.orgId = :orgId AND m.status = 'ACTIVE')")
     int deleteForNonMembers(@Param("orgId") Long orgId);
+
+    // Account deletion: every "tell me when it's near" of the person
+    @Modifying
+    @Transactional
+    long deleteByUserId(Long userId);
 }

@@ -3,7 +3,11 @@
 //
 //   useVoiceGuidance(nav, enabled)   speaks the turn instructions
 //   useWakeLock(active)              keeps the screen on while navigating
+//                                    (unless switched off in Settings)
 //   usePersistentFlag(key, initial)  an on/off choice that is remembered
+//
+//   VOICE_RATES / loadVoiceRate / saveVoiceRate / previewVoice
+//                                    how fast directions are spoken
 //
 // All three use standard browser APIs (Speech Synthesis, Screen Wake
 // Lock, localStorage) — no dependency and no API key — and do nothing
@@ -16,16 +20,46 @@ import { nextAnnouncement } from "../../services/navigation";
 export const voiceSupported =
   typeof window !== "undefined" && "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
 
-function speak(text) {
+// ── How fast directions are spoken (Settings → Rides & map) ──
+// Read at the moment of speaking, so a change applies to the next sentence.
+export const VOICE_RATES = [
+  { id: "slow", label: "Slow", rate: 0.85 },
+  { id: "normal", label: "Normal", rate: 1 },
+  { id: "fast", label: "Fast", rate: 1.2 },
+];
+const VOICE_RATE_KEY = "ridewise-voice-rate";
+
+export function loadVoiceRate() {
+  try {
+    const saved = localStorage.getItem(VOICE_RATE_KEY);
+    if (VOICE_RATES.some((option) => option.id === saved)) return saved;
+  } catch {
+    // storage unavailable
+  }
+  return "normal";
+}
+
+export function saveVoiceRate(id) {
+  try { localStorage.setItem(VOICE_RATE_KEY, id); } catch { /* storage unavailable */ }
+}
+
+const rateOf = (id) => (VOICE_RATES.find((option) => option.id === id) || VOICE_RATES[1]).rate;
+
+function speak(text, { interrupt = false } = {}) {
   if (!voiceSupported) return;
   const synth = window.speechSynthesis;
   // Something older is still waiting to be said → it is out of date now.
-  if (synth.pending) synth.cancel();
+  if (interrupt || synth.pending) synth.cancel();
   const utterance = new SpeechSynthesisUtterance(text);
   const language = (navigator.language || "").toLowerCase();
   utterance.lang = language.startsWith("en") ? navigator.language : "en-US";
-  utterance.rate = 1;
+  utterance.rate = rateOf(loadVoiceRate());
   synth.speak(utterance);
+}
+
+// Say a sample sentence now (the Settings "Play a sample" button).
+export function previewVoice(text = "In 200 metres, turn left onto Anna Salai.") {
+  speak(text, { interrupt: true });
 }
 
 // ── Spoken turn-by-turn guidance ─────────────────────────────
@@ -58,9 +92,15 @@ export function useVoiceGuidance(nav, enabled) {
 // Without this a phone dims and locks a minute into the ride, and the
 // browser stops delivering GPS. The lock is released automatically when
 // the tab is hidden, so it is re-acquired when the rider comes back.
+// Riders who would rather save battery can switch it off in Settings.
+export const KEEP_AWAKE_KEY = "ridewise-keep-awake";
+
 export function useWakeLock(active) {
+  const [keepAwake] = usePersistentFlag(KEEP_AWAKE_KEY, true);
+  const wanted = active && keepAwake;
+
   useEffect(() => {
-    if (!active || typeof navigator === "undefined" || !("wakeLock" in navigator)) return undefined;
+    if (!wanted || typeof navigator === "undefined" || !("wakeLock" in navigator)) return undefined;
 
     let lock = null;
     let cancelled = false;
@@ -87,7 +127,7 @@ export function useWakeLock(active) {
       lock?.release().catch(() => {});
       lock = null;
     };
-  }, [active]);
+  }, [wanted]);
 }
 
 // ── A remembered on/off switch ───────────────────────────────

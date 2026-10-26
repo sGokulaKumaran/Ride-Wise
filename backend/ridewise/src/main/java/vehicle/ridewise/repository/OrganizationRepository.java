@@ -34,4 +34,7 @@ public interface OrganizationRepository extends JpaRepository<Organization, Long
            "(LOWER(o.name) LIKE LOWER(CONCAT('%', :q, '%')) ESCAPE '\\' " +
            " OR LOWER(o.orgCode) LIKE LOWER(CONCAT('%', :q, '%')) ESCAPE '\\')")
     Page<Organization> adminSearch(@Param("q") String query, Pageable pageable);
+
+    // Organizations someone still owns (deleted ones excluded)
+    List<Organization> findByOwnerUserIdAndStatusNot(Long ownerUserId, String status);
 }

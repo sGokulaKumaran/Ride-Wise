@@ -20,6 +20,7 @@ import { useAuth } from "../../context/AuthContext";
 import { themes, useTheme } from "../hooks/useTheme";
 import Icon from "../components/ui/Icon";
 import Button, { IconButton } from "../components/ui/Button";
+import { PASSWORD_STRENGTH, passwordScore } from "../../utils/passwordStrength";
 
 // What RideWise actually does — shown beside the form on wide screens.
 const HIGHLIGHTS = [
@@ -38,23 +39,6 @@ const HIGHLIGHTS = [
     title: "Every ride remembered",
     text: "Distance, time and route for each ride, ready whenever you look back.",
   },
-];
-
-// 0–4: length, upper case, digit, symbol
-function passwordScore(password) {
-  let score = 0;
-  if (password.length > 5) score += 1;
-  if (/[A-Z]/.test(password)) score += 1;
-  if (/[0-9]/.test(password)) score += 1;
-  if (/[^A-Za-z0-9]/.test(password)) score += 1;
-  return score;
-}
-const STRENGTH = [
-  { label: "Too short", tone: "danger" },
-  { label: "Weak", tone: "danger" },
-  { label: "Fair", tone: "warn" },
-  { label: "Good", tone: "ok" },
-  { label: "Strong", tone: "ok" },
 ];
 
 // Remembered across the onboarding steps (this tab only).
@@ -194,7 +178,7 @@ export default function LoginPage() {
   };
 
   const score = passwordScore(password);
-  const strength = STRENGTH[score];
+  const strength = PASSWORD_STRENGTH[score];
 
   return (
     <div className={`relative min-h-screen w-full overflow-hidden ${tc.bg} ${tc.text}`}>
