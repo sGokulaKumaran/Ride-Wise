@@ -765,13 +765,6 @@ This project is under active development. Contributions, suggestions, and feedba
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
----
-
-## 📄 License
-
-This project was built for the **BharathCode Hackathon**.
-
----
 
 <p align="center">
   Built with ❤️ by <b>Gokula Kumaran S</b><br/>
