@@ -47,6 +47,11 @@ public class User {
     @Column(name = "sessions_valid_after")
     private Long sessionsValidAfter;
 
+    // Automatically delete this rider's completed/cancelled rides older than
+    // this many days. NULL or 0 = keep all rides forever.
+    @Column(name = "auto_delete_rides_days")
+    private Integer autoDeleteRidesDays;
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
@@ -68,6 +73,7 @@ public class User {
     public Boolean getProfilePublic()    { return profilePublic; }
     public LocalDateTime getCreatedAt()  { return createdAt; }
     public Long getSessionsValidAfter()  { return sessionsValidAfter; }
+    public Integer getAutoDeleteRidesDays() { return autoDeleteRidesDays; }
 
     // ---- Setters ----
     public void setId(Long id)                         { this.id = id; }
@@ -83,4 +89,5 @@ public class User {
     public void setProfilePublic(Boolean profilePublic) { this.profilePublic = profilePublic; }
     public void setCreatedAt(LocalDateTime createdAt)  { this.createdAt = createdAt; }
     public void setSessionsValidAfter(Long sessionsValidAfter) { this.sessionsValidAfter = sessionsValidAfter; }
+    public void setAutoDeleteRidesDays(Integer autoDeleteRidesDays) { this.autoDeleteRidesDays = autoDeleteRidesDays; }
 }

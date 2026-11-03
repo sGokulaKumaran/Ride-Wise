@@ -1,5 +1,5 @@
 // ============================================================
-// AdminRides — Ride monitoring page
+// AdminRides — Ride monitoring & cleanup page
 //
 // Features:
 //   - Paginated ride table
@@ -7,11 +7,19 @@
 //   - Filter by type (solo/group)
 //   - View ride details (from → destination, distance, creator)
 //   - Expandable group ride participant list
+//   - Force-end active rides & delete any ride (two-tap confirmation)
+//   - Bulk cleanup of finished (completed / cancelled) rides to free DB space
 // ============================================================
-import { Fragment, useState, useEffect } from "react";
+import { Fragment, useState, useEffect, useRef } from "react";
 import { toast } from "react-toastify";
-import { getRides, getRideDetail } from "../../services/adminApi";
-import { peekCache, writeCache } from "../../services/pageCache";
+import {
+  getRides,
+  getRideDetail,
+  endAdminRide,
+  deleteAdminRide,
+  cleanupFinishedRides,
+} from "../../services/adminApi";
+import { peekCache, writeCache, forgetCache } from "../../services/pageCache";
 import { useTheme } from "../hooks/useTheme";
 import AdminLayout from "./AdminLayout";
 import { useAuth } from "../../context/AuthContext";
@@ -19,6 +27,7 @@ import Icon from "../components/ui/Icon";
 import Button, { Chip } from "../components/ui/Button";
 
 const SIZE = 15;
+const CONFIRM_WINDOW_MS = 4000;
 
 export default function AdminRides() {
   const { user } = useAuth();
@@ -35,7 +44,20 @@ export default function AdminRides() {
   const [expandedRide, setExpandedRide] = useState(null); // { id, data }
   const [expandLoading, setExpandLoading] = useState(null);
 
-  const { status: statusFilter, type: typeFilter, page } = query;
+  // Per-row action state (2-tap confirm & loading)
+  const [confirmAction, setConfirmAction] = useState(null); // e.g. "end-12", "del-12", "clean-30", "clean-0"
+  const [busyAction, setBusyAction] = useState(null);
+  const confirmTimer = useRef(null);
+
+  useEffect(() => () => clearTimeout(confirmTimer.current), []);
+
+  const armConfirm = (key) => {
+    setConfirmAction(key);
+    clearTimeout(confirmTimer.current);
+    confirmTimer.current = setTimeout(() => setConfirmAction(null), CONFIRM_WINDOW_MS);
+  };
+
+  const { status: statusFilter, type: typeFilter, page, tick = 0 } = query;
   // Only a real change starts a load (re-selecting the current filter is a no-op).
   const changeQuery = (patch) => {
     const next = { ...query, ...patch };
@@ -50,6 +72,7 @@ export default function AdminRides() {
       setLoading(true);
     }
     setExpandedRide(null);
+    setConfirmAction(null);
     setQuery(next);
   };
   const setStatusFilter = (status) => changeQuery({ status, page: 0 });
@@ -71,14 +94,14 @@ export default function AdminRides() {
           totalRides: nextTotal,
           totalPages: nextPages,
         });
-        setTotalRides(data.totalRides || 0);
-        setTotalPages(data.totalPages || 0);
+        setTotalRides(nextTotal);
+        setTotalPages(nextPages);
         setError(null);
       })
       .catch((err) => { if (!cancelled) setError(err.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [statusFilter, typeFilter, page]);
+  }, [statusFilter, typeFilter, page, tick]);
 
   const handleExpand = async (rideId) => {
     if (expandedRide?.id === rideId) {
@@ -93,6 +116,88 @@ export default function AdminRides() {
       toast.error(err.message || "Couldn't load the ride's riders.");
     } finally {
       setExpandLoading(null);
+    }
+  };
+
+  const handleEndRide = async (ride) => {
+    if (busyAction) return;
+    const key = `end-${ride.id}`;
+    if (confirmAction !== key) {
+      armConfirm(key);
+      return;
+    }
+    clearTimeout(confirmTimer.current);
+    setConfirmAction(null);
+
+    try {
+      setBusyAction(key);
+      await endAdminRide(ride.id);
+      setRides((list) =>
+        list.map((r) => (r.id === ride.id ? { ...r, status: "completed" } : r))
+      );
+      forgetCache("admin-rides-");
+      forgetCache("admin-dashboard");
+      toast.success(`Ride #${ride.id} marked as completed.`);
+    } catch (err) {
+      toast.error(err.message || "Couldn't end that ride.");
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const handleDeleteRide = async (ride) => {
+    if (busyAction) return;
+    const key = `del-${ride.id}`;
+    if (confirmAction !== key) {
+      armConfirm(key);
+      return;
+    }
+    clearTimeout(confirmTimer.current);
+    setConfirmAction(null);
+
+    try {
+      setBusyAction(key);
+      await deleteAdminRide(ride.id);
+      setRides((list) => list.filter((r) => r.id !== ride.id));
+      setTotalRides((n) => Math.max(0, n - 1));
+      if (expandedRide?.id === ride.id) setExpandedRide(null);
+      forgetCache("admin-rides-");
+      forgetCache("admin-dashboard");
+      toast.success(`Ride #${ride.id} permanently deleted.`);
+    } catch (err) {
+      toast.error(err.message || "Couldn't delete that ride.");
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const handleBulkCleanup = async (olderThanDays) => {
+    if (busyAction) return;
+    const key = `clean-${olderThanDays}`;
+    if (confirmAction !== key) {
+      armConfirm(key);
+      return;
+    }
+    clearTimeout(confirmTimer.current);
+    setConfirmAction(null);
+
+    try {
+      setBusyAction(key);
+      const res = await cleanupFinishedRides(olderThanDays);
+      const deletedCount = res?.deletedRides ?? 0;
+      forgetCache("admin-rides-");
+      forgetCache("admin-dashboard");
+      setLoading(true);
+      setQuery((q) => ({ ...q, page: 0, tick: (q.tick || 0) + 1 }));
+      toast.success(
+        deletedCount > 0
+          ? `Deleted ${deletedCount} finished ride${deletedCount === 1 ? "" : "s"}.`
+          : "No matching finished rides to delete."
+      );
+    } catch (err) {
+      toast.error(err.message || "Couldn't clean up finished rides.");
+    } finally {
+      setBusyAction(null);
     }
   };
 
@@ -125,7 +230,7 @@ export default function AdminRides() {
     <AdminLayout>
       <div className="space-y-6">
         {/* ── Header ── */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold">Ride Monitoring</h1>
             <p className={`text-sm ${tc.sub} mt-1`}>
@@ -135,17 +240,43 @@ export default function AdminRides() {
             </p>
           </div>
 
-          {/* Filters */}
+          {/* Bulk Database Cleanup Controls */}
           <div className="flex flex-wrap items-center gap-2">
-            <Chip selected={statusFilter === ""} onClick={() => setStatusFilter("")} tc={tc}>All Statuses</Chip>
-            <Chip selected={statusFilter === "active"} onClick={() => setStatusFilter("active")} tc={tc}>Active</Chip>
-            <Chip selected={statusFilter === "completed"} onClick={() => setStatusFilter("completed")} tc={tc}>Completed</Chip>
-            <Chip selected={statusFilter === "cancelled"} onClick={() => setStatusFilter("cancelled")} tc={tc}>Cancelled</Chip>
-            <span className={`w-px h-4 self-center ${tc.surface2}`} />
-            <Chip selected={typeFilter === ""} onClick={() => setTypeFilter("")} tc={tc}>All Types</Chip>
-            <Chip selected={typeFilter === "solo"} onClick={() => setTypeFilter("solo")} tc={tc}>Solo</Chip>
-            <Chip selected={typeFilter === "group"} onClick={() => setTypeFilter("group")} tc={tc}>Group</Chip>
+            <Button
+              variant={confirmAction === "clean-30" ? "danger" : "secondary"}
+              size="sm"
+              icon="trash"
+              loading={busyAction === "clean-30"}
+              disabled={Boolean(busyAction && busyAction !== "clean-30")}
+              onClick={() => handleBulkCleanup(30)}
+              tc={tc}
+            >
+              {confirmAction === "clean-30" ? "Tap again to purge >30d" : "Purge finished >30d"}
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              icon="trash"
+              loading={busyAction === "clean-0"}
+              disabled={Boolean(busyAction && busyAction !== "clean-0")}
+              onClick={() => handleBulkCleanup(0)}
+              tc={tc}
+            >
+              {confirmAction === "clean-0" ? "Tap again to clear all finished" : "Clear all finished"}
+            </Button>
           </div>
+        </div>
+
+        {/* ── Filters ── */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Chip selected={statusFilter === ""} onClick={() => setStatusFilter("")} tc={tc}>All Statuses</Chip>
+          <Chip selected={statusFilter === "active"} onClick={() => setStatusFilter("active")} tc={tc}>Active</Chip>
+          <Chip selected={statusFilter === "completed"} onClick={() => setStatusFilter("completed")} tc={tc}>Completed</Chip>
+          <Chip selected={statusFilter === "cancelled"} onClick={() => setStatusFilter("cancelled")} tc={tc}>Cancelled</Chip>
+          <span className={`w-px h-4 self-center ${tc.surface2}`} />
+          <Chip selected={typeFilter === ""} onClick={() => setTypeFilter("")} tc={tc}>All Types</Chip>
+          <Chip selected={typeFilter === "solo"} onClick={() => setTypeFilter("solo")} tc={tc}>Solo</Chip>
+          <Chip selected={typeFilter === "group"} onClick={() => setTypeFilter("group")} tc={tc}>Group</Chip>
         </div>
 
         {/* ── Error ── */}
@@ -169,7 +300,7 @@ export default function AdminRides() {
                   <th className="text-left px-4 py-3 font-semibold">Status</th>
                   <th className="text-left px-4 py-3 font-semibold hidden lg:table-cell">Distance</th>
                   <th className="text-left px-4 py-3 font-semibold hidden sm:table-cell">Created</th>
-                  <th className="text-right px-4 py-3 font-semibold">Details</th>
+                  <th className="text-right px-4 py-3 font-semibold">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -195,96 +326,126 @@ export default function AdminRides() {
                   </tr>
                 )}
 
-                {!loading && rides.map((ride) => (
-                  <Fragment key={ride.id}>
-                    <tr
-                      className={`border-b ${tc.divider} transition-colors ${tc.cardHover}`}
-                    >
-                      <td className={`px-4 py-3 font-mono text-xs ${tc.sub}`}>#{ride.id}</td>
-                      <td className="px-4 py-3">
-                        <div>
-                          <p className="font-medium truncate max-w-[120px]">
-                            {ride.creatorUsername || <span className={`italic ${tc.sub}`}>Unknown</span>}
-                          </p>
-                          <p className={`text-xs ${tc.sub} truncate max-w-[120px]`}>{ride.creatorEmail}</p>
-                        </div>
-                      </td>
-                      <td className={`px-4 py-3 hidden md:table-cell ${tc.sub}`}>
-                        <div className="flex items-center gap-1 text-xs truncate max-w-[200px]">
-                          <Icon name="dotFilled" size={12} />
-                          <span className="truncate">{ride.fromName || "?"}</span>
-                          <Icon name="arrowRight" size={12} className="mx-1" />
-                          <Icon name="dotFilled" size={12} />
-                          <span className="truncate">{ride.destinationName || "?"}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${tc.surface2} ${tc.sub}`}>
-                          <Icon name={ride.rideType === "group" ? "riders" : "ride"} size={12} />
-                          {ride.rideType}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-semibold ${statusPillClass(ride.status)}`}>
-                          {ride.status}
-                        </span>
-                      </td>
-                      <td className={`px-4 py-3 hidden lg:table-cell text-xs ${tc.sub}`}>
-                        {formatDistance(ride.actualDistanceMeters ?? ride.distanceMeters)}
-                      </td>
-                      <td className={`px-4 py-3 hidden sm:table-cell text-xs ${tc.sub}`}>
-                        {formatDate(ride.createdAt)}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        {ride.rideType === "group" && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            icon={expandedRide?.id === ride.id ? "chevronUp" : "chevronDown"}
-                            loading={expandLoading === ride.id}
-                            onClick={() => handleExpand(ride.id)}
-                            tc={tc}
-                          >
-                            {expandedRide?.id === ride.id ? "Close" : "Riders"}
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-
-                    {/* ── Expanded Participant Detail ── */}
-                    {expandedRide?.id === ride.id && expandedRide.data?.participants && (
-                      <tr>
-                        <td colSpan={8} className={`px-6 py-4 border-b ${tc.divider}`}>
-                          <div className="space-y-2">
-                            <p className={`text-xs font-semibold uppercase tracking-wider ${tc.sub}`}>
-                              Participants ({expandedRide.data.participants.length})
+                {!loading && rides.map((ride) => {
+                  const endKey = `end-${ride.id}`;
+                  const delKey = `del-${ride.id}`;
+                  return (
+                    <Fragment key={ride.id}>
+                      <tr
+                        className={`border-b ${tc.divider} transition-colors ${tc.cardHover}`}
+                      >
+                        <td className={`px-4 py-3 font-mono text-xs ${tc.sub}`}>#{ride.id}</td>
+                        <td className="px-4 py-3">
+                          <div>
+                            <p className="font-medium truncate max-w-[120px]">
+                              {ride.creatorUsername || <span className={`italic ${tc.sub}`}>Unknown</span>}
                             </p>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                              {expandedRide.data.participants.map((p) => (
-                                <div
-                                  key={p.id}
-                                  className={`flex items-center gap-3 px-3 py-2 rounded-lg ${tc.surface2}`}
-                                >
-                                  <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${tc.button}`}>
-                                    {(p.username?.[0] || p.email?.[0] || "?").toUpperCase()}
-                                  </span>
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-xs font-medium truncate">
-                                      {p.username || p.email}
-                                    </p>
-                                    <p className={`text-[11px] ${tc.sub}`}>
-                                      {p.status} · {p.role}
-                                    </p>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
+                            <p className={`text-xs ${tc.sub} truncate max-w-[120px]`}>{ride.creatorEmail}</p>
+                          </div>
+                        </td>
+                        <td className={`px-4 py-3 hidden md:table-cell ${tc.sub}`}>
+                          <div className="flex items-center gap-1 text-xs truncate max-w-[200px]">
+                            <Icon name="dotFilled" size={12} />
+                            <span className="truncate">{ride.fromName || "?"}</span>
+                            <Icon name="arrowRight" size={12} className="mx-1" />
+                            <Icon name="dotFilled" size={12} />
+                            <span className="truncate">{ride.destinationName || "?"}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${tc.surface2} ${tc.sub}`}>
+                            <Icon name={ride.rideType === "group" ? "riders" : "ride"} size={12} />
+                            {ride.rideType}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-semibold ${statusPillClass(ride.status)}`}>
+                            {ride.status}
+                          </span>
+                        </td>
+                        <td className={`px-4 py-3 hidden lg:table-cell text-xs ${tc.sub}`}>
+                          {formatDistance(ride.actualDistanceMeters ?? ride.distanceMeters)}
+                        </td>
+                        <td className={`px-4 py-3 hidden sm:table-cell text-xs ${tc.sub}`}>
+                          {formatDate(ride.createdAt)}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                            {ride.rideType === "group" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                icon={expandedRide?.id === ride.id ? "chevronUp" : "chevronDown"}
+                                loading={expandLoading === ride.id}
+                                onClick={() => handleExpand(ride.id)}
+                                tc={tc}
+                              >
+                                {expandedRide?.id === ride.id ? "Close" : "Riders"}
+                              </Button>
+                            )}
+                            {ride.status === "active" && (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                icon="finish"
+                                loading={busyAction === endKey}
+                                disabled={Boolean(busyAction && busyAction !== endKey)}
+                                onClick={() => handleEndRide(ride)}
+                                tc={tc}
+                              >
+                                {confirmAction === endKey ? "Tap to end" : "End"}
+                              </Button>
+                            )}
+                            <Button
+                              variant="danger"
+                              size="sm"
+                              icon="trash"
+                              loading={busyAction === delKey}
+                              disabled={Boolean(busyAction && busyAction !== delKey)}
+                              onClick={() => handleDeleteRide(ride)}
+                              tc={tc}
+                            >
+                              {confirmAction === delKey ? "Tap again" : "Delete"}
+                            </Button>
                           </div>
                         </td>
                       </tr>
-                    )}
-                  </Fragment>
-                ))}
+
+                      {/* ── Expanded Participant Detail ── */}
+                      {expandedRide?.id === ride.id && expandedRide.data?.participants && (
+                        <tr>
+                          <td colSpan={8} className={`px-6 py-4 border-b ${tc.divider}`}>
+                            <div className="space-y-2">
+                              <p className={`text-xs font-semibold uppercase tracking-wider ${tc.sub}`}>
+                                Participants ({expandedRide.data.participants.length})
+                              </p>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                                {expandedRide.data.participants.map((p) => (
+                                  <div
+                                    key={p.id}
+                                    className={`flex items-center gap-3 px-3 py-2 rounded-lg ${tc.surface2}`}
+                                  >
+                                    <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${tc.button}`}>
+                                      {(p.username?.[0] || p.email?.[0] || "?").toUpperCase()}
+                                    </span>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-xs font-medium truncate">
+                                        {p.username || p.email}
+                                      </p>
+                                      <p className={`text-[11px] ${tc.sub}`}>
+                                        {p.status} · {p.role}
+                                      </p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>

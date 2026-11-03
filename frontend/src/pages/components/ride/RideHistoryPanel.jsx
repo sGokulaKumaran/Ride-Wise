@@ -5,19 +5,9 @@
 //   • start → destination, distance, time, date, status
 //   • "Open map" (live ride) / "View route" (finished ride)
 //   • a small route preview that expands in place
-//   • delete — two taps, and only for rides this rider owns
-//     (the server refuses to delete someone else's group ride)
-//
-// The filter chips narrow the list; they appear once there is more than
-// a handful of rides.
-//
-// PROPS
-//   rides          lightweight ride rows (no route geometry)
-//   currentUserId  the logged-in rider (decides who may delete)
-//   onOpenRide     (ride) → open the full-screen map
-//   onDeleteRide   async (rideId) → delete and refresh
-//   onClose        close the panel
-//   tc             theme classes
+//   • delete — two taps (available for any finished ride or any ride owned
+//     by this rider)
+//   • "Clear finished" — removes all completed/cancelled rides at once
 // ============================================================
 
 import { useEffect, useState } from "react";
@@ -40,12 +30,22 @@ const FILTERS = [
   { id: "group",     label: "Group",     test: (ride) => ride.rideType === "group" },
 ];
 
-export default function RideHistoryPanel({ rides, currentUserId, onOpenRide, onDeleteRide, onClose, tc }) {
+export default function RideHistoryPanel({
+  rides,
+  currentUserId,
+  onOpenRide,
+  onDeleteRide,
+  onClearFinishedRides,
+  onClose,
+  tc,
+}) {
   const [filter, setFilter] = useState("all");
   const [expandedId, setExpandedId] = useState(null);   // ride whose preview map is open
   const [details, setDetails] = useState({});           // rideId → ride with its route
   const [confirmId, setConfirmId] = useState(null);     // ride waiting for delete confirmation
   const [deletingId, setDeletingId] = useState(null);
+  const [confirmClearAll, setConfirmClearAll] = useState(false);
+  const [clearingAll, setClearingAll] = useState(false);
 
   // Escape closes the panel
   useEffect(() => {
@@ -55,6 +55,7 @@ export default function RideHistoryPanel({ rides, currentUserId, onOpenRide, onD
   }, [onClose]);
 
   const visible = rides.filter(FILTERS.find((f) => f.id === filter).test);
+  const finishedCount = rides.filter((r) => r.status !== "active").length;
 
   // Open/close a preview. The list rows carry no geometry, so the route is
   // fetched the first time a preview is opened.
@@ -81,6 +82,21 @@ export default function RideHistoryPanel({ rides, currentUserId, onOpenRide, onD
     setConfirmId(null);
   };
 
+  const handleClearFinished = async () => {
+    if (!onClearFinishedRides) return;
+    if (!confirmClearAll) {
+      setConfirmClearAll(true);
+      return;
+    }
+    setClearingAll(true);
+    try {
+      await onClearFinishedRides();
+    } finally {
+      setClearingAll(false);
+      setConfirmClearAll(false);
+    }
+  };
+
   return (
     <div
       className={`fixed inset-0 z-[7000] flex justify-end ${tc.overlay}`}
@@ -101,8 +117,35 @@ export default function RideHistoryPanel({ rides, currentUserId, onOpenRide, onD
             <p className="text-base font-semibold">Ride history</p>
             <p className={`text-xs ${tc.sub}`}>
               {rides.length} {rides.length === 1 ? "ride" : "rides"}
+              {finishedCount > 0 ? ` · ${finishedCount} finished` : ""}
             </p>
           </div>
+          {finishedCount > 0 && onClearFinishedRides && (
+            <div className="flex items-center gap-1.5">
+              {confirmClearAll && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  tc={tc}
+                  disabled={clearingAll}
+                  onClick={() => setConfirmClearAll(false)}
+                >
+                  Cancel
+                </Button>
+              )}
+              <Button
+                variant={confirmClearAll ? "danger" : "secondary"}
+                size="sm"
+                icon="trash"
+                tc={tc}
+                loading={clearingAll}
+                onClick={handleClearFinished}
+                title="Remove all completed and cancelled rides"
+              >
+                {confirmClearAll ? `Delete ${finishedCount}?` : "Clear finished"}
+              </Button>
+            </div>
+          )}
           <IconButton icon="close" label="Close ride history" size="sm" tc={tc} onClick={onClose} />
         </div>
 
@@ -145,6 +188,7 @@ export default function RideHistoryPanel({ rides, currentUserId, onOpenRide, onD
             const expanded = expandedId === id;
             const confirming = confirmId === id;
             const mine = String(ride.userId) === String(currentUserId);
+            const canDelete = mine || !active;
             const canPreview = Boolean(ride.routeCoordinates || ride.hasRoute);
             const date = ride.createdAt
               ? new Date(ride.createdAt).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })
@@ -208,14 +252,16 @@ export default function RideHistoryPanel({ rides, currentUserId, onOpenRide, onD
                   {confirming ? (
                     <div className="mt-3">
                       <p className={`mb-2 text-xs ${tc.sub}`}>
-                        Delete this ride for good? This can&apos;t be undone.
+                        {mine
+                          ? "Delete this ride for good? This can't be undone."
+                          : "Remove this shared ride from your history?"}
                       </p>
                       <div className="flex gap-2">
                         <Button variant="secondary" size="sm" full tc={tc} onClick={() => setConfirmId(null)} disabled={deletingId === id}>
                           Keep
                         </Button>
                         <Button variant="danger" size="sm" full icon="trash" tc={tc} loading={deletingId === id} onClick={() => handleDelete(ride)}>
-                          Delete
+                          {mine ? "Delete" : "Remove"}
                         </Button>
                       </div>
                     </div>
@@ -242,14 +288,14 @@ export default function RideHistoryPanel({ rides, currentUserId, onOpenRide, onD
                           onClick={() => togglePreview(ride)}
                         />
                       )}
-                      {mine && (
+                      {canDelete && (
                         <Button
                           variant="ghost"
                           size="sm"
                           icon="trash"
                           iconOnly
                           tc={tc}
-                          title="Delete ride"
+                          title={mine ? "Delete ride" : "Remove from history"}
                           onClick={() => handleDelete(ride)}
                         />
                       )}

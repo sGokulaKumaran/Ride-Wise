@@ -1,28 +1,5 @@
 // ============================================================
 // Home.jsx — the rider's dashboard
-//
-// TOP TO BOTTOM
-//   1. Greeting + the one main action: "Start a ride"
-//   2. Continue riding — rides that are still active (one tap back to the map)
-//   2b. Organizations — the trip I am driving, invitations, my organizations
-//       with the vehicles they have on the road (HomeOrganizations)
-//   3. Your numbers — rides, distance ridden, completed, this month
-//   4. Recent rides — the last three, with a link to the full history
-//   5. A first-ride guide for new riders, and a daily tip
-//
-// OVERLAYS OWNED HERE
-//   StartRideModal     plan a new ride
-//   ActiveRideOverlay  the full-screen map (live ride or a past one)
-//   RideHistoryPanel   every ride, with delete
-//
-// DATA
-//   The ride list holds lightweight rows (no route geometry). When a ride
-//   is opened, its full route is fetched and swapped in — so this page
-//   loads fast however many long rides there are.
-//
-// DEEP LINKS (handled once, then removed from the URL)
-//   /home?openRide=<id>   a notification was tapped → open that ride's map
-//   /home?startRide=1     the ride button was pressed on another page
 // ============================================================
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -37,11 +14,11 @@ import { useVoice } from "./components/shared/useVoice";
 import { useTheme } from "./hooks/useTheme";
 import { pruneNavProgress } from "./hooks/useNavigation";
 import Icon from "./components/ui/Icon";
-import Button from "./components/ui/Button";
+import Button, { IconButton } from "./components/ui/Button";
 import ActiveRideOverlay from "./components/ride/ActiveRideOverlay";
 import RideHistoryPanel from "./components/ride/RideHistoryPanel";
 import HomeOrganizations from "./components/org/HomeOrganizations";
-import { getUserRides, endRide, deleteRide, getRide } from "../services/rideApi";
+import { getUserRides, endRide, deleteRide, clearFinishedRides, getRide } from "../services/rideApi";
 import { peekCache, writeCache } from "../services/pageCache";
 import {
   formatDistance,
@@ -63,14 +40,13 @@ function greetingFor(hour) {
   if (hour < 5) return "Up late";
   if (hour < 12) return "Good morning";
   if (hour < 17) return "Good afternoon";
-  return "Good evening"; // "Good night" is a goodbye, not a greeting
+  return "Good evening";
 }
 
 // Load the ride list. Never throws: resolves to { rides, failed }.
 async function fetchRides(userId) {
   try {
     const rides = await getUserRides(userId); // newest first
-    // Stored navigation progress is only useful for rides still active
     pruneNavProgress(rides.filter((r) => r.status === "active").map((r) => r.id));
     return { rides, failed: false };
   } catch (err) {
@@ -79,8 +55,6 @@ async function fetchRides(userId) {
   }
 }
 
-// Home is re-created whenever the account changes, so one rider's rides
-// can never be shown to the next person who logs in on this device.
 export default function Home() {
   const { user } = useAuth();
   return <HomeScreen key={user?.id ?? "signed-out"} user={user} />;
@@ -98,18 +72,17 @@ function HomeScreen({ user }) {
   const [mapRide, setMapRide] = useState(null); // the ride shown on the full-screen map
 
   // ── Rides ──
-  const ridesKey = `home-rides-${userId}`; // session cache: revisits show the list at once (services/pageCache.js)
+  const ridesKey = `home-rides-${userId}`;
   const [rides, setRides] = useState(() => peekCache(ridesKey) ?? []);
   const [loading, setLoading] = useState(() => peekCache(ridesKey) === undefined);
   const [loadFailed, setLoadFailed] = useState(false);
 
-  // Computed once per visit (reading the clock is not a pure render step)
   const [greeting] = useState(() => greetingFor(new Date().getHours()));
   const [tip] = useState(() => TIPS[new Date().getDate() % TIPS.length]);
 
   // ── Load the ride list ──
   const applyRides = useCallback((result) => {
-    if (result.rides) { setRides(result.rides); writeCache(ridesKey, result.rides); } // keep the current list when a refresh fails
+    if (result.rides) { setRides(result.rides); writeCache(ridesKey, result.rides); }
     setLoadFailed(result.failed);
     setLoading(false);
   }, [ridesKey]);
@@ -126,8 +99,6 @@ function HomeScreen({ user }) {
   }, [userId, applyRides]);
 
   // ── Open a ride on the map ──
-  // The map opens at once with what the list row knows (the endpoints);
-  // the full route follows a moment later and is swapped in.
   const openRide = useCallback(async (ride) => {
     if (!ride) return;
     setShowHistory(false);
@@ -144,7 +115,7 @@ function HomeScreen({ user }) {
       console.warn("[Home] Could not load the ride's route:", err.message);
     }
     setMapRide((current) => {
-      if (!current || String(current.id) !== String(ride.id)) return current; // closed meanwhile
+      if (!current || String(current.id) !== String(ride.id)) return current;
       return { ...current, ...(full || {}), routePending: false };
     });
   }, []);
@@ -154,7 +125,6 @@ function HomeScreen({ user }) {
   const startRideParam = searchParams.get("startRide");
   useEffect(() => {
     if (!openRideId && startRideParam !== "1") return;
-    // Clear the params first so the action cannot fire twice
     setSearchParams({}, { replace: true });
 
     if (openRideId) {
@@ -199,12 +169,10 @@ function HomeScreen({ user }) {
 
   // ── Handlers ──
   const handleRideCreated = (ride) => {
-    setMapRide(ride); // a freshly created ride already carries its route
+    setMapRide(ride);
     refreshRides();
   };
 
-  // "End ride" confirmed on the map. Returns true when it went through —
-  // the map only closes then, so a failure never strands an active ride.
   const handleEndRide = async ({ distanceTraveled } = {}) => {
     if (!mapRide?.id) return false;
     try {
@@ -220,7 +188,6 @@ function HomeScreen({ user }) {
     }
   };
 
-  // Left a group ride, or the admin ended it: close the map and refresh.
   const handleRideGone = () => {
     setMapRide(null);
     refreshRides();
@@ -233,6 +200,18 @@ function HomeScreen({ user }) {
     } catch (err) {
       console.error("[Home] Delete ride failed:", err);
       toast.error(err.message || "Couldn't delete the ride. Please try again.");
+    } finally {
+      refreshRides();
+    }
+  };
+
+  const handleClearFinishedRides = async () => {
+    if (!userId) return;
+    try {
+      const res = await clearFinishedRides(userId);
+      toast.success(res?.message || "Finished rides cleared.");
+    } catch (err) {
+      toast.error(err.message || "Couldn't clear finished rides. Please try again.");
     } finally {
       refreshRides();
     }
@@ -358,7 +337,13 @@ function HomeScreen({ user }) {
               ) : (
                 <div className="space-y-2">
                   {pastRides.slice(0, 3).map((ride) => (
-                    <RideRow key={ride.id} ride={ride} tc={tc} onOpen={() => openRide(ride)} />
+                    <RideRow
+                      key={ride.id}
+                      ride={ride}
+                      tc={tc}
+                      onOpen={() => openRide(ride)}
+                      onDelete={() => handleDeleteRide(ride.id)}
+                    />
                   ))}
                 </div>
               )}
@@ -432,6 +417,7 @@ function HomeScreen({ user }) {
           currentUserId={userId}
           onOpenRide={openRide}
           onDeleteRide={handleDeleteRide}
+          onClearFinishedRides={handleClearFinishedRides}
           onClose={() => setShowHistory(false)}
           tc={tc}
         />
@@ -443,7 +429,9 @@ function HomeScreen({ user }) {
 // ============================================================
 // RideRow — one ride in "Continue riding" / "Recent rides"
 // ============================================================
-function RideRow({ ride, onOpen, tc, live = false }) {
+function RideRow({ ride, onOpen, onDelete, tc, live = false }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const from = shortPlaceName(ride.fromName, "Start");
   const to = shortPlaceName(ride.destinationName, "Destination");
   const group = ride.rideType === "group";
@@ -451,8 +439,6 @@ function RideRow({ ride, onOpen, tc, live = false }) {
     ? new Date(ride.createdAt).toLocaleDateString([], { day: "numeric", month: "short" })
     : "";
 
-  // A finished ride shows what really happened (distance ridden, time
-  // taken); a ride still under way shows the plan.
   const tracked = hasTrackedDistance(ride);
   const distance = tracked ? Number(ride.actualDistanceMeters) : ride.distanceMeters;
   const seconds = rideTimeSeconds(ride);
@@ -463,34 +449,85 @@ function RideRow({ ride, onOpen, tc, live = false }) {
     date || null,
   ].filter(Boolean);
 
+  const handleTrashClick = async (event) => {
+    event.stopPropagation();
+    if (!onDelete) return;
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
+    setDeleting(true);
+    try {
+      await onDelete();
+    } finally {
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  };
+
   return (
-    <button
-      type="button"
-      onClick={onOpen}
+    <div
       className={`flex w-full items-center gap-3 rounded-xl border p-3.5 text-left transition-colors ${tc.card} ${tc.cardHover}`}
     >
-      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${tc.surface2}`}>
-        <Icon name={group ? "riders" : "ride"} size={19} />
-      </span>
-
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-semibold">{from} → {to}</span>
-        <span className={`block truncate text-xs ${tc.sub}`}>{meta.join(" · ")}</span>
-      </span>
-
-      {live ? (
-        <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${tc.okSoft}`}>
-          Open map
-          <Icon name="arrowRight" size={13} />
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+      >
+        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${tc.surface2}`}>
+          <Icon name={group ? "riders" : "ride"} size={19} />
         </span>
-      ) : (
-        <>
+
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-semibold">{from} → {to}</span>
+          <span className={`block truncate text-xs ${tc.sub}`}>{meta.join(" · ")}</span>
+        </span>
+
+        {live ? (
+          <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${tc.okSoft}`}>
+            Open map
+            <Icon name="arrowRight" size={13} />
+          </span>
+        ) : (
           <span className={`shrink-0 text-xs capitalize ${ride.status === "cancelled" ? tc.danger : tc.sub}`}>
             {ride.status}
           </span>
-          <Icon name="chevronRight" size={16} className={`shrink-0 ${tc.sub}`} />
-        </>
+        )}
+      </button>
+
+      {!live && onDelete && (
+        confirmDelete ? (
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Button
+              variant="ghost"
+              size="sm"
+              tc={tc}
+              disabled={deleting}
+              onClick={(e) => { e.stopPropagation(); setConfirmDelete(false); }}
+            >
+              Keep
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              icon="trash"
+              tc={tc}
+              loading={deleting}
+              onClick={handleTrashClick}
+            >
+              Delete
+            </Button>
+          </div>
+        ) : (
+          <IconButton
+            icon="trash"
+            label="Delete ride"
+            size="sm"
+            tc={tc}
+            onClick={handleTrashClick}
+          />
+        )
       )}
-    </button>
+    </div>
   );
 }

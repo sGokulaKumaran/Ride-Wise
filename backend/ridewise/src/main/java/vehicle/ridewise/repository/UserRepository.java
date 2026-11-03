@@ -56,10 +56,13 @@ public interface UserRepository extends JpaRepository<User, Long> {
                                @Param("lng") Double lng,
                                @Param("radiusKm") Double radiusKm);
 
-    // ── Admin queries ──
+    // ── Admin & Cleanup queries ──
 
     // Check if any admin account exists (used by DataInitializer)
     List<User> findByRole(String role);
+
+    // Users who configured automatic ride deletion (autoDeleteRidesDays > 0)
+    List<User> findByAutoDeleteRidesDaysGreaterThan(Integer minDays);
 
     // Admin user search — all users by username or email, as a real page
     // (so the total count and "next page" work for search results too).

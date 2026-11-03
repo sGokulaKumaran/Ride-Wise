@@ -6,7 +6,8 @@
 //
 //   Appearance     theme (applies at once, remembered per account)
 //   Rides & map    spoken directions on/off and how fast they are spoken,
-//                  keeping the screen awake, and the map style
+//                  keeping the screen awake, map style, and auto-deleting
+//                  completed rides after a set time
 //   Accessibility  text size, reduced motion, high contrast (applied
 //                  app-wide by utils/a11y.js)
 //   Privacy        "Public profile" — saved on the server; when off, riders
@@ -14,12 +15,9 @@
 //                  in search or "near me"
 //   Account & security  email, password, sign out other devices
 //                  (components/account/SecuritySettings)
-//   Your data      download everything the account holds, as JSON
+//   Your data      download everything the account holds, or clear finished
+//                  rides to free up space
 //   Delete account (components/account/DeleteAccount)
-//
-// WHERE THINGS ARE STORED
-//   theme, accessibility, voice, screen, map style → this device (localStorage)
-//   public profile, email, password                → the rider's account (server)
 // ============================================================
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -42,6 +40,8 @@ import HelpAndFeedback from "./components/account/HelpAndFeedback";
 import AdminEmailSettings from "./components/account/AdminEmailSettings";
 import DeleteAccount from "./components/account/DeleteAccount";
 import { exportMyData } from "../services/accountApi";
+import { clearFinishedRides } from "../services/rideApi";
+import { forgetCache } from "../services/pageCache";
 import Sidebar from "./components/layout/Sidebar";
 import TopBar from "./components/layout/TopBar";
 import MobileNav from "./components/layout/MobileNav";
@@ -55,13 +55,20 @@ import {
 
 const A11Y_DEFAULTS = { textSize: "medium", reduceMotion: false, highContrast: false };
 
+const AUTO_DELETE_OPTIONS = [
+  { days: 0,  label: "Never" },
+  { days: 1,  label: "After 1 day" },
+  { days: 7,  label: "After 7 days" },
+  { days: 30, label: "After 30 days" },
+  { days: 90, label: "After 90 days" },
+];
+
 const wakeLockSupported = typeof navigator !== "undefined" && "wakeLock" in navigator;
 
 function settingsKey(userId) {
   return userId ? `ridewise-settings-${userId}` : "ridewise-settings";
 }
 
-// Saved accessibility choices for this rider (or the defaults)
 function loadSettings(userId) {
   try {
     const saved = JSON.parse(localStorage.getItem(settingsKey(userId)) || "null");
@@ -78,9 +85,6 @@ function loadSettings(userId) {
   return { ...A11Y_DEFAULTS };
 }
 
-// ── A labelled on/off switch ─────────────────────────────────
-// ON uses the functional accent (an active state is one of the few places
-// colour is allowed); OFF stays a neutral track.
 function Toggle({ checked, onChange, label, sub, tc, disabled = false }) {
   return (
     <div className="flex items-center justify-between gap-4 py-3">
@@ -118,8 +122,6 @@ function SectionHeader({ icon, title, tc }) {
   );
 }
 
-// Re-created when the account changes, so one rider's choices are never
-// shown to (or saved over) another's.
 export default function Settings() {
   const { user } = useAuth();
   return <SettingsScreen key={user?.id ?? "signed-out"} />;
@@ -142,11 +144,10 @@ function SettingsScreen() {
   const [settings, setSettings] = useState(() => loadSettings(userId));
   useEffect(() => {
     try {
-      // Merge, so keys written by older versions of this page survive.
       const existing = JSON.parse(localStorage.getItem(settingsKey(userId)) || "{}") || {};
       localStorage.setItem(settingsKey(userId), JSON.stringify({ ...existing, ...settings }));
     } catch {
-      // storage unavailable — the choice still applies for this visit
+      // storage unavailable
     }
     applyA11ySettings(settings);
   }, [settings, userId]);
@@ -165,6 +166,50 @@ function SettingsScreen() {
   const chooseMapStyle = (choice) => {
     setMapStyle(choice);
     saveMapStyleChoice(choice);
+  };
+
+  // ── Auto-delete ride data (the account) ──
+  const autoDeleteDays = Number(user?.autoDeleteRidesDays) > 0 ? Number(user.autoDeleteRidesDays) : 0;
+  const [savingAutoDelete, setSavingAutoDelete] = useState(false);
+  const chooseAutoDeleteDays = async (days) => {
+    if (days === autoDeleteDays || savingAutoDelete) return;
+    setSavingAutoDelete(true);
+    try {
+      await updateProfile({ autoDeleteRidesDays: days });
+      forgetCache(`home-rides-${userId}`);
+      forgetCache(`account-stats-${userId}`);
+      toast.success(
+        days === 0
+          ? "Completed rides will be kept until you delete them."
+          : `Completed rides older than ${days} ${days === 1 ? "day" : "days"} will be automatically deleted.`,
+      );
+    } catch (err) {
+      toast.error(err.message || "Couldn't save your auto-delete setting. Please try again.");
+    } finally {
+      setSavingAutoDelete(false);
+    }
+  };
+
+  const [confirmClearRides, setConfirmClearRides] = useState(false);
+  const [clearingRides, setClearingRides] = useState(false);
+  const handleClearFinishedRides = async () => {
+    if (!userId || clearingRides) return;
+    if (!confirmClearRides) {
+      setConfirmClearRides(true);
+      return;
+    }
+    setClearingRides(true);
+    try {
+      const res = await clearFinishedRides(userId);
+      forgetCache(`home-rides-${userId}`);
+      forgetCache(`account-stats-${userId}`);
+      toast.success(res?.message || "Completed rides deleted.");
+    } catch (err) {
+      toast.error(err.message || "Couldn't delete completed rides. Please try again.");
+    } finally {
+      setClearingRides(false);
+      setConfirmClearRides(false);
+    }
   };
 
   // ── Privacy (the account) ──
@@ -207,7 +252,6 @@ function SettingsScreen() {
     }
   };
 
-  // Labels, glyphs and swatches come straight from the theme system
   const themeOptions = Object.entries(themes).map(([key, option]) => ({
     key, label: option.label, preview: option.preview,
   }));
@@ -220,7 +264,6 @@ function SettingsScreen() {
 
       <main className="px-4 pb-28 pt-24 lg:ml-64 lg:pb-12">
         <div className="mx-auto max-w-2xl">
-          {/* Back to Account (phones reach Settings from the Account tab) */}
           <button
             type="button"
             onClick={() => navigate("/account")}
@@ -254,7 +297,6 @@ function SettingsScreen() {
                       active ? tc.accentSoft : `${tc.card} ${tc.cardHover}`
                     }`}
                   >
-                    {/* swatch: page, surface, ink, accent of that theme */}
                     <span
                       className={`flex h-9 w-11 shrink-0 flex-col justify-end gap-[3px] rounded-lg border p-1.5 ${option.preview.page} ${tc.divider}`}
                     >
@@ -333,6 +375,30 @@ function SettingsScreen() {
                     tc={tc}
                   >
                     {style.label}
+                  </Chip>
+                ))}
+              </div>
+            </div>
+
+            <div className={`border-t ${tc.divider}`} />
+            <div className="pt-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold">Auto-delete completed rides</p>
+                {savingAutoDelete && <Icon name="spinner" size={14} className={`rw-spin ${tc.sub}`} />}
+              </div>
+              <p className={`mb-2.5 mt-0.5 text-xs ${tc.sub}`}>
+                Automatically delete finished rides once the selected time is reached to save database space.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {AUTO_DELETE_OPTIONS.map((option) => (
+                  <Chip
+                    key={option.days}
+                    selected={autoDeleteDays === option.days}
+                    onClick={() => chooseAutoDeleteDays(option.days)}
+                    disabled={savingAutoDelete}
+                    tc={tc}
+                  >
+                    {option.label}
                   </Chip>
                 ))}
               </div>
@@ -427,6 +493,39 @@ function SettingsScreen() {
               <Button variant="secondary" size="sm" icon="download" tc={tc} loading={exporting} onClick={downloadMyData}>
                 Download my data
               </Button>
+            </div>
+
+            <div className={`my-3 border-t ${tc.divider}`} />
+            <div className="flex flex-wrap items-center justify-between gap-3 py-1">
+              <div className="max-w-md">
+                <p className="text-sm font-semibold">Clear completed ride history</p>
+                <p className={`mt-0.5 text-xs ${tc.sub}`}>
+                  Permanently remove all completed and cancelled rides from your history right now.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {confirmClearRides && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    tc={tc}
+                    disabled={clearingRides}
+                    onClick={() => setConfirmClearRides(false)}
+                  >
+                    Cancel
+                  </Button>
+                )}
+                <Button
+                  variant={confirmClearRides ? "danger" : "secondary"}
+                  size="sm"
+                  icon="trash"
+                  tc={tc}
+                  loading={clearingRides}
+                  onClick={handleClearFinishedRides}
+                >
+                  {confirmClearRides ? "Tap again to delete all" : "Clear completed rides"}
+                </Button>
+              </div>
             </div>
           </section>
 

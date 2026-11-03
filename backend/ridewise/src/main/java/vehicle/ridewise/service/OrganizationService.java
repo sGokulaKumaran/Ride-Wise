@@ -51,27 +51,6 @@ import java.util.stream.Collectors;
 // ============================================================
 // OrganizationService — organizations themselves: create, find, open,
 // edit, delete.
-//
-// PUBLIC vs PRIVATE
-//   PUBLIC   found by name; anyone signed in can view and track.
-//            People may SAVE it — a shortcut on their list, and the way
-//            they receive its announcements.
-//   PRIVATE  never appears in search. Opened with its code AND its
-//            password in one step; the answer to a wrong code and to a
-//            wrong password is the same sentence, so trying codes tells
-//            nothing. Wrong attempts are counted and slowed down.
-//            Once opened, the access is remembered (OrgAccess) until the
-//            person removes it or an admin revokes it.
-//
-// THE ORGANIZATION CODE
-//   "RW-" + 6 characters from an alphabet without 0/O and 1/I/L, so a
-//   code read out over the phone cannot be misheard. About a billion
-//   combinations.
-//
-// SWITCHING VISIBILITY (owner only)
-//   → PRIVATE needs a password, and everyone who merely saved the public
-//     organization loses it: they never knew a password.
-//   → PUBLIC  removes the password.
 // ============================================================
 @Service
 public class OrganizationService {
@@ -102,8 +81,6 @@ public class OrganizationService {
 
     private final SecureRandom random = new SecureRandom();
 
-    // Wrong code/password attempts: per person, and (generously) per code so
-    // that many accounts cannot share the guessing.
     private final AttemptLimiter perUser = new AttemptLimiter(6, 15 * 60_000L, 10 * 60_000L);
     private final AttemptLimiter perCode = new AttemptLimiter(60, 15 * 60_000L, 5 * 60_000L);
 
@@ -173,7 +150,6 @@ public class OrganizationService {
         return detail(saved.getId(), userId);
     }
 
-    // The code column is unique; a collision (one in a billion) just draws again.
     private Organization saveWithFreshCode(Organization org) {
         for (int attempt = 0; attempt < 6; attempt++) {
             String code = newCode();
@@ -229,7 +205,6 @@ public class OrganizationService {
         audit.record(orgId, userId, "org.edit", "updated the organization's details");
 
         if (wentPrivate) {
-            // Nobody who merely saved the public organization knew a password.
             accessRepository.deleteAllForOrg(orgId);
             alertService.removeForNonMembers(orgId);
             Tx.afterCommit(() -> broadcaster.dropOrg(orgId));
@@ -241,11 +216,6 @@ public class OrganizationService {
         return detail(orgId, userId);
     }
 
-    /**
-     * A new access password (private organizations). With revokeExisting,
-     * everyone who opened the organization with the old one must enter the
-     * new one — members are not affected, they never needed it.
-     */
     @Transactional
     public void setAccessPassword(Long orgId, Long userId, AccessPasswordRequest request) {
         Organization org = guard.requireOrg(orgId);
@@ -268,8 +238,7 @@ public class OrganizationService {
     }
 
     // ============================================================
-    // DELETE (owner) — the organization disappears for everyone; its
-    // history stays in the database but is no longer reachable.
+    // DELETE (owner or platform admin)
     // ============================================================
     @Transactional
     public void delete(Long orgId, Long userId) {
@@ -285,11 +254,21 @@ public class OrganizationService {
         Tx.afterCommit(() -> broadcaster.dropOrg(orgId));
     }
 
+    @Transactional
+    public void adminDelete(Long orgId, Long adminUserId) {
+        Organization org = guard.requireOrg(orgId);
+        sessionService.endAllForOrg(orgId, "ORG", null);
+        org.setStatus("DELETED");
+        organizationRepository.save(org);
+        accessRepository.deleteAllForOrg(orgId);
+        alertService.removeForOrg(orgId);
+        audit.record(orgId, null, "org.delete", "deleted the organization (platform admin)");
+        Tx.afterCommit(() -> broadcaster.dropOrg(orgId));
+    }
+
     // ============================================================
     // FIND
     // ============================================================
-
-    /** Public organizations by name. A full code also finds its (public) organization. */
     public List<OrgCard> search(String query, Long userId) {
         String q = query == null ? "" : query.trim();
         if (q.length() < 2) return List.of();
@@ -301,7 +280,7 @@ public class OrganizationService {
         String code = normalizeCode(q);
         if (code != null && found.stream().noneMatch(o -> o.getOrgCode().equals(code))) {
             organizationRepository.findByOrgCode(code)
-                    .filter(o -> o.isActive() && guard.canView(o, userId)) // public, or already open to this person
+                    .filter(o -> o.isActive() && guard.canView(o, userId))
                     .ifPresent(o -> found.add(0, o));
         }
         return cards(found, userId);
@@ -315,7 +294,6 @@ public class OrganizationService {
         boolean manager = member != null && member.isManager();
         OrgCard card = cards(List.of(org), userId).get(0);
 
-        // Opening it counts as a visit (keeps "My organizations" in a useful order).
         accessRepository.findByUserIdAndOrgId(userId, orgId).ifPresent(access -> {
             access.setLastAccessedAt(LocalDateTime.now());
             accessRepository.save(access);
@@ -338,14 +316,12 @@ public class OrganizationService {
     // ============================================================
     public VehicleDetail vehicleDetail(Long orgId, Long vehicleId, Long userId) {
         Organization org = guard.requireOrg(orgId);
-        VehicleDto vehicle = fleetService.getVehicle(orgId, vehicleId, userId); // checks the right to view
+        VehicleDto vehicle = fleetService.getVehicle(orgId, vehicleId, userId);
         boolean manager = guard.isManager(orgId, userId);
 
         SessionRouteDto route = null;
         SessionDto lastTrip = null;
         if (vehicle.trip() != null) {
-            // People following a vehicle need its line and its stops; the
-            // turn-by-turn steps are the driver's and would only add weight.
             SessionRouteDto full = sessionService.routeOf(vehicle.trip().sessionId());
             if (full != null) route = new SessionRouteDto(full.routeCoordinates(), null, full.stops());
         } else {
@@ -359,7 +335,6 @@ public class OrganizationService {
                 org.getContactPhone(), alertService.myAlert(userId, vehicleId), lastTrip);
     }
 
-    // How fast somebody drove is between the driver and the organization.
     private static SessionDto withoutDrivingRecord(SessionDto t) {
         return new SessionDto(t.id(), t.orgId(), t.vehicleId(), t.vehicleCode(), null, t.driverName(),
                 t.routeId(), t.routeName(), t.fromName(), t.fromLat(), t.fromLng(),
@@ -396,7 +371,6 @@ public class OrganizationService {
         if (!allowed) {
             perUser.recordFailure(userKey);
             perCode.recordFailure(code);
-            // One sentence for "no such code" and "wrong password".
             throw ApiException.forbidden("That organization code or password is not right");
         }
         perUser.recordSuccess(userKey);
@@ -405,7 +379,6 @@ public class OrganizationService {
         return cards(List.of(org), userId).get(0);
     }
 
-    /** Put a PUBLIC organization on my list. */
     @Transactional
     public OrgCard save(Long orgId, Long userId) {
         Organization org = guard.requireOrg(orgId);
@@ -414,7 +387,6 @@ public class OrganizationService {
         return cards(List.of(org), userId).get(0);
     }
 
-    /** Take an organization off my list (for a private one this gives the access up). */
     @Transactional
     public void unsave(Long orgId, Long userId) {
         accessRepository.deleteByUserIdAndOrgId(userId, orgId);
@@ -439,7 +411,6 @@ public class OrganizationService {
         accessRepository.save(access);
     }
 
-    /** My list, most recently opened first. */
     public List<OrgCard> saved(Long userId) {
         List<Long> ids = accessRepository.findByUserIdOrderByLastAccessedAtDesc(userId, PageRequest.of(0, MAX_SAVED))
                 .stream().map(OrgAccess::getOrgId).toList();
@@ -451,8 +422,6 @@ public class OrganizationService {
         List<Organization> ordered = ids.stream().map(byId::get).filter(java.util.Objects::nonNull).toList();
         return cards(ordered, userId);
     }
-
-    // ── People who opened a private organization (admins) ──
 
     public PageDto<AccessHolder> accessHolders(Long orgId, Long userId, int page, int size) {
         guard.requireOrg(orgId);
@@ -480,9 +449,6 @@ public class OrganizationService {
         }
     }
 
-    // ============================================================
-    // WHAT THE NAVIGATION NEEDS — my organizations at a glance
-    // ============================================================
     public MySummary summary(Long userId) {
         List<OrgMember> memberships = memberRepository.findByUserIdAndStatusIn(userId, List.of("ACTIVE", "PENDING"));
         Map<Long, Organization> orgs = organizationRepository
@@ -522,7 +488,7 @@ public class OrganizationService {
     }
 
     // ============================================================
-    // PLATFORM ADMIN — every organization; verify and suspend
+    // PLATFORM ADMIN — every organization; verify, suspend, delete
     // ============================================================
     public PageDto<Map<String, Object>> adminList(String search, int page, int size) {
         PageRequest pageable = PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100)),
@@ -560,15 +526,15 @@ public class OrganizationService {
         return new PageDto<>(items, rows.getTotalElements(), rows.getNumber(), rows.getSize(), rows.getTotalPages());
     }
 
-    /**
-     * Verify an organization (it is who it says it is) or suspend it.
-     * Suspending ends its running trips and stops all tracking at once;
-     * its admins can still open it and see that it is suspended.
-     */
     @Transactional
     public void adminPatch(Long orgId, Long adminUserId, AdminOrgPatch patch) {
         Organization org = guard.requireOrg(orgId);
         if (patch == null) return;
+
+        if (patch.status() != null && "DELETED".equalsIgnoreCase(patch.status().trim())) {
+            adminDelete(orgId, adminUserId);
+            return;
+        }
 
         if (patch.verified() != null) org.setVerified(patch.verified());
 
@@ -606,12 +572,6 @@ public class OrganizationService {
                           + ", status: " + org.getStatus().toLowerCase(Locale.ROOT) + ")");
     }
 
-    // ============================================================
-    // CARDS — organizations as they appear in lists
-    //
-    // Built for a whole list with a fixed number of queries (fleet sizes,
-    // running trips, my memberships, my saved list), not four per row.
-    // ============================================================
     public List<OrgCard> cards(Collection<Organization> orgs, Long userId) {
         if (orgs.isEmpty()) return List.of();
         List<Long> ids = orgs.stream().map(Organization::getId).toList();
@@ -646,9 +606,6 @@ public class OrganizationService {
         return result;
     }
 
-    // ============================================================
-    // INPUT
-    // ============================================================
     private void applyOptional(Organization org, OrgRequest request) {
         if (request.description() != null) {
             String description = request.description().trim();
@@ -715,7 +672,6 @@ public class OrganizationService {
         return value;
     }
 
-    /** "rw 7k3m9q" / "7K3M9Q" / "RW-7K3M9Q" → "RW-7K3M9Q"; null when it cannot be a code. */
     static String normalizeCode(String input) {
         if (input == null) return null;
         String compact = input.trim().toUpperCase(Locale.ROOT).replaceAll("[\\s-]", "");

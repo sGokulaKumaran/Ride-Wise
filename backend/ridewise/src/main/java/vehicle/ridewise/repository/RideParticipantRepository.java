@@ -8,6 +8,8 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 import vehicle.ridewise.entity.RideParticipant;
 
+import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -18,7 +20,7 @@ public interface RideParticipantRepository extends JpaRepository<RideParticipant
 
     // Participants of several rides in ONE query (used to fill a ride list
     // without a query per ride).
-    List<RideParticipant> findByRideIdIn(java.util.Collection<Long> rideIds);
+    List<RideParticipant> findByRideIdIn(Collection<Long> rideIds);
 
     List<RideParticipant> findByUserId(Long userId);
 
@@ -41,4 +43,19 @@ public interface RideParticipantRepository extends JpaRepository<RideParticipant
     @Modifying
     @Transactional
     void deleteByUserId(Long userId);
+
+    @Modifying
+    @Transactional
+    @Query("DELETE FROM RideParticipant rp WHERE rp.userId = :userId AND rp.rideId IN " +
+           "(SELECT r.id FROM Ride r WHERE r.status IN :statuses AND COALESCE(r.endedAt, r.createdAt) < :cutoff)")
+    int deleteFinishedParticipationsForUserBefore(@Param("userId") Long userId,
+                                                  @Param("statuses") Collection<String> statuses,
+                                                  @Param("cutoff") LocalDateTime cutoff);
+
+    @Modifying
+    @Transactional
+    @Query("DELETE FROM RideParticipant rp WHERE rp.userId = :userId AND rp.rideId IN " +
+           "(SELECT r.id FROM Ride r WHERE r.status IN :statuses)")
+    int deleteFinishedParticipationsForUser(@Param("userId") Long userId,
+                                            @Param("statuses") Collection<String> statuses);
 }

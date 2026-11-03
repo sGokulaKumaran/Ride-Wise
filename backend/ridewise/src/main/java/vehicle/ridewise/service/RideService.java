@@ -177,8 +177,23 @@ public class RideService {
     }
 
     // ============================================================
-    // READ
+    // READ & AUTO-CLEANUP
     // ============================================================
+
+    /**
+     * Purges any finished rides for this user that have exceeded their
+     * configured autoDeleteRidesDays retention period.
+     */
+    @Transactional
+    public void purgeExpiredRidesIfConfigured(Long userId) {
+        if (userId == null) return;
+        userRepository.findById(userId).ifPresent(u -> {
+            Integer days = u.getAutoDeleteRidesDays();
+            if (days != null && days > 0) {
+                dataCleanupService.cleanupUserAutoDeleteRides(userId, days);
+            }
+        });
+    }
 
     // A rider's rides — the ones they created plus the group rides they are
     // part of — newest first.
@@ -315,8 +330,7 @@ public class RideService {
         return finish(ride, status, actualDistanceMeters, actorUserId);
     }
 
-    // End a ride that was left "active" long ago (see StaleRideSweeper).
-    // A system action: there is no acting rider and no reported distance.
+    // End a ride that was left "active" long ago (see StaleRideSweeper), or by platform admin.
     @Transactional
     public void endAbandonedRide(Long rideId) {
         rideRepository.findById(rideId)
@@ -370,13 +384,30 @@ public class RideService {
     public void deleteRide(Long rideId, Long actorUserId) {
         Ride ride = rideRepository.findById(rideId)
                 .orElseThrow(() -> ApiException.notFound("Ride not found"));
-        if (!Objects.equals(ride.getUserId(), actorUserId)) {
+        boolean isOwner = Objects.equals(ride.getUserId(), actorUserId);
+        boolean wasActive = "active".equals(ride.getStatus());
+
+        if (!isOwner) {
+            // A non-owner participant may remove a FINISHED group ride from their own history.
+            // Active shared rides can only be deleted by the ride creator/admin.
+            if (!wasActive && "group".equals(ride.getRideType())) {
+                RideParticipant participant = rideParticipantRepository
+                        .findByRideIdAndUserId(rideId, actorUserId)
+                        .orElse(null);
+                if (participant != null) {
+                    rideParticipantRepository.delete(participant);
+                    // If no participants remain and the owner no longer exists, remove the ride row too
+                    if (rideParticipantRepository.findByRideId(rideId).isEmpty()
+                            && (ride.getUserId() == null || !userRepository.existsById(ride.getUserId()))) {
+                        dataCleanupService.deleteRideCompletely(rideId);
+                    }
+                    return;
+                }
+            }
             throw ApiException.forbidden("group".equals(ride.getRideType())
                     ? "Only the group ride admin can delete this shared ride"
                     : "Only the ride owner can delete this ride");
         }
-
-        boolean wasActive = "active".equals(ride.getStatus());
 
         // Everything that points at the ride goes with it: GPS history, live
         // positions (no ghost markers), riders, and notifications that would
@@ -388,6 +419,26 @@ public class RideService {
 
         // Riders still on the map of a ride that was deleted mid-way
         if (wasActive) announceRideEnded(rideId, "deleted", actorUserId);
+    }
+
+    /**
+     * Platform admin deletes a ride (active, completed, or cancelled).
+     */
+    @Transactional
+    public void adminDeleteRide(Long rideId, Long adminUserId) {
+        Ride ride = rideRepository.findById(rideId)
+                .orElseThrow(() -> ApiException.notFound("Ride not found"));
+        boolean wasActive = "active".equals(ride.getStatus());
+        dataCleanupService.deleteRideCompletely(rideId);
+        if (wasActive) announceRideEnded(rideId, "deleted", adminUserId);
+    }
+
+    /**
+     * Clears all completed and cancelled rides for a user at once.
+     */
+    @Transactional
+    public int clearFinishedRidesForUser(Long userId) {
+        return dataCleanupService.clearAllFinishedRidesForUser(userId);
     }
 
     // ============================================================

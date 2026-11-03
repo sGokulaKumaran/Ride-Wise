@@ -14,6 +14,7 @@ public class UserResponse {
     private String role;
     private Boolean enabled;
     private Boolean profilePublic = true; // may other riders discover this account?
+    private Integer autoDeleteRidesDays = 0; // 0 = keep all rides
     private LocalDateTime createdAt;
 
     public UserResponse() {}
@@ -46,6 +47,7 @@ public class UserResponse {
     public String getRole()              { return role; }
     public Boolean getEnabled()          { return enabled; }
     public Boolean getProfilePublic()    { return profilePublic; }
+    public Integer getAutoDeleteRidesDays() { return autoDeleteRidesDays; }
     public LocalDateTime getCreatedAt()  { return createdAt; }
 
     // ---- Setters ----
@@ -59,5 +61,6 @@ public class UserResponse {
     public void setRole(String role)                   { this.role = role; }
     public void setEnabled(Boolean enabled)            { this.enabled = enabled; }
     public void setProfilePublic(Boolean profilePublic) { this.profilePublic = profilePublic; }
+    public void setAutoDeleteRidesDays(Integer autoDeleteRidesDays) { this.autoDeleteRidesDays = autoDeleteRidesDays; }
     public void setCreatedAt(LocalDateTime createdAt)  { this.createdAt = createdAt; }
 }

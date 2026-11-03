@@ -4,29 +4,6 @@
 // Every ride operation goes through this file and talks to the Spring
 // Boot backend at /api/rides (the Vite dev proxy / Cloudflare function
 // forwards /api to it).
-//
-// OFFLINE BEHAVIOUR — and what it is NOT
-//   When the backend cannot be REACHED (no network, the free-tier server
-//   is asleep), rides are read from and written to localStorage so the
-//   app keeps working, and an "end ride" made offline is replayed when
-//   the server is back.
-//
-//   A fallback is used ONLY for "unreachable". When the server answers
-//   with a refusal (403 not your ride, 400 invalid, 409 …) that answer
-//   is the truth and is thrown to the caller with the server's message.
-//   The old helper treated every failure as "offline", so the UI said
-//   "Ride ended" / "Ride deleted" while the server had refused — and the
-//   ride reappeared on the next refresh.
-//
-// WHAT IS CACHED
-//   ridewise-rides-local   the ride LIST (lightweight rows, no route data)
-//   ridewise-ride-<id>     the full copy of an ACTIVE ride, route included,
-//                          so the map still opens offline
-//   ridewise-pending-ends  rides ended while offline, waiting to be sent
-//
-//   The list used to store every ride with its complete route geometry
-//   (tens to hundreds of KB each) and only ever grew, until it silently
-//   hit the browser's storage limit.
 // ============================================================
 
 import { ApiError, apiJson, isOffline, jsonBody } from "./http";
@@ -113,9 +90,6 @@ async function withFallback(backendFn, fallbackFn) {
 }
 
 // ── Rides ended while offline ────────────────────────────────
-// A measured distance is sent even when it is 0: "tracked, nothing ridden"
-// is different from "never tracked" (which the stats count at the planned
-// length). Only a missing / unusable figure is left out.
 const isMeasured = (meters) => Number.isFinite(meters) && meters >= 0;
 
 function statusBody(actualDistanceMeters) {
@@ -125,8 +99,6 @@ function statusBody(actualDistanceMeters) {
   };
 }
 
-// Send them now that the server answers. A ride the server refuses to end
-// (already ended, deleted, not ours) is simply dropped from the queue.
 async function flushPendingEnds() {
   const pending = readJson(PENDING_ENDS_KEY, []);
   if (!Array.isArray(pending) || !pending.length) return;
@@ -145,11 +117,6 @@ async function flushPendingEnds() {
 
 // ============================================================
 // CREATE RIDE — POST /api/rides
-// rideData: { fromName, fromLat, fromLng, destinationName, destinationLat,
-//             destinationLng, routeCoordinates (JSON string), routeSteps
-//             (JSON string), distanceMeters, durationSeconds, rideType,
-//             participantIds? }
-// Returns the saved ride (with id, status, createdAt and the route).
 // ============================================================
 export async function createRide(rideData) {
   return withFallback(
@@ -160,7 +127,6 @@ export async function createRide(rideData) {
       return saved;
     },
     () => {
-      // A group ride needs the server: the other riders must be invited.
       if (rideData.rideType === "group") {
         throw new ApiError("You're offline. A group ride needs a connection to invite your riders.", {
           offline: true,
@@ -181,10 +147,6 @@ export async function createRide(rideData) {
 
 // ============================================================
 // ALL RIDES FOR A USER (newest first) — GET /api/rides/user/{id}?summary=true
-//
-// Returns lightweight rows: everything except the route geometry and the
-// step list (each row has hasRoute instead). Open a ride with getRide()
-// to get its full route.
 // ============================================================
 export async function getUserRides(userId) {
   return withFallback(
@@ -193,7 +155,6 @@ export async function getUserRides(userId) {
       const rides = await apiJson(`${BASE}/user/${userId}?summary=true`);
       const list = Array.isArray(rides) ? rides : [];
 
-      // Cache = the server's list + rides that exist only on this device.
       const localOnly = loadList().filter(
         (r) => isLocalRide(r.id) && String(r.userId) === String(userId),
       );
@@ -228,9 +189,6 @@ export async function getRide(rideId) {
 
 // ============================================================
 // IS THE RIDE STILL RUNNING? — GET /api/rides/{rideId}?summary=true
-// Used by group members to notice that the admin ended the ride.
-// Returns the status, "gone" when the ride no longer exists (or this
-// rider is no longer part of it), or null when it could not be checked.
 // ============================================================
 export async function getRideStatus(rideId) {
   if (rideId == null || isLocalRide(rideId)) return null;
@@ -245,8 +203,6 @@ export async function getRideStatus(rideId) {
 
 // ============================================================
 // END A RIDE — PATCH /api/rides/{rideId}/status
-//   actualDistanceMeters  how far the rider REALLY rode (tracked live)
-// The backend allows this only for the ride's owner / the group admin.
 // ============================================================
 export async function endRide(rideId, actualDistanceMeters) {
   const hasDistance = isMeasured(actualDistanceMeters);
@@ -280,7 +236,6 @@ export async function endRide(rideId, actualDistanceMeters) {
       return updated;
     },
     () => {
-      // Offline: finish it on this device now, tell the server later.
       const pending = readJson(PENDING_ENDS_KEY, []).filter(
         (item) => String(item.rideId) !== String(rideId),
       );
@@ -293,8 +248,6 @@ export async function endRide(rideId, actualDistanceMeters) {
 
 // ============================================================
 // DELETE A RIDE PERMANENTLY — DELETE /api/rides/{rideId}
-// Deleting needs the server (it is the only real copy), so there is no
-// offline fallback: an offline delete fails with a clear message.
 // ============================================================
 export async function deleteRide(rideId) {
   if (!isLocalRide(rideId)) {
@@ -305,10 +258,20 @@ export async function deleteRide(rideId) {
 }
 
 // ============================================================
+// CLEAR ALL FINISHED RIDES FOR A USER — DELETE /api/rides/user/{id}/finished
+// ============================================================
+export async function clearFinishedRides(userId) {
+  const res = await apiJson(`${BASE}/user/${userId}/finished`, { method: "DELETE" });
+  const remaining = loadList().filter(
+    (r) => String(r.userId) !== String(userId) || r.status === "active",
+  );
+  writeJson(LIST_KEY, remaining);
+  pruneDetails(remaining.filter((r) => r.status === "active").map((r) => r.id));
+  return res;
+}
+
+// ============================================================
 // PUBLISH MY POSITION (REST) — POST /api/rides/{rideId}/location
-//
-// The fallback for the live socket in a group ride. Fire-and-forget:
-// a lost update only means the marker is a tick older.
 // ============================================================
 export async function updateUserLocation(rideId, lat, lng, accuracy) {
   if (rideId == null || isLocalRide(rideId)) return;
@@ -327,10 +290,6 @@ export async function updateUserLocation(rideId, lat, lng, accuracy) {
 // ============================================================
 // GROUP RIDES
 // ============================================================
-
-// Current position of every member who is sharing one.
-//   [...]  → the server's list (may legitimately be empty)
-//   null   → the request FAILED: keep what is already on the map
 export async function getLiveRideLocations(rideId) {
   if (rideId == null || isLocalRide(rideId)) return null;
   try {
@@ -342,8 +301,6 @@ export async function getLiveRideLocations(rideId) {
   }
 }
 
-// Stop sharing my live position (the REST twin of the socket's "stop").
-// Never throws — losing it only means the marker ages out by itself.
 export async function clearLiveLocation(rideId) {
   if (rideId == null || isLocalRide(rideId)) return;
   try {
@@ -353,8 +310,6 @@ export async function clearLiveLocation(rideId) {
   }
 }
 
-// Active riders of a group ride.
-//   [...]  → the list     null → the request failed (keep the current list)
 export async function getGroupRideParticipants(rideId) {
   if (rideId == null || isLocalRide(rideId)) return null;
   try {
@@ -366,13 +321,10 @@ export async function getGroupRideParticipants(rideId) {
   }
 }
 
-// A member leaves a group ride. Throws with the server's message.
 export async function updateParticipantStatus(rideId, userId, status) {
   return apiJson(`${BASE}/${rideId}/participants/${userId}/status`, jsonBody("PATCH", { status }));
 }
 
-// The admin adds a connected rider to a live group ride.
-// Throws with the server's message ("already in this ride", …).
 export async function addGroupRideParticipant(rideId, adminId, userId) {
   return apiJson(`${BASE}/${rideId}/participants`, jsonBody("POST", { adminId, userId }));
 }

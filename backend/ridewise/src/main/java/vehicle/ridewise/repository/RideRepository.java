@@ -59,6 +59,25 @@ public interface RideRepository extends JpaRepository<Ride, Long> { // Define in
     // Rides still "active" long after they were created (never ended)
     List<Ride> findByStatusAndCreatedAtBefore(String status, LocalDateTime cutoff);
 
+    // Lightweight ID queries for finished rides (never loads route TEXT columns)
+    @Query("SELECT r.id FROM Ride r WHERE r.userId = :userId AND r.status IN :statuses " +
+           "AND COALESCE(r.endedAt, r.createdAt) < :cutoff")
+    List<Long> findFinishedRideIdsForUserBefore(@Param("userId") Long userId,
+                                                @Param("statuses") Collection<String> statuses,
+                                                @Param("cutoff") LocalDateTime cutoff);
+
+    @Query("SELECT r.id FROM Ride r WHERE r.userId = :userId AND r.status IN :statuses")
+    List<Long> findFinishedRideIdsForUser(@Param("userId") Long userId,
+                                          @Param("statuses") Collection<String> statuses);
+
+    @Query("SELECT r.id FROM Ride r WHERE r.status IN :statuses " +
+           "AND COALESCE(r.endedAt, r.createdAt) < :cutoff")
+    List<Long> findFinishedRideIdsBefore(@Param("statuses") Collection<String> statuses,
+                                         @Param("cutoff") LocalDateTime cutoff);
+
+    @Query("SELECT r.id FROM Ride r WHERE r.status IN :statuses")
+    List<Long> findFinishedRideIds(@Param("statuses") Collection<String> statuses);
+
     // Drop the large route TEXT columns of rides that ended before a cutoff.
     // One UPDATE in the database — the old version loaded every old ride
     // (route blobs included) into memory on each run, forever.

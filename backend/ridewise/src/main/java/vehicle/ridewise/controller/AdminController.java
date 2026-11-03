@@ -22,11 +22,17 @@ import java.util.Map;
  *   GET    /api/admin/dashboard               → Dashboard stats
  *   GET    /api/admin/users?search=&page=&size= → Paginated user list
  *   GET    /api/admin/users/{id}              → Single user detail
+ *   PATCH  /api/admin/users/{id}              → Edit user account (username, email, password, role, etc.)
  *   PATCH  /api/admin/users/{id}/status       → Enable/disable user
+ *   DELETE /api/admin/users/{id}              → Permanently delete user account
  *   GET    /api/admin/rides?status=&type=&page=&size= → Paginated ride list
  *   GET    /api/admin/rides/{id}              → Single ride detail
+ *   PATCH  /api/admin/rides/{id}/end          → Force-end an active ride
+ *   DELETE /api/admin/rides/{id}              → Delete a single ride
+ *   DELETE /api/admin/rides/cleanup?olderThanDays= → Bulk delete finished rides
  *   GET    /api/admin/organizations?search=&page=&size= → Paginated organization list
- *   PATCH  /api/admin/organizations/{id}      → Verify / suspend / restore an organization
+ *   PATCH  /api/admin/organizations/{id}      → Verify / suspend / restore / delete an organization
+ *   DELETE /api/admin/organizations/{id}      → Delete an organization
  */
 @RestController
 @RequestMapping("/api/admin")
@@ -68,6 +74,16 @@ public class AdminController {
         return ResponseEntity.ok(adminService.getUserDetail(id));
     }
 
+    @PatchMapping("/users/{id}")
+    public ResponseEntity<Map<String, Object>> updateUser(
+            @PathVariable Long id,
+            @RequestBody Map<String, Object> body,
+            HttpServletRequest request) {
+        SessionAuthInterceptor.requireAdminRole(request);
+        Long adminUserId = SessionAuthInterceptor.requireUserId(request);
+        return ResponseEntity.ok(adminService.updateUser(id, body, adminUserId));
+    }
+
     @PatchMapping("/users/{id}/status")
     public ResponseEntity<Map<String, Object>> updateUserStatus(
             @PathVariable Long id,
@@ -86,7 +102,17 @@ public class AdminController {
         return ResponseEntity.ok(adminService.updateUserStatus(id, (Boolean) enabledValue, adminUserId));
     }
 
-    // ── Ride Monitoring ──────────────────────────────────────────────
+    @DeleteMapping("/users/{id}")
+    public ResponseEntity<Void> deleteUser(
+            @PathVariable Long id,
+            HttpServletRequest request) {
+        SessionAuthInterceptor.requireAdminRole(request);
+        Long adminUserId = SessionAuthInterceptor.requireUserId(request);
+        adminService.deleteUser(id, adminUserId);
+        return ResponseEntity.noContent().build();
+    }
+
+    // ── Ride Monitoring & Management ─────────────────────────────────
 
     @GetMapping("/rides")
     public ResponseEntity<Map<String, Object>> getRides(
@@ -107,6 +133,33 @@ public class AdminController {
         return ResponseEntity.ok(adminService.getRideDetail(id));
     }
 
+    @PatchMapping("/rides/{id}/end")
+    public ResponseEntity<Map<String, Object>> endRide(
+            @PathVariable Long id,
+            HttpServletRequest request) {
+        SessionAuthInterceptor.requireAdminRole(request);
+        Long adminUserId = SessionAuthInterceptor.requireUserId(request);
+        return ResponseEntity.ok(adminService.endRide(id, adminUserId));
+    }
+
+    @DeleteMapping("/rides/{id}")
+    public ResponseEntity<Void> deleteRide(
+            @PathVariable Long id,
+            HttpServletRequest request) {
+        SessionAuthInterceptor.requireAdminRole(request);
+        Long adminUserId = SessionAuthInterceptor.requireUserId(request);
+        adminService.deleteRide(id, adminUserId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/rides/cleanup")
+    public ResponseEntity<Map<String, Object>> cleanupFinishedRides(
+            @RequestParam(required = false) Integer olderThanDays,
+            HttpServletRequest request) {
+        SessionAuthInterceptor.requireAdminRole(request);
+        return ResponseEntity.ok(adminService.cleanupFinishedRides(olderThanDays));
+    }
+
     // ── Organizations ────────────────────────────────────────────────
 
     @GetMapping("/organizations")
@@ -119,7 +172,7 @@ public class AdminController {
         return ResponseEntity.ok(organizationService.adminList(search, page, size));
     }
 
-    // Body: { "verified": true|false } and/or { "status": "ACTIVE"|"SUSPENDED" }
+    // Body: { "verified": true|false } and/or { "status": "ACTIVE"|"SUSPENDED"|"DELETED" }
     @PatchMapping("/organizations/{id}")
     public ResponseEntity<Void> updateOrganization(
             @PathVariable Long id,
@@ -128,6 +181,16 @@ public class AdminController {
         SessionAuthInterceptor.requireAdminRole(request);
         Long adminUserId = SessionAuthInterceptor.requireUserId(request);
         organizationService.adminPatch(id, adminUserId, body);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/organizations/{id}")
+    public ResponseEntity<Void> deleteOrganization(
+            @PathVariable Long id,
+            HttpServletRequest request) {
+        SessionAuthInterceptor.requireAdminRole(request);
+        Long adminUserId = SessionAuthInterceptor.requireUserId(request);
+        organizationService.adminDelete(id, adminUserId);
         return ResponseEntity.noContent().build();
     }
 }

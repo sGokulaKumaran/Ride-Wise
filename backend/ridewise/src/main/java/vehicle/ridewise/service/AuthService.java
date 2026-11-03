@@ -38,12 +38,14 @@ public class AuthService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final LoginAttemptService loginAttempts;
+    private final DataCleanupService dataCleanupService;
 
     public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder,
-                       LoginAttemptService loginAttempts) {
+                       LoginAttemptService loginAttempts, DataCleanupService dataCleanupService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.loginAttempts = loginAttempts;
+        this.dataCleanupService = dataCleanupService;
     }
 
     @Transactional
@@ -151,6 +153,18 @@ public class AuthService {
             user.setProfilePublic(request.getProfilePublic());
         }
 
+        // Auto-delete finished rides after N days (0 = never)
+        if (request.getAutoDeleteRidesDays() != null) {
+            int days = request.getAutoDeleteRidesDays();
+            if (days < 0 || days > 3650) {
+                throw ApiException.badRequest("Auto-delete days must be between 0 (never) and 3650");
+            }
+            user.setAutoDeleteRidesDays(days == 0 ? 0 : days);
+            if (days > 0) {
+                dataCleanupService.cleanupUserAutoDeleteRides(userId, days);
+            }
+        }
+
         return toResponse(userRepository.save(user));
     }
 
@@ -248,6 +262,9 @@ public class AuthService {
                 user.getRole(), user.getEnabled(), user.getCreatedAt()
         );
         response.setProfilePublic(!Boolean.FALSE.equals(user.getProfilePublic()));
+        response.setAutoDeleteRidesDays(user.getAutoDeleteRidesDays() != null && user.getAutoDeleteRidesDays() > 0
+                ? user.getAutoDeleteRidesDays()
+                : 0);
         return response;
     }
 }

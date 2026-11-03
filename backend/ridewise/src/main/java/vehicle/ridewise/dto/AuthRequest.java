@@ -10,6 +10,7 @@ public class AuthRequest {
     private Double lat;
     private Double lng;
     private Boolean profilePublic; // may other riders discover this account?
+    private Integer autoDeleteRidesDays; // 0 = never, >0 = delete finished rides older than N days
 
     // ---- Getters ----
     public String getEmail()          { return email; }
@@ -20,6 +21,7 @@ public class AuthRequest {
     public Double getLat()            { return lat; }
     public Double getLng()            { return lng; }
     public Boolean getProfilePublic() { return profilePublic; }
+    public Integer getAutoDeleteRidesDays() { return autoDeleteRidesDays; }
 
     // ---- Setters ----
     public void setEmail(String email)                  { this.email = email; }
@@ -30,4 +32,5 @@ public class AuthRequest {
     public void setLat(Double lat)                      { this.lat = lat; }
     public void setLng(Double lng)                      { this.lng = lng; }
     public void setProfilePublic(Boolean profilePublic) { this.profilePublic = profilePublic; }
+    public void setAutoDeleteRidesDays(Integer autoDeleteRidesDays) { this.autoDeleteRidesDays = autoDeleteRidesDays; }
 }

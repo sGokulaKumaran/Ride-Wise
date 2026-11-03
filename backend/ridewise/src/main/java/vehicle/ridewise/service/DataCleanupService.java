@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import vehicle.ridewise.entity.User;
 import vehicle.ridewise.repository.*;
 
 import java.time.LocalDateTime;
@@ -16,8 +17,11 @@ import java.util.List;
  * 1. EVENT-DRIVEN (immediate)
  *    cleanupRideLocationData(rideId) — removes a ride's GPS breadcrumbs and
  *    live positions when the ride ends or is deleted.
+ *    deleteRideCompletely(rideId) — removes a ride and all its associated
+ *    locations, participants, and notifications.
  *
  * 2. SCHEDULED (every 6 hours, first run 60 s after startup)
+ *    - per-user auto-delete of finished rides based on user's autoDeleteRidesDays setting
  *    - read notifications older than 30 days
  *    - any notification older than 90 days
  *    - the large route TEXT columns of rides that ended more than 7 days ago
@@ -28,11 +32,6 @@ import java.util.List;
  *      more than 7 days ago, recorded trip paths older than 90 days,
  *      activity-log entries older than 180 days, announcements older
  *      than 90 days
- *
- *    Every one of these is a SINGLE statement run inside the database.
- *    The previous version loaded every ended ride — route blobs included —
- *    into memory on each run and worked through them one by one, which
- *    grew slower with every ride ever taken.
  *
  * 3. USER CLEANUP
  *    cleanupUserData(userId) — removes everything belonging to a user.
@@ -49,6 +48,7 @@ public class DataCleanupService {
     private final RideParticipantRepository rideParticipantRepository;
     private final ConnectionRepository connectionRepository;
     private final RideRepository rideRepository;
+    private final UserRepository userRepository;
     private final VehicleSessionRouteRepository vehicleSessionRouteRepository;
     private final VehicleSessionPointRepository vehicleSessionPointRepository;
     private final OrgAuditLogRepository orgAuditLogRepository;
@@ -60,6 +60,7 @@ public class DataCleanupService {
                               RideParticipantRepository rideParticipantRepository,
                               ConnectionRepository connectionRepository,
                               RideRepository rideRepository,
+                              UserRepository userRepository,
                               VehicleSessionRouteRepository vehicleSessionRouteRepository,
                               VehicleSessionPointRepository vehicleSessionPointRepository,
                               OrgAuditLogRepository orgAuditLogRepository,
@@ -74,6 +75,7 @@ public class DataCleanupService {
         this.rideParticipantRepository = rideParticipantRepository;
         this.connectionRepository = connectionRepository;
         this.rideRepository = rideRepository;
+        this.userRepository = userRepository;
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -95,6 +97,80 @@ public class DataCleanupService {
         userLocationRepository.deleteByRideId(rideId);
     }
 
+    /**
+     * Completely deletes a ride and all referencing rows (locations,
+     * participants, notifications, and the ride row itself).
+     */
+    @Transactional
+    public void deleteRideCompletely(Long rideId) {
+        locationUpdateRepository.deleteByRideId(rideId);
+        userLocationRepository.deleteByRideId(rideId);
+        rideParticipantRepository.deleteByRideId(rideId);
+        notificationRepository.deleteByRideId(rideId);
+        rideRepository.deleteById(rideId);
+    }
+
+    /**
+     * Deletes finished (completed/cancelled) rides for a specific user that
+     * are older than the given number of days, plus removes the user's
+     * participation in other users' finished group rides older than the cutoff.
+     */
+    @Transactional
+    public int cleanupUserAutoDeleteRides(Long userId, int days) {
+        if (userId == null || days <= 0) return 0;
+        LocalDateTime cutoff = LocalDateTime.now().minusDays(days);
+        List<Long> rideIds = rideRepository.findFinishedRideIdsForUserBefore(userId, ENDED, cutoff);
+        for (Long rideId : rideIds) {
+            deleteRideCompletely(rideId);
+        }
+        int removedParticipations = rideParticipantRepository.deleteFinishedParticipationsForUserBefore(userId, ENDED, cutoff);
+        return rideIds.size() + removedParticipations;
+    }
+
+    /**
+     * Clears ALL finished (completed/cancelled) rides for a user immediately.
+     */
+    @Transactional
+    public int clearAllFinishedRidesForUser(Long userId) {
+        if (userId == null) return 0;
+        List<Long> rideIds = rideRepository.findFinishedRideIdsForUser(userId, ENDED);
+        for (Long rideId : rideIds) {
+            deleteRideCompletely(rideId);
+        }
+        int removedParticipations = rideParticipantRepository.deleteFinishedParticipationsForUser(userId, ENDED);
+        return rideIds.size() + removedParticipations;
+    }
+
+    /**
+     * Platform admin bulk cleanup of finished rides (all, or older than N days).
+     */
+    @Transactional
+    public int adminCleanupFinishedRides(Integer olderThanDays) {
+        List<Long> rideIds = (olderThanDays != null && olderThanDays > 0)
+                ? rideRepository.findFinishedRideIdsBefore(ENDED, LocalDateTime.now().minusDays(olderThanDays))
+                : rideRepository.findFinishedRideIds(ENDED);
+        for (Long rideId : rideIds) {
+            deleteRideCompletely(rideId);
+        }
+        return rideIds.size();
+    }
+
+    /**
+     * Iterates over all users who enabled auto-delete (autoDeleteRidesDays > 0)
+     * and purges their expired finished rides.
+     */
+    @Transactional
+    public int cleanupAllUsersAutoDeleteRides() {
+        int totalDeleted = 0;
+        for (User u : userRepository.findByAutoDeleteRidesDaysGreaterThan(0)) {
+            Integer days = u.getAutoDeleteRidesDays();
+            if (days != null && days > 0) {
+                totalDeleted += cleanupUserAutoDeleteRides(u.getId(), days);
+            }
+        }
+        return totalDeleted;
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // 2. SCHEDULED
     // ═══════════════════════════════════════════════════════════════
@@ -104,6 +180,7 @@ public class DataCleanupService {
         long startedAt = System.currentTimeMillis();
         LocalDateTime now = LocalDateTime.now();
 
+        int autoDeletedRides = run("user auto-delete rides", this::cleanupAllUsersAutoDeleteRides);
         int readNotifications = run("old read notifications",
                 () -> notificationRepository.deleteByIsReadTrueAndCreatedAtBefore(now.minusDays(30)));
         int oldNotifications = run("very old notifications",
@@ -129,11 +206,11 @@ public class DataCleanupService {
                     tripRoads, tripPaths, activity, announcements);
         }
 
-        int total = readNotifications + oldNotifications + routeData + breadcrumbs + livePositions;
+        int total = autoDeletedRides + readNotifications + oldNotifications + routeData + breadcrumbs + livePositions;
         if (total > 0) {
-            log.info("Cleanup removed {} read + {} old notifications, route data of {} rides, "
+            log.info("Cleanup removed {} auto-deleted rides, {} read + {} old notifications, route data of {} rides, "
                             + "{} GPS breadcrumbs, {} stale live positions in {} ms",
-                    readNotifications, oldNotifications, routeData, breadcrumbs, livePositions,
+                    autoDeletedRides, readNotifications, oldNotifications, routeData, breadcrumbs, livePositions,
                     System.currentTimeMillis() - startedAt);
         }
     }
@@ -154,7 +231,7 @@ public class DataCleanupService {
 
     // ═══════════════════════════════════════════════════════════════
     // 3. USER CLEANUP: remove all data of a deleted user
-    //    (used by AccountService.deleteAccount)
+    //    (used by AccountService.deleteAccount & AdminService.deleteUser)
     // ═══════════════════════════════════════════════════════════════
 
     /**

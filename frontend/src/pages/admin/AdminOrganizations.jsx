@@ -2,12 +2,14 @@
 // AdminOrganizations — every organization on the platform
 // Route: /admin/organizations (RideWise admins only)
 //
-// Two things only RideWise itself may decide:
+// Platform admin controls:
 //   VERIFY    "this really is Riverside College" — shown as a green tick
 //             wherever the organization appears, and listed first in search
 //   SUSPEND   stops everything at once: running trips end, nobody outside
 //             can see or track it, its drivers cannot start trips. Its own
 //             admins can still open it and read why. Restoring undoes it.
+//   DELETE    closes the organization, ends running trips, and removes it
+//             from active platform listings.
 //
 // Platform admins do not see inside an organization from here (members,
 // vehicles, positions) — only what is needed to judge it: who owns it,
@@ -184,6 +186,14 @@ export default function AdminOrganizations() {
                               onConfirm={() => change(org, { status: "SUSPENDED" }, `${org.name} is suspended.`)}
                             />
                           )}
+                          <ConfirmButton
+                            label="Delete"
+                            confirmLabel="Tap again to delete"
+                            icon="trash"
+                            tc={tc}
+                            disabled={busy}
+                            onConfirm={() => change(org, { status: "DELETED" }, `${org.name} has been deleted.`)}
+                          />
                         </div>
                       </td>
                     </tr>
