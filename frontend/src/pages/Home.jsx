@@ -68,7 +68,7 @@ function HomeScreen({ user }) {
 
   // ── Overlays ──
   const [showStart, setShowStart] = useState(() => searchParams.get("startRide") === "1");
-  const [showHistory, setShowHistory] = useState(false);
+  const [showHistory, setShowHistory] = useState(() => searchParams.get("openHistory") === "1");
   const [mapRide, setMapRide] = useState(null); // the ride shown on the full-screen map
 
   // ── Rides ──
@@ -123,8 +123,9 @@ function HomeScreen({ user }) {
   // ── Deep links ──
   const openRideId = searchParams.get("openRide");
   const startRideParam = searchParams.get("startRide");
+  const openHistoryParam = searchParams.get("openHistory");
   useEffect(() => {
-    if (!openRideId && startRideParam !== "1") return;
+    if (!openRideId && startRideParam !== "1" && openHistoryParam !== "1") return;
     setSearchParams({}, { replace: true });
 
     if (openRideId) {
@@ -135,7 +136,16 @@ function HomeScreen({ user }) {
         })
         .catch(() => toast.info("That ride is no longer available."));
     }
-  }, [openRideId, startRideParam, setSearchParams]);
+  }, [openRideId, startRideParam, openHistoryParam, setSearchParams]);
+
+  useEffect(() => {
+    const onOverlay = (e) => {
+      if (e.detail === "startRide") setShowStart(true);
+      if (e.detail === "openHistory") setShowHistory(true);
+    };
+    window.addEventListener("ridewise:home-overlay", onOverlay);
+    return () => window.removeEventListener("ridewise:home-overlay", onOverlay);
+  }, []);
 
   // ── Voice commands ──
   const commands = useMemo(() => ({

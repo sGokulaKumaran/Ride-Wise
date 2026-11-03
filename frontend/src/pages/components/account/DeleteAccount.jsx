@@ -1,16 +1,5 @@
 // ============================================================
 // DeleteAccount — Settings → "Delete account" (the last section)
-//
-// The dialog first asks the server what stands in the way
-// (GET /api/auth/account/delete-check):
-//   • organizations the person still owns → links to hand them over or
-//     delete them; nothing can be deleted until they are gone
-//   • the last RideWise admin cannot delete their account
-// Otherwise it says what will happen (rides ended, trip ended, …) and
-// asks for the password and the word DELETE — two deliberate steps.
-//
-// After deletion this device forgets the account (AuthContext) and the
-// person lands on the login page.
 // ============================================================
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -22,9 +11,9 @@ import Icon from "../ui/Icon";
 import { Field, Loading, LoadError, Modal, TextInput } from "../org/kit";
 
 const WHAT_GOES = [
-  "Your profile, connections and notifications",
-  "Your solo rides and ride history",
-  "Your organization memberships, saved organizations and alerts",
+  "Profile, connections & notifications",
+  "Solo rides & ride history",
+  "Organization memberships & alerts",
 ];
 
 function DeleteDialog({ tc, onClose }) {
@@ -55,10 +44,10 @@ function DeleteDialog({ tc, onClose }) {
     setDeleting(true);
     try {
       await deleteAccount(password, confirm.trim());
-      toast.success("Your account was deleted. Thanks for riding with RideWise.");
+      toast.success("Account deleted.");
       navigate("/", { replace: true });
     } catch (err) {
-      setError(err.message || "Couldn't delete your account. Please try again.");
+      setError(err.message || "Couldn't delete account.");
       setDeleting(false);
     }
   };
@@ -67,14 +56,14 @@ function DeleteDialog({ tc, onClose }) {
 
   return (
     <Modal
-      title="Delete your account"
+      title="Delete account"
       icon="trash"
       onClose={onClose}
       busy={deleting}
       tc={tc}
       footer={check?.canDelete ? (
         <>
-          <Button variant="ghost" tc={tc} onClick={onClose} disabled={deleting}>Keep my account</Button>
+          <Button variant="ghost" tc={tc} onClick={onClose} disabled={deleting}>Cancel</Button>
           <Button type="submit" form="delete-account-form" variant="danger" icon="trash" tc={tc}
             loading={deleting} disabled={!ready}>
             Delete forever
@@ -84,23 +73,20 @@ function DeleteDialog({ tc, onClose }) {
         <Button variant="primary" tc={tc} onClick={onClose}>Close</Button>
       )}
     >
-      {!check && !loadError && <Loading label="Checking your account…" tc={tc} compact />}
+      {!check && !loadError && <Loading label="Checking account…" tc={tc} compact />}
       {loadError && <LoadError error={loadError} onRetry={() => setAttempt((n) => n + 1)} tc={tc} />}
 
       {check && !check.canDelete && (
         <div className="space-y-3 text-sm">
           {check.lastPlatformAdmin && (
             <p className={`rounded-lg border p-3 ${tc.dangerSoft}`}>
-              You are the only RideWise admin. Make another account an admin before deleting yours.
+              You are the only RideWise admin. Promote another admin before deleting your account.
             </p>
           )}
           {owned.length > 0 && (
             <>
               <p>
-                You still own {owned.length === 1 ? "an organization" : `${owned.length} organizations`}.
-                Hand {owned.length === 1 ? "it" : "each one"} over to another admin (People tab) or
-                delete {owned.length === 1 ? "it" : "them"} (Settings tab) first — otherwise its
-                vehicles and people would be left without an owner.
+                Transfer or delete {owned.length === 1 ? "your organization" : `your ${owned.length} organizations`} first:
               </p>
               <ul className={`divide-y rounded-lg border ${tc.divider}`}>
                 {owned.map((org) => (
@@ -124,7 +110,7 @@ function DeleteDialog({ tc, onClose }) {
       {check?.canDelete && (
         <form id="delete-account-form" onSubmit={submit} noValidate className="space-y-4 text-sm">
           <p className={`rounded-lg border p-3 ${tc.dangerSoft}`}>
-            This can't be undone. Your account and everything below are removed for good.
+            Permanent action. Everything listed below will be erased:
           </p>
           <ul className="space-y-1.5">
             {WHAT_GOES.map((line) => (
@@ -133,21 +119,16 @@ function DeleteDialog({ tc, onClose }) {
             {check.activeRides > 0 && (
               <li className="flex gap-2">
                 <Icon name="ride" size={15} className={`mt-0.5 shrink-0 ${tc.sub}`} />
-                {check.activeRides === 1 ? "Your ride in progress ends" : `Your ${check.activeRides} rides in progress end`} —
-                the other riders are told
+                {check.activeRides === 1 ? "Active ride ends" : `${check.activeRides} active rides end`}
               </li>
             )}
             {check.drivingNow && (
               <li className="flex gap-2">
                 <Icon name="steering" size={15} className={`mt-0.5 shrink-0 ${tc.sub}`} />
-                The trip you are driving ends and the vehicle is freed
+                Active driver session ends
               </li>
             )}
           </ul>
-          <p className={`text-xs ${tc.sub}`}>
-            Group rides you shared stay in the other riders&apos; history, and organizations keep their trip records.
-            Want a copy first? Use <span className="font-semibold">Download my data</span>.
-          </p>
 
           <Field label="Your password" tc={tc}>
             <TextInput tc={tc} type="password" value={password} onChange={(event) => setPassword(event.target.value)}
@@ -169,9 +150,17 @@ export default function DeleteAccount({ tc }) {
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-3 py-2">
-        <p className={`max-w-md text-xs ${tc.sub}`}>
-          Permanently remove your account and your data from RideWise. You&apos;ll be asked to confirm.
-        </p>
+        <div className="flex min-w-0 items-center gap-3">
+          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${tc.dangerSoft}`}>
+            <Icon name="userOff" size={16} />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">Remove account</p>
+            <p className={`mt-0.5 text-xs ${tc.sub}`}>
+              Permanently erase account &amp; all data
+            </p>
+          </div>
+        </div>
         <Button variant="danger" size="sm" icon="trash" tc={tc} onClick={() => setOpen(true)}>
           Delete account
         </Button>

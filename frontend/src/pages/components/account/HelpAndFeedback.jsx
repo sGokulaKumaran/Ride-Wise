@@ -1,10 +1,5 @@
 // ============================================================
 // HelpAndFeedback — Settings -> "Help & feedback"
-//
-//   1. Send feedback or report a bug (delivered to the RideWise admin
-//      dashboard, admin notifications, and the admin's configured Gmail)
-//   2. View your past submitted feedback and any admin replies
-//   3. Quick answers to common questions about RideWise
 // ============================================================
 
 import { useState } from "react";
@@ -17,10 +12,10 @@ import Icon from "../ui/Icon";
 import { Badge, Field, TextArea, TextInput } from "../org/kit";
 
 const CATEGORIES = [
-  { id: "BUG",      label: "Bug report",      icon: "alertTriangle", hint: "Something broken or not working right" },
-  { id: "FEEDBACK", label: "Feedback",        icon: "message",       hint: "General thoughts on RideWise" },
-  { id: "FEATURE",  label: "Feature request", icon: "idea",          hint: "An idea or improvement you want" },
-  { id: "HELP",     label: "Help question",   icon: "help",          hint: "Need help using a feature" },
+  { id: "BUG",      label: "Bug",      icon: "alertTriangle", hint: "Report something broken" },
+  { id: "FEEDBACK", label: "Feedback", icon: "message",       hint: "Share your thoughts" },
+  { id: "FEATURE",  label: "Idea",     icon: "idea",          hint: "Request a new feature" },
+  { id: "HELP",     label: "Help",     icon: "help",          hint: "Ask a question" },
 ];
 
 const STATUS_META = {
@@ -33,32 +28,32 @@ const HELP_TOPICS = [
   {
     id: "rides",
     icon: "ride",
-    title: "Starting a solo or group ride",
-    body: "Tap Start a Ride from Home or the center button on mobile. Choose your start and destination, pick one of the suggested routes, and choose Solo or Group. In a group ride, invited connections can share their live GPS position over WebSockets.",
+    title: "Solo & group rides",
+    body: "Tap New Ride from Home, pick your start and destination, choose a route, and select Solo or Group. Group ride members can share live GPS positions on the map.",
   },
   {
     id: "navigation",
     icon: "route",
-    title: "Turn-by-turn navigation & off-route rejoin",
-    body: "During an active ride, RideWise tracks your progress along the blue route line and reads each turn aloud. If you leave the main route by more than 300 meters, a dashed purple rejoin line automatically guides you back to the nearest point ahead on the main route.",
+    title: "Navigation & rerouting",
+    body: "RideWise tracks your progress along the route and reads turns aloud. If you go off-route by 300 m, a dashed rejoin line guides you back automatically.",
   },
   {
     id: "organizations",
     icon: "building",
-    title: "Following organization buses & fleet vehicles",
-    body: "Open Organizations to search public organizations or unlock a private organization with its code and password. Select any live vehicle to watch its position, ETA, stop-by-stop progress, and set a proximity alert to be notified when it approaches your stop.",
+    title: "Organization fleets & buses",
+    body: "Search public organizations or unlock private ones with a code and password. Follow live vehicles, view ETAs, and set stop proximity alerts.",
   },
   {
     id: "driving",
     icon: "steering",
-    title: "Driving for an organization",
-    body: "If an organization admin grants you the Driver role, the Drive tab appears in your navigation. Pick an available vehicle and route to start a live session, update passenger crowd levels, or send an SOS alert to organization admins.",
+    title: "Driver mode",
+    body: "Drivers invited by an organization can start vehicle trips, update passenger crowd levels, and send SOS alerts to admins.",
   },
   {
     id: "privacy",
     icon: "shield",
-    title: "Privacy, sessions & account control",
-    body: "Your exact coordinates and phone number are never shown to other riders. You can hide your profile from search in Privacy settings, sign out other devices in Account & security, export all your data as JSON, or permanently delete your account at any time.",
+    title: "Privacy & data control",
+    body: "Your phone number and exact GPS are private. Toggle profile visibility, sign out other devices, export JSON data, or auto-delete completed rides anytime.",
   },
 ];
 
@@ -93,7 +88,7 @@ export default function HelpAndFeedback({ tc }) {
     const trimmedSubject = subject.trim();
 
     if (trimmedMessage.length < 5) {
-      setError("Please enter at least a few words describing your feedback or issue.");
+      setError("Please enter a short description.");
       return;
     }
 
@@ -107,11 +102,11 @@ export default function HelpAndFeedback({ tc }) {
       });
       setSubject("");
       setMessage("");
-      toast.success("Sent to RideWise. Thank you for your feedback.");
+      toast.success("Message sent to RideWise.");
       mine.reload();
       setShowMine(true);
     } catch (err) {
-      setError(err.message || "Couldn't send your message. Please try again.");
+      setError(err.message || "Couldn't send message.");
     } finally {
       setSending(false);
     }
@@ -122,7 +117,7 @@ export default function HelpAndFeedback({ tc }) {
       {/* ── 1. Send feedback or bug report ── */}
       <form onSubmit={handleSubmit} noValidate className="space-y-3">
         <div>
-          <p className="text-xs font-semibold">What would you like to send?</p>
+          <p className="text-xs font-semibold">Category</p>
           <div className="mt-2 flex flex-wrap gap-2">
             {CATEGORIES.map((item) => (
               <Chip
@@ -145,25 +140,21 @@ export default function HelpAndFeedback({ tc }) {
             value={subject}
             onChange={(event) => setSubject(event.target.value)}
             maxLength={160}
-            placeholder={
-              category === "BUG"
-                ? "Short summary of the bug (for example, Map route didn't load)"
-                : "Short summary"
-            }
+            placeholder="Brief summary"
           />
         </Field>
 
         <Field label="Details" tc={tc}>
           <TextArea
             tc={tc}
-            rows={4}
+            rows={3}
             value={message}
             onChange={(event) => setMessage(event.target.value)}
             maxLength={4000}
             placeholder={
               category === "BUG"
-                ? "What happened, what screen you were on, and what you expected to happen…"
-                : "Write your feedback, suggestion, or question…"
+                ? "What happened and which screen you were on…"
+                : "Write your message…"
             }
           />
         </Field>
@@ -176,11 +167,12 @@ export default function HelpAndFeedback({ tc }) {
         )}
 
         <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-          <p className={`text-xs ${tc.sub}`}>
-            Sent directly to the RideWise admin team with your account details.
+          <p className={`flex items-center gap-1.5 text-xs ${tc.sub}`}>
+            <Icon name="shield" size={13} />
+            <span>Sent directly to RideWise admins</span>
           </p>
           <Button type="submit" variant="primary" size="sm" icon="mail" tc={tc} loading={sending}>
-            {sending ? "Sending…" : "Send message"}
+            {sending ? "Sending…" : "Send"}
           </Button>
         </div>
       </form>
@@ -195,7 +187,7 @@ export default function HelpAndFeedback({ tc }) {
           >
             <span className="flex items-center gap-2">
               <Icon name="history" size={16} className={tc.sub} />
-              <span>Your past messages</span>
+              <span>Sent messages</span>
               <span className={`text-xs font-normal tabular-nums ${tc.sub}`}>({items.length})</span>
             </span>
             <Icon
@@ -227,7 +219,7 @@ export default function HelpAndFeedback({ tc }) {
                       <div className={`mt-2.5 rounded-lg border px-3 py-2 ${tc.surface2} ${tc.divider}`}>
                         <p className="flex items-center gap-1.5 font-semibold">
                           <Icon name="shield" size={13} className={tc.sub} />
-                          <span>RideWise admin reply</span>
+                          <span>Admin reply</span>
                         </p>
                         <p className={`mt-1 whitespace-pre-wrap leading-relaxed ${tc.sub}`}>{item.adminReply}</p>
                       </div>
@@ -240,11 +232,11 @@ export default function HelpAndFeedback({ tc }) {
         </div>
       )}
 
-      {/* ── 3. Help & common questions ── */}
+      {/* ── 3. Quick Guide ── */}
       <div className={`border-t pt-4 ${tc.divider}`}>
         <p className="mb-2.5 flex items-center gap-2 text-sm font-semibold">
           <Icon name="help" size={16} className={tc.sub} />
-          <span>Help & common questions</span>
+          <span>Quick guide</span>
         </p>
         <div className={`divide-y rounded-lg border ${tc.divider}`}>
           {HELP_TOPICS.map((topic) => {
@@ -280,4 +272,3 @@ export default function HelpAndFeedback({ tc }) {
     </div>
   );
 }
-

@@ -1,14 +1,5 @@
 // ============================================================
 // AdminEmailSettings — Manage admin Gmail & Google App Password
-//
-// Allows RideWise platform admins to configure:
-//   1. Destination & sender Gmail address
-//   2. 16-character Google App Password (saved securely to platform_settings)
-//   3. "Send Test Email" to verify credentials immediately with Google SMTP
-//
-// Mounted in:
-//   - Settings.jsx (under Admin: Mail & Feedback Alerts)
-//   - AdminFeedback.jsx (/admin/feedback)
 // ============================================================
 
 import { useState } from "react";
@@ -54,7 +45,7 @@ export default function AdminEmailSettings({ tc }) {
       setPasswordInput("");
       toast.success(
         cleanEmail
-          ? `Alert email saved to ${cleanEmail}${cleanPassword ? " with new app password." : "."}`
+          ? `Alert email saved to ${cleanEmail}.`
           : "Email settings cleared."
       );
     } catch (err) {
@@ -70,7 +61,7 @@ export default function AdminEmailSettings({ tc }) {
       const updated = await adminSaveFeedbackSettings({ clearPassword: true });
       settingsLoad.setData(updated);
       setPasswordInput("");
-      toast.info("Saved app password removed.");
+      toast.info("App password removed.");
     } catch (err) {
       toast.error(err.message || "Couldn't remove app password.");
     } finally {
@@ -83,7 +74,7 @@ export default function AdminEmailSettings({ tc }) {
     const cleanPassword = passwordInput.trim().replace(/\s+/g, "");
 
     if (!cleanEmail && !data.alertEmail) {
-      toast.warn("Please enter a Gmail address first.");
+      toast.warn("Enter a Gmail address first.");
       return;
     }
 
@@ -94,7 +85,7 @@ export default function AdminEmailSettings({ tc }) {
       if (cleanPassword) payload.appPassword = cleanPassword;
 
       const res = await adminTestFeedbackEmail(payload);
-      toast.success(res.message || "Test email sent successfully! Check your inbox.");
+      toast.success(res.message || "Test email sent.");
       settingsLoad.reload();
     } catch (err) {
       toast.error(err.message || "Failed to send test email.");
@@ -110,23 +101,17 @@ export default function AdminEmailSettings({ tc }) {
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <Icon name="mail" size={16} className={tc.sub} />
-            <h2 className="text-sm font-bold">Feedback email & Gmail alerts</h2>
+            <h2 className="text-base font-bold">Admin Gmail alerts</h2>
             {isSmtpConfigured ? (
-              <Badge tone="ok" tc={tc}>
-                Active: auto-forwarding
-              </Badge>
+              <Badge tone="ok" tc={tc}>Active</Badge>
             ) : hasSavedPassword ? (
-              <Badge tone="warn" tc={tc}>
-                SMTP verifying
-              </Badge>
+              <Badge tone="warn" tc={tc}>Verifying</Badge>
             ) : (
-              <Badge tone="sub" tc={tc}>
-                App password needed
-              </Badge>
+              <Badge tone="sub" tc={tc}>Setup needed</Badge>
             )}
           </div>
           <p className={`mt-0.5 text-xs ${tc.sub}`}>
-            Forward user feedback and bug reports to your Gmail address instantly without editing server files.
+            Forward user bug reports &amp; feedback to Gmail.
           </p>
         </div>
 
@@ -138,12 +123,11 @@ export default function AdminEmailSettings({ tc }) {
       </div>
 
       {/* ── Form Inputs ── */}
-      <form onSubmit={handleSave} className="space-y-3">
+      <form onSubmit={handleSave} className="space-y-3" autoComplete="off">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {/* Gmail Address */}
           <Field
-            label="Admin Gmail address"
-            hint="Receives all feedback submissions & bug alerts"
+            label="Admin Gmail"
+            hint="Receives feedback & bug alerts"
             tc={tc}
           >
             <TextInput
@@ -156,14 +140,9 @@ export default function AdminEmailSettings({ tc }) {
             />
           </Field>
 
-          {/* Google App Password */}
           <Field
-            label="Google App Password (16 chars)"
-            hint={
-              hasSavedPassword
-                ? "Password configured. Enter a new one only to update."
-                : "Generated at myaccount.google.com/apppasswords"
-            }
+            label="Google App Password"
+            hint={hasSavedPassword ? "Saved — enter new code to replace" : "16-char code from Google Security"}
             tc={tc}
           >
             <div className="relative">
@@ -171,6 +150,7 @@ export default function AdminEmailSettings({ tc }) {
                 type={showPassword ? "text" : "password"}
                 value={passwordInput}
                 onChange={(e) => setPasswordInput(e.target.value)}
+                autoComplete="new-password"
                 placeholder={hasSavedPassword ? "•••••••••••••••• (saved)" : "abcd efgh ijkl mnop"}
                 aria-label="Google App Password"
                 className={`w-full rounded-lg border py-2.5 pl-3.5 pr-10 text-sm font-mono tracking-wider ${tc.input}`}
@@ -188,20 +168,10 @@ export default function AdminEmailSettings({ tc }) {
           </Field>
         </div>
 
-        {/* ── Helper guide ── */}
-        <div className={`rounded-lg border p-3 text-xs ${tc.card} ${tc.divider}`}>
-          <div className="flex items-start gap-2">
-            <Icon name="info" size={14} className={`mt-0.5 shrink-0 ${tc.sub}`} />
-            <div className={`space-y-1 ${tc.sub}`}>
-              <p>
-                To generate your 16-character code: open your Google Account &gt; <strong>Security</strong> &gt;{" "}
-                <strong>2-Step Verification</strong> &gt; <strong>App passwords</strong>. Name it <em>RideWise</em> and paste the code here.
-              </p>
-              <p>
-                Once configured, user bug reports and feedback will be automatically emailed to you with the user&apos;s email in the <em>Reply-To</em> header.
-              </p>
-            </div>
-          </div>
+        {/* ── Compact Helper Note ── */}
+        <div className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${tc.card} ${tc.divider} ${tc.sub}`}>
+          <Icon name="key" size={14} className="shrink-0" />
+          <span>Google Account &rarr; Security &rarr; 2-Step Verification &rarr; App passwords.</span>
         </div>
 
         {/* ── Action Buttons ── */}
@@ -210,25 +180,25 @@ export default function AdminEmailSettings({ tc }) {
             <Button
               type="submit"
               variant="primary"
-              size="md"
+              size="sm"
               icon="check"
               tc={tc}
               loading={saving}
             >
-              Save settings
+              Save
             </Button>
 
             <Button
               type="button"
               variant="secondary"
-              size="md"
+              size="sm"
               icon="mail"
               tc={tc}
               loading={testing}
               onClick={handleTestEmail}
               disabled={!emailInput.trim() && !data.alertEmail}
             >
-              Send test email
+              Test email
             </Button>
           </div>
 

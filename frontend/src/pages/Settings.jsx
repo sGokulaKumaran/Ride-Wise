@@ -1,23 +1,6 @@
 // ============================================================
 // Settings — how RideWise looks and behaves for this rider
 // Route: /settings (protected — requires login + onboarding)
-//
-// Every control on this page does something:
-//
-//   Appearance     theme (applies at once, remembered per account)
-//   Rides & map    spoken directions on/off and how fast they are spoken,
-//                  keeping the screen awake, map style, and auto-deleting
-//                  completed rides after a set time
-//   Accessibility  text size, reduced motion, high contrast (applied
-//                  app-wide by utils/a11y.js)
-//   Privacy        "Public profile" — saved on the server; when off, riders
-//                  who are not already connected with you cannot find you
-//                  in search or "near me"
-//   Account & security  email, password, sign out other devices
-//                  (components/account/SecuritySettings)
-//   Your data      download everything the account holds, or clear finished
-//                  rides to free up space
-//   Delete account (components/account/DeleteAccount)
 // ============================================================
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -57,11 +40,18 @@ const A11Y_DEFAULTS = { textSize: "medium", reduceMotion: false, highContrast: f
 
 const AUTO_DELETE_OPTIONS = [
   { days: 0,  label: "Never" },
-  { days: 1,  label: "After 1 day" },
-  { days: 7,  label: "After 7 days" },
-  { days: 30, label: "After 30 days" },
-  { days: 90, label: "After 90 days" },
+  { days: 1,  label: "1 day" },
+  { days: 7,  label: "7 days" },
+  { days: 30, label: "30 days" },
+  { days: 90, label: "90 days" },
 ];
+
+const THEME_ICONS = {
+  dark: "moon",
+  light: "sun",
+  warm: "sunCloud",
+  midnight: "moonStars",
+};
 
 const wakeLockSupported = typeof navigator !== "undefined" && "wakeLock" in navigator;
 
@@ -85,12 +75,19 @@ function loadSettings(userId) {
   return { ...A11Y_DEFAULTS };
 }
 
-function Toggle({ checked, onChange, label, sub, tc, disabled = false }) {
+function Toggle({ icon, checked, onChange, label, sub, tc, disabled = false }) {
   return (
-    <div className="flex items-center justify-between gap-4 py-3">
-      <div className="min-w-0">
-        <p className="text-sm font-semibold">{label}</p>
-        {sub && <p className={`mt-0.5 text-xs ${tc.sub}`}>{sub}</p>}
+    <div className="flex items-center justify-between gap-3 py-3">
+      <div className="flex min-w-0 items-center gap-3">
+        {icon && (
+          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${tc.surface2}`}>
+            <Icon name={icon} size={16} />
+          </span>
+        )}
+        <div className="min-w-0">
+          <p className="text-sm font-semibold">{label}</p>
+          {sub && <p className={`mt-0.5 text-xs ${tc.sub}`}>{sub}</p>}
+        </div>
       </div>
       <button
         type="button"
@@ -109,6 +106,28 @@ function Toggle({ checked, onChange, label, sub, tc, disabled = false }) {
           }`}
         />
       </button>
+    </div>
+  );
+}
+
+function OptionBlock({ icon, label, sub, right, tc, disabled = false, children }) {
+  return (
+    <div className={`py-3 ${disabled ? "opacity-50" : ""}`}>
+      <div className="mb-2.5 flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          {icon && (
+            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${tc.surface2}`}>
+              <Icon name={icon} size={16} />
+            </span>
+          )}
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">{label}</p>
+            {sub && <p className={`mt-0.5 text-xs ${tc.sub}`}>{sub}</p>}
+          </div>
+        </div>
+        {right}
+      </div>
+      {children}
     </div>
   );
 }
@@ -180,11 +199,11 @@ function SettingsScreen() {
       forgetCache(`account-stats-${userId}`);
       toast.success(
         days === 0
-          ? "Completed rides will be kept until you delete them."
-          : `Completed rides older than ${days} ${days === 1 ? "day" : "days"} will be automatically deleted.`,
+          ? "Auto-delete turned off."
+          : `Finished rides older than ${days}d will auto-delete.`,
       );
     } catch (err) {
-      toast.error(err.message || "Couldn't save your auto-delete setting. Please try again.");
+      toast.error(err.message || "Couldn't save setting.");
     } finally {
       setSavingAutoDelete(false);
     }
@@ -203,9 +222,9 @@ function SettingsScreen() {
       const res = await clearFinishedRides(userId);
       forgetCache(`home-rides-${userId}`);
       forgetCache(`account-stats-${userId}`);
-      toast.success(res?.message || "Completed rides deleted.");
+      toast.success(res?.message || "Completed rides cleared.");
     } catch (err) {
-      toast.error(err.message || "Couldn't delete completed rides. Please try again.");
+      toast.error(err.message || "Couldn't clear rides.");
     } finally {
       setClearingRides(false);
       setConfirmClearRides(false);
@@ -219,11 +238,9 @@ function SettingsScreen() {
     setSavingPrivacy(true);
     try {
       await updateProfile({ profilePublic: value });
-      toast.success(value
-        ? "Other riders can find you again."
-        : "You're hidden from search and from riders nearby.");
+      toast.success(value ? "Profile is now public." : "Profile hidden from search.");
     } catch (err) {
-      toast.error(err.message || "Couldn't save that. Please try again.");
+      toast.error(err.message || "Couldn't save privacy setting.");
     } finally {
       setSavingPrivacy(false);
     }
@@ -244,16 +261,19 @@ function SettingsScreen() {
       link.click();
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      toast.success("Your data was downloaded.");
+      toast.success("Data downloaded.");
     } catch (err) {
-      toast.error(err.message || "Couldn't prepare your data. Please try again.");
+      toast.error(err.message || "Couldn't export data.");
     } finally {
       setExporting(false);
     }
   };
 
   const themeOptions = Object.entries(themes).map(([key, option]) => ({
-    key, label: option.label, preview: option.preview,
+    key,
+    label: option.label,
+    preview: option.preview,
+    icon: THEME_ICONS[key] || "theme",
   }));
 
   return (
@@ -270,19 +290,19 @@ function SettingsScreen() {
             className={`mb-4 inline-flex items-center gap-1.5 text-sm font-semibold hover:underline lg:hidden ${tc.sub}`}
           >
             <Icon name="arrowLeft" size={16} />
-            Back to Account
+            Account
           </button>
 
           <header className="mb-6">
             <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
-            <p className={`mt-1 text-sm ${tc.sub}`}>Make RideWise look and behave the way you like.</p>
+            <p className={`mt-1 text-sm ${tc.sub}`}>Preferences, privacy &amp; account controls</p>
           </header>
 
           {/* ── APPEARANCE ── */}
           <section className={`mb-4 rounded-xl border p-5 ${tc.card}`}>
             <SectionHeader icon="theme" title="Appearance" tc={tc} />
             <p className={`mb-4 text-xs ${tc.sub}`}>
-              Until you pick one, RideWise follows the time of day.
+              Follows time of day until chosen.
             </p>
             <div className="grid grid-cols-2 gap-2.5">
               {themeOptions.map((option) => {
@@ -304,7 +324,10 @@ function SettingsScreen() {
                       <span className={`h-1 w-6 rounded-full ${option.preview.ink}`} />
                       <span className={`h-1 w-2 rounded-full ${option.preview.accent}`} />
                     </span>
-                    <span className="flex-1">{option.label}</span>
+                    <span className="flex flex-1 items-center gap-1.5">
+                      <Icon name={option.icon} size={15} className={tc.sub} />
+                      <span>{option.label}</span>
+                    </span>
                     {active ? <Icon name="check" size={16} /> : null}
                   </button>
                 );
@@ -317,57 +340,63 @@ function SettingsScreen() {
             <SectionHeader icon="map" title="Rides & map" tc={tc} />
 
             <Toggle
+              icon="volume"
               checked={voiceOn && voiceSupported}
               onChange={setVoiceOn}
               disabled={!voiceSupported}
               label="Spoken directions"
-              sub={voiceSupported
-                ? "Reads each turn aloud while you ride. You can also mute it on the map."
-                : "This browser can't speak directions."}
+              sub={voiceSupported ? "Read turns aloud on the map" : "Not supported in this browser"}
               tc={tc}
             />
 
             {voiceSupported && (
-              <div className={`pb-3 ${voiceOn ? "" : "opacity-50"}`}>
-                <p className="text-sm font-semibold">Voice speed</p>
-                <p className={`mb-2.5 mt-0.5 text-xs ${tc.sub}`}>Pick one to hear a sample.</p>
-                <div className="flex gap-2">
-                  {VOICE_RATES.map((option) => (
-                    <Chip
-                      key={option.id}
-                      selected={voiceRate === option.id}
-                      onClick={() => chooseVoiceRate(option.id)}
-                      disabled={!voiceOn}
-                      tc={tc}
-                      className="flex-1 justify-center"
-                    >
-                      {option.label}
-                    </Chip>
-                  ))}
-                </div>
-              </div>
+              <>
+                <div className={`border-t ${tc.divider}`} />
+                <OptionBlock
+                  icon="gauge"
+                  label="Voice speed"
+                  sub="Tap to preview"
+                  disabled={!voiceOn}
+                  tc={tc}
+                >
+                  <div className="flex gap-2">
+                    {VOICE_RATES.map((option) => (
+                      <Chip
+                        key={option.id}
+                        selected={voiceRate === option.id}
+                        onClick={() => chooseVoiceRate(option.id)}
+                        disabled={!voiceOn}
+                        tc={tc}
+                        className="flex-1 justify-center"
+                      >
+                        {option.label}
+                      </Chip>
+                    ))}
+                  </div>
+                </OptionBlock>
+              </>
             )}
 
             <div className={`border-t ${tc.divider}`} />
             <Toggle
+              icon="mobile"
               checked={keepAwake && wakeLockSupported}
               onChange={setKeepAwake}
               disabled={!wakeLockSupported}
-              label="Keep the screen on while riding"
-              sub={wakeLockSupported
-                ? "Stops the phone locking mid-ride, so GPS keeps working. Turn off to save battery."
-                : "This browser can't keep the screen on."}
+              label="Keep screen on"
+              sub={wakeLockSupported ? "Prevent screen lock during rides" : "Not supported in this browser"}
               tc={tc}
             />
 
             <div className={`border-t ${tc.divider}`} />
-            <div className="py-3">
-              <p className="text-sm font-semibold">Map style</p>
-              <p className={`mb-2.5 mt-0.5 text-xs ${tc.sub}`}>
-                Automatic matches the map to your theme — dark map for dark themes.
-              </p>
+            <OptionBlock
+              icon="layers"
+              label="Map style"
+              sub="Auto matches your active theme"
+              tc={tc}
+            >
               <div className="flex flex-wrap gap-2">
-                {[{ id: MAP_STYLE_AUTO, label: "Automatic" }, ...MAP_STYLES].map((style) => (
+                {[{ id: MAP_STYLE_AUTO, label: "Auto" }, ...MAP_STYLES].map((style) => (
                   <Chip
                     key={style.id}
                     selected={mapStyle === style.id}
@@ -378,17 +407,16 @@ function SettingsScreen() {
                   </Chip>
                 ))}
               </div>
-            </div>
+            </OptionBlock>
 
             <div className={`border-t ${tc.divider}`} />
-            <div className="pt-3">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold">Auto-delete completed rides</p>
-                {savingAutoDelete && <Icon name="spinner" size={14} className={`rw-spin ${tc.sub}`} />}
-              </div>
-              <p className={`mb-2.5 mt-0.5 text-xs ${tc.sub}`}>
-                Automatically delete finished rides once the selected time is reached to save database space.
-              </p>
+            <OptionBlock
+              icon="clock"
+              label="Auto-delete rides"
+              sub="Remove finished rides after set time"
+              right={savingAutoDelete ? <Icon name="spinner" size={14} className={`rw-spin ${tc.sub}`} /> : null}
+              tc={tc}
+            >
               <div className="flex flex-wrap gap-2">
                 {AUTO_DELETE_OPTIONS.map((option) => (
                   <Chip
@@ -402,15 +430,19 @@ function SettingsScreen() {
                   </Chip>
                 ))}
               </div>
-            </div>
+            </OptionBlock>
           </section>
 
           {/* ── ACCESSIBILITY ── */}
           <section className={`mb-4 rounded-xl border p-5 ${tc.card}`}>
             <SectionHeader icon="access" title="Accessibility" tc={tc} />
 
-            <div className="py-3">
-              <p className="mb-2 text-sm font-semibold">Text size</p>
+            <OptionBlock
+              icon="list"
+              label="Text size"
+              sub="Adjust app font scale"
+              tc={tc}
+            >
               <div className="flex gap-2">
                 {["small", "medium", "large"].map((size) => (
                   <Chip
@@ -424,22 +456,24 @@ function SettingsScreen() {
                   </Chip>
                 ))}
               </div>
-            </div>
+            </OptionBlock>
 
             <div className={`border-t ${tc.divider}`} />
             <Toggle
+              icon="pause"
               checked={settings.reduceMotion}
               onChange={update("reduceMotion")}
               label="Reduce motion"
-              sub="Turns off animations and transitions, including on the map"
+              sub="Turn off animations & transitions"
               tc={tc}
             />
             <div className={`border-t ${tc.divider}`} />
             <Toggle
+              icon="eye"
               checked={settings.highContrast}
               onChange={update("highContrast")}
               label="High contrast"
-              sub="Stronger text and borders"
+              sub="Sharper text & borders"
               tc={tc}
             />
           </section>
@@ -448,24 +482,25 @@ function SettingsScreen() {
           <section className={`mb-4 rounded-xl border p-5 ${tc.card}`}>
             <SectionHeader icon="lock" title="Privacy" tc={tc} />
             <Toggle
+              icon="globe"
               checked={profilePublic}
               onChange={setProfilePublic}
               disabled={savingPrivacy}
               label="Public profile"
-              sub="When off, riders you're not connected with can't find you in search or near them."
+              sub="Visible in rider search & nearby"
               tc={tc}
             />
-            <p className={`border-t pt-3 text-xs ${tc.divider} ${tc.sub}`}>
-              Other riders never see your exact location or phone number. In a group ride your live
-              position is shared only with that ride&apos;s riders, and only while you ride.
-            </p>
+            <div className={`flex items-center gap-2 border-t pt-3 text-xs ${tc.divider} ${tc.sub}`}>
+              <Icon name="shield" size={14} className="shrink-0" />
+              <span>Phone &amp; exact GPS stay private. Live location shares only during group rides.</span>
+            </div>
           </section>
 
           {/* ── HELP & FEEDBACK ── */}
           <section id="help-feedback" className={`mb-4 scroll-mt-24 rounded-xl border p-5 ${tc.card}`}>
             <SectionHeader icon="help" title="Help & feedback" tc={tc} />
             <p className={`mb-3 text-xs ${tc.sub}`}>
-              Report a bug, share an idea, or browse answers to common questions.
+              Report bugs, share ideas, or view quick guides.
             </p>
             <HelpAndFeedback tc={tc} />
           </section>
@@ -486,22 +521,35 @@ function SettingsScreen() {
           {/* ── YOUR DATA ── */}
           <section className={`mb-4 rounded-xl border p-5 ${tc.card}`}>
             <SectionHeader icon="download" title="Your data" tc={tc} />
-            <div className="flex flex-wrap items-center justify-between gap-3 py-2">
-              <p className={`max-w-md text-xs ${tc.sub}`}>
-                A copy of your profile, rides, connections, organizations and the trips you drove, as a JSON file.
-              </p>
+            <div className="flex flex-wrap items-center justify-between gap-3 py-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${tc.surface2}`}>
+                  <Icon name="download" size={16} />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">Export data</p>
+                  <p className={`mt-0.5 text-xs ${tc.sub}`}>
+                    Download profile, rides &amp; orgs as JSON
+                  </p>
+                </div>
+              </div>
               <Button variant="secondary" size="sm" icon="download" tc={tc} loading={exporting} onClick={downloadMyData}>
-                Download my data
+                Export JSON
               </Button>
             </div>
 
-            <div className={`my-3 border-t ${tc.divider}`} />
-            <div className="flex flex-wrap items-center justify-between gap-3 py-1">
-              <div className="max-w-md">
-                <p className="text-sm font-semibold">Clear completed ride history</p>
-                <p className={`mt-0.5 text-xs ${tc.sub}`}>
-                  Permanently remove all completed and cancelled rides from your history right now.
-                </p>
+            <div className={`border-t ${tc.divider}`} />
+            <div className="flex flex-wrap items-center justify-between gap-3 py-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${tc.surface2}`}>
+                  <Icon name="history" size={16} />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">Clear ride history</p>
+                  <p className={`mt-0.5 text-xs ${tc.sub}`}>
+                    Delete all completed &amp; cancelled rides
+                  </p>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 {confirmClearRides && (
@@ -523,7 +571,7 @@ function SettingsScreen() {
                   loading={clearingRides}
                   onClick={handleClearFinishedRides}
                 >
-                  {confirmClearRides ? "Tap again to delete all" : "Clear completed rides"}
+                  {confirmClearRides ? "Tap to confirm" : "Clear history"}
                 </Button>
               </div>
             </div>

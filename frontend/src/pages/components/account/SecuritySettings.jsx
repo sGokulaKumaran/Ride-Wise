@@ -1,14 +1,5 @@
 // ============================================================
 // SecuritySettings — Settings → "Account & security"
-//
-//   Email          shown; "Change" opens a small form (new email +
-//                  password). AuthContext.changeEmail keeps the signed-in
-//                  user up to date.
-//   Password       "Change" opens current / new / confirm. Afterwards the
-//                  server signs out every OTHER device; this one stays in.
-//   Other devices  ends every other session (a lost or shared phone).
-//
-// A wrong password is a plain form error — never a sign-out.
 // ============================================================
 import { useState } from "react";
 import { toast } from "react-toastify";
@@ -86,10 +77,10 @@ function EmailForm({ tc, onDone }) {
     setSaving(true);
     try {
       await changeEmail(next, password);
-      toast.success("Email changed. Use it the next time you log in.");
+      toast.success("Email updated.");
       onDone();
     } catch (err) {
-      setError(err.message || "Couldn't change your email. Please try again.");
+      setError(err.message || "Couldn't change email.");
     } finally {
       setSaving(false);
     }
@@ -101,13 +92,13 @@ function EmailForm({ tc, onDone }) {
         <TextInput tc={tc} type="email" value={email} onChange={(event) => setEmail(event.target.value)}
           autoComplete="email" placeholder="you@example.com" autoFocus />
       </Field>
-      <Field label="Your password" hint="To confirm it's you." tc={tc}>
+      <Field label="Current password" tc={tc}>
         <PasswordInput tc={tc} value={password} onChange={setPassword} autoComplete="current-password" />
       </Field>
       {error && <p role="alert" className={`text-xs ${tc.danger}`}>{error}</p>}
       <div className="flex justify-end gap-2">
         <Button type="button" variant="ghost" size="sm" tc={tc} onClick={onDone} disabled={saving}>Cancel</Button>
-        <Button type="submit" variant="primary" size="sm" tc={tc} loading={saving}>Save email</Button>
+        <Button type="submit" variant="primary" size="sm" icon="check" tc={tc} loading={saving}>Save</Button>
       </div>
     </form>
   );
@@ -126,16 +117,16 @@ function PasswordForm({ tc, onDone }) {
     event.preventDefault();
     setError("");
     if (!current) { setError("Enter your current password."); return; }
-    if (next.length < MIN_PASSWORD) { setError(`The new password needs at least ${MIN_PASSWORD} characters.`); return; }
-    if (next !== confirm) { setError("The two new passwords don't match."); return; }
-    if (next === current) { setError("The new password must be different from the current one."); return; }
+    if (next.length < MIN_PASSWORD) { setError(`Minimum ${MIN_PASSWORD} characters required.`); return; }
+    if (next !== confirm) { setError("Passwords don't match."); return; }
+    if (next === current) { setError("Choose a different password."); return; }
     setSaving(true);
     try {
       await changePassword(current, next);
-      toast.success("Password changed. Your other devices were signed out.");
+      toast.success("Password updated. Other devices signed out.");
       onDone();
     } catch (err) {
-      setError(err.message || "Couldn't change your password. Please try again.");
+      setError(err.message || "Couldn't change password.");
     } finally {
       setSaving(false);
     }
@@ -148,7 +139,7 @@ function PasswordForm({ tc, onDone }) {
       </Field>
       <Field label="New password" tc={tc}>
         <PasswordInput tc={tc} value={next} onChange={setNext} autoComplete="new-password"
-          placeholder={`At least ${MIN_PASSWORD} characters`} />
+          placeholder={`Min ${MIN_PASSWORD} characters`} />
         {next && (
           <span className="mt-2 flex items-center gap-3">
             <span className="flex h-1 flex-1 gap-1" aria-hidden="true">
@@ -160,14 +151,14 @@ function PasswordForm({ tc, onDone }) {
           </span>
         )}
       </Field>
-      <Field label="Confirm new password" tc={tc}>
+      <Field label="Confirm password" tc={tc}>
         <PasswordInput tc={tc} value={confirm} onChange={setConfirm} autoComplete="new-password" />
       </Field>
-      <p className={`text-xs ${tc.sub}`}>You'll stay signed in here. Every other device will need the new password.</p>
+      <p className={`text-xs ${tc.sub}`}>Signs out other devices automatically.</p>
       {error && <p role="alert" className={`text-xs ${tc.danger}`}>{error}</p>}
       <div className="flex justify-end gap-2">
         <Button type="button" variant="ghost" size="sm" tc={tc} onClick={onDone} disabled={saving}>Cancel</Button>
-        <Button type="submit" variant="primary" size="sm" tc={tc} loading={saving}>Change password</Button>
+        <Button type="submit" variant="primary" size="sm" icon="check" tc={tc} loading={saving}>Update</Button>
       </div>
     </form>
   );
@@ -180,9 +171,9 @@ export default function SecuritySettings({ tc }) {
   const signOutOthers = async () => {
     try {
       await signOutOtherDevices();
-      toast.success("Every other device was signed out.");
+      toast.success("Other devices signed out.");
     } catch (err) {
-      toast.error(err.message || "Couldn't sign out your other devices. Please try again.");
+      toast.error(err.message || "Couldn't sign out other devices.");
     }
   };
 
@@ -191,7 +182,7 @@ export default function SecuritySettings({ tc }) {
       <Row
         icon="mail" title="Email" value={user?.email} tc={tc}
         action={open !== "email" && (
-          <Button variant="secondary" size="sm" tc={tc} onClick={() => setOpen("email")}>Change</Button>
+          <Button variant="secondary" size="sm" icon="edit" tc={tc} onClick={() => setOpen("email")}>Change</Button>
         )}
       >
         {open === "email" && <EmailForm tc={tc} onDone={() => setOpen(null)} />}
@@ -199,9 +190,9 @@ export default function SecuritySettings({ tc }) {
 
       <div className={`border-t ${tc.divider}`} />
       <Row
-        icon="key" title="Password" value="Used to log in on every device" tc={tc}
+        icon="key" title="Password" value="Account login password" tc={tc}
         action={open !== "password" && (
-          <Button variant="secondary" size="sm" tc={tc} onClick={() => setOpen("password")}>Change</Button>
+          <Button variant="secondary" size="sm" icon="edit" tc={tc} onClick={() => setOpen("password")}>Change</Button>
         )}
       >
         {open === "password" && <PasswordForm tc={tc} onDone={() => setOpen(null)} />}
@@ -209,10 +200,10 @@ export default function SecuritySettings({ tc }) {
 
       <div className={`border-t ${tc.divider}`} />
       <Row
-        icon="logout" title="Other devices" value="Signed in on a phone you lost, or a shared computer?" tc={tc}
+        icon="logout" title="Other devices" value="End sessions on other phones or browsers" tc={tc}
         action={(
           <ConfirmButton label="Sign out others" confirmLabel="Sign out" keepLabel="Cancel"
-            variant="secondary" onConfirm={signOutOthers} tc={tc} />
+            icon="logout" variant="secondary" onConfirm={signOutOthers} tc={tc} />
         )}
       />
     </>
