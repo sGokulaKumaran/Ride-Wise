@@ -350,7 +350,11 @@ function FindTab({ tc, initialQuery, onOpen, onOpened }) {
       </section>
 
       <Section title="Open a private organization" tc={tc}>
-        <form onSubmit={openPrivate} className={`space-y-3 rounded-xl border p-4 ${tc.card}`} noValidate>
+        <form onSubmit={openPrivate} className={`space-y-3 rounded-xl border p-4 ${tc.card}`} noValidate autoComplete="off">
+          {/* Decoy hidden inputs to prevent browser login autofill */}
+          <input type="text" name="prevent_autofill_username" tabIndex={-1} aria-hidden="true" style={{ display: "none" }} />
+          <input type="password" name="prevent_autofill_password" tabIndex={-1} aria-hidden="true" style={{ display: "none" }} />
+
           <p className={`flex items-start gap-2 text-xs ${tc.sub}`}>
             <Icon name="lock" size={14} className="mt-0.5" />
             Private organizations don&apos;t appear in search. Ask the organization for its code and access password.
@@ -359,11 +363,12 @@ function FindTab({ tc, initialQuery, onOpen, onOpened }) {
             <Field label="Organization code" tc={tc}>
               <TextInput
                 tc={tc}
+                name="org_access_code"
                 value={code}
                 onChange={(event) => setCode(event.target.value.toUpperCase())}
                 placeholder="RW-7K3M9Q"
                 autoCapitalize="characters"
-                autoComplete="off"
+                autoComplete="one-time-code"
                 spellCheck={false}
                 maxLength={12}
                 className="font-mono tracking-wider"
@@ -373,10 +378,11 @@ function FindTab({ tc, initialQuery, onOpen, onOpened }) {
               <div className="relative">
                 <TextInput
                   tc={tc}
+                  name="org_access_password"
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
-                  autoComplete="off"
+                  autoComplete="new-password"
                   maxLength={64}
                   className="pr-11"
                 />
