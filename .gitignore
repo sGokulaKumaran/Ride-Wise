@@ -1,1 +1,16 @@
 promo/
+
+# Build output
+backend/ridewise/target/
+frontend/dist/
+frontend/node_modules/
+
+# Local secrets and environment overrides
+.env
+.env.*
+!.env.example
+
+# Logs and editor noise
+*.log
+.DS_Store
+Thumbs.db

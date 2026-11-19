@@ -1,0 +1,80 @@
+RideWise — Universal Real-Time GPS Navigation, Live Group Riding
+         & Multi-Tenant Fleet Tracking Platform
+
+Copyright (C) 2026 Gokula Kumaran S
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published
+by the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+--------------------------------------------------------------------------
+SCOPE OF THIS LICENSE
+--------------------------------------------------------------------------
+The GNU Affero General Public License in the LICENSE file covers the
+RideWise source code in this repository (backend/, frontend/, docs/, and
+the scripts at the repository root).
+
+It does NOT relicense third-party data, map tiles, or libraries, which
+remain under their own terms. See "Third-party components" below.
+
+--------------------------------------------------------------------------
+THIRD-PARTY COMPONENTS
+--------------------------------------------------------------------------
+Map data
+  © OpenStreetMap contributors, licensed under the Open Database License
+  (ODbL) 1.0 — https://www.openstreetmap.org/copyright
+  Map images rendered from OSM data are "Produced Works" under the ODbL.
+
+Basemap tiles
+  © Stadia Maps (https://stadiamaps.com) — Stadia Maps Terms of Service.
+  © OpenTopoMap (CC-BY-SA 3.0) — https://opentopomap.org
+  CyclOSM / OpenStreetMap France — https://www.cyclosm.org
+  Satellite imagery © Esri, Maxar, Earthstar Geographics — accessed through
+  the ArcGIS World Imagery service; use is subject to Esri's terms.
+
+Geocoding and routing
+  Photon — © Komoot, Apache License 2.0.
+  Nominatim — © Nominatim contributors, GNU GPL v2 (software); data ODbL.
+  OSRM — © Project OSRM contributors, BSD 2-Clause.
+
+Frontend libraries
+  React / React DOM — MIT, © Meta Platforms, Inc. and affiliates.
+  Vite — MIT, © Evan You and Vite contributors.
+  Tailwind CSS — MIT, © Tailwind Labs, Inc.
+  Leaflet — BSD 2-Clause, © Volodymyr Agafonkin, © CloudMade.
+  react-leaflet — MIT, © Paul Le Cam and contributors.
+  leaflet-geosearch — MIT, © Stephan Meijer.
+  leaflet-rotate — MIT, © Raruto.
+  leaflet-routing-machine — MIT, © Per Liedman.
+  MapLibre GL JS — BSD 3-Clause, © MapLibre contributors.
+  react-router-dom — MIT, © Remix Software Inc.
+  react-select — MIT, © Jed Watson.
+  react-toastify — MIT, © Fadi Khadra.
+
+Backend libraries
+  Spring Boot, Spring Framework, Spring Security, Spring Session,
+  Spring Data JPA — Apache License 2.0, © Broadcom / VMware Tanzu.
+  Hibernate ORM — LGPL 2.1, © Red Hat, Inc.
+  PostgreSQL JDBC Driver — BSD 2-Clause, © PostgreSQL Global Development Group.
+  H2 Database — MPL 2.0 / EPL 1.0, © H2 Group.
+  Apache Tomcat (embedded) — Apache License 2.0, © The Apache Software Foundation.
+
+Full license texts for these dependencies are distributed with each
+package (npm: node_modules/<pkg>/LICENSE; Maven: inside each artifact).
+
+--------------------------------------------------------------------------
+MEDIA
+--------------------------------------------------------------------------
+docs/video/ridewise-promo.mp4 and docs/screenshots/* were produced by the
+project author from the running application. The music and narration in the
+promo video are used under their respective licences; the video is released
+under the same AGPL-3.0 terms as the rest of this repository unless noted.
