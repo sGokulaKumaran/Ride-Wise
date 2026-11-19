@@ -1,0 +1,66 @@
+# ============================================================
+# RideWise — Project Requirements & Dependency Setup
+# ============================================================
+# QUICK START — 1-STEP AUTO-INSTALLER:
+#   Windows:    .\setup.ps1
+#   Linux/Mac:  chmod +x setup.sh && ./setup.sh
+# ============================================================
+# RideWise is a full-stack Java (Spring Boot) + JavaScript (React/Vite)
+# project. Dependencies are managed by:
+#   - Backend:  backend/ridewise/pom.xml  (Maven Wrapper: ./mvnw)
+#   - Frontend: frontend/package.json     (npm)
+# ============================================================
+
+# ------------------------------------------------------------
+# 1. SYSTEM PREREQUISITES
+# ------------------------------------------------------------
+# - Java JDK 21 LTS or later        (https://adoptium.net)
+# - Node.js 18+ & npm               (https://nodejs.org)
+# - PostgreSQL 14+                  (optional — H2 in-memory mode works without it)
+# - Git                             (https://git-scm.com)
+
+# ------------------------------------------------------------
+# 2. BACKEND DEPENDENCIES (backend/ridewise/pom.xml)
+#    Auto-installed when running:
+#      cd backend/ridewise && ./mvnw dependency:resolve
+#    (Windows: mvnw.cmd dependency:resolve)
+# ------------------------------------------------------------
+# - org.springframework.boot:spring-boot-starter-parent:3.4.4
+# - spring-boot-starter-web
+# - spring-boot-starter-data-jpa
+# - spring-boot-starter-validation
+# - spring-boot-starter-websocket
+# - spring-boot-starter-security
+# - spring-session-jdbc
+# - spring-boot-starter-mail
+# - org.postgresql:postgresql
+# - com.h2database:h2 (test / zero-setup preview)
+# - spring-boot-starter-test (test)
+
+# ------------------------------------------------------------
+# 3. FRONTEND DEPENDENCIES (frontend/package.json)
+#    Install with:
+#      cd frontend && npm install
+# ------------------------------------------------------------
+# - react@^19.2.8
+# - react-dom@^19.2.8
+# - react-router-dom@^7.18.2
+# - leaflet@^1.9.4
+# - react-leaflet@^5.0.0
+# - @react-leaflet/core@^3.0.0
+# - leaflet-geosearch@^4.4.0
+# - leaflet-rotate@^0.2.8
+# - leaflet-routing-machine@^3.2.12
+# - maplibre-gl@^6.7.0
+# - react-select@^5.10.2
+# - react-toastify@^11.1.0
+# - vite@^8.2.0 (dev)
+# - tailwindcss@^3.4.19 (dev)
+# - eslint@^10.8.0 (dev)
+
+# ------------------------------------------------------------
+# 4. OPTIONAL PYTHON DEPENDENCY (Promo Video Narration Only)
+#    Install with:
+#      pip install -r requirement.txt
+# ------------------------------------------------------------
+edge-tts
