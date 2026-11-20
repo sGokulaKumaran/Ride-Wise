@@ -26,9 +26,11 @@ import java.util.Map;
 //   client → { "type": "unsubscribe" }
 //   client → { "type": "location", "rideId": 12, "lat": .., "lng": .., "accuracy": .. }
 //   client → { "type": "stop",     "rideId": 12 }   (rider stopped sharing)
+//   client → { "type": "ping" }                     (keeps the line open)
 //
 //   server → { "type": "connected",  "userId": .. }
 //   server → { "type": "subscribed", "rideId": .. }
+//   server → { "type": "pong" }
 //   server → { "type": "snapshot",   "rideId": .., "locations": [ ... ] }
 //   server → { "type": "location",   "location": { ... } }
 //   server → { "type": "location-cleared", "rideId": .., "userId": .. }
@@ -91,6 +93,7 @@ public class RideLocationSocketHandler extends TextWebSocketHandler {
             case "unsubscribe" -> broadcaster.unsubscribe(session);
             case "location" -> handleLocation(session, userId, msg);
             case "stop" -> handleStop(session, userId, msg);
+            case "ping" -> broadcaster.send(session, Map.of("type", "pong"));
             default -> broadcaster.send(session, Map.of("type", "error", "message", "Unknown message type"));
         }
     }

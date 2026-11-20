@@ -37,6 +37,7 @@
 // ============================================================
 
 const WS_PATH = "/ws/rides";
+const PING_EVERY_MS = 25_000;
 
 // Optional absolute override. Vite replaces import.meta.env.VITE_WS_URL at
 // build time; an empty/undefined value falls back to the page's own origin.
@@ -46,6 +47,7 @@ let socket = null;
 let currentRideId = null;
 let handlers = {};
 let reconnectTimer = null;
+let pingTimer = null;
 let backoffMs = 1000;
 let closedByUs = false;
 
@@ -78,6 +80,8 @@ function open() {
     backoffMs = 1000;
     notifyStatus("connected");
     sendJson({ type: "subscribe", rideId: currentRideId });
+    clearInterval(pingTimer);
+    pingTimer = setInterval(() => sendJson({ type: "ping" }), PING_EVERY_MS);
   };
 
   socket.onmessage = (event) => {
@@ -124,6 +128,8 @@ function open() {
   };
 
   socket.onclose = () => {
+    clearInterval(pingTimer);
+    pingTimer = null;
     notifyStatus("disconnected");
     socket = null;
     if (!closedByUs) scheduleReconnect();
@@ -220,6 +226,8 @@ function hardClose() {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
+  clearInterval(pingTimer);
+  pingTimer = null;
   backoffMs = 1000;
   if (socket) {
     try { socket.close(); } catch { /* already closing */ }

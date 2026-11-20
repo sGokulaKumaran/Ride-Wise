@@ -24,8 +24,8 @@ the [GNU AGPL-3.0](LICENSE), the same licence as the rest of the project
 
 ## 1. Set up the project
 
-You need **Java 21+** and **Node.js 18+**. PostgreSQL is optional — the backend
-can run on an in-memory H2 database.
+You need **Java 21+** and **Node.js 20.19+ / 22.12+** (Node 22 LTS recommended, required by Vite 8). PostgreSQL 15+ is optional — the backend
+can run on its in-memory H2 test configuration.
 
 ```bash
 git clone https://github.com/sGokulaKumaran/Ride-Wise.git
@@ -39,7 +39,7 @@ dependencies. It is the only setup file you need.
 Then run the two servers:
 
 ```bash
-# Terminal 1 — backend (zero-setup H2 preview on :8080)
+# Terminal 1 — backend (H2 test configuration on :8080)
 cd backend/ridewise
 ./mvnw spring-boot:test-run      # Windows: mvnw.cmd spring-boot:test-run
 
@@ -50,8 +50,7 @@ npm run dev
 
 Open <http://localhost:5173>.
 
-For the full PostgreSQL setup, see the **Quick Start** section of the
-[README](README.md#quick-start).
+For the full PostgreSQL setup, production builds, and troubleshooting, see [docs/SETUP.md](docs/SETUP.md).
 
 ---
 
@@ -64,9 +63,10 @@ Always run the relevant suite before opening a PR.
 cd backend/ridewise
 ./mvnw test
 
-# Frontend — pure logic tests (navigation, places, fleet) + lint
+# Frontend — pure logic tests (navigation, places, fleet) via node --test
 cd frontend
 npm test
+# Lint check (ESLint — separate from npm test)
 npm run lint
 ```
 

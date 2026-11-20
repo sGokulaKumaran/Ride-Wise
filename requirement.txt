@@ -15,8 +15,9 @@
 # 1. SYSTEM PREREQUISITES
 # ------------------------------------------------------------
 # - Java JDK 21 LTS or later        (https://adoptium.net)
-# - Node.js 18+ & npm               (https://nodejs.org)
-# - PostgreSQL 14+                  (optional — H2 in-memory mode works without it)
+# - Node.js 20.19+ / 22.12+ & npm   (https://nodejs.org — 22 LTS recommended)
+# - Python 3.8+                     (for setup.py)
+# - PostgreSQL 15+                  (optional — H2 test configuration works without it)
 # - Git                             (https://git-scm.com)
 
 # ------------------------------------------------------------

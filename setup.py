@@ -34,7 +34,10 @@ FRONTEND = ROOT / "frontend"
 
 IS_WINDOWS = os.name == "nt"
 MIN_JAVA = 21
-MIN_NODE = 18
+# Matches Vite 8's engines requirement: "^20.19.0 || >=22.12.0"
+MIN_NODE_20 = (20, 19)
+MIN_NODE_22 = (22, 12)
+NODE_REQ_TEXT = "20.19+ or 22.12+ (22 LTS recommended)"
 
 BOLD = "\033[1m"
 DIM = "\033[2m"
@@ -136,13 +139,24 @@ def java_major_version() -> int | None:
     return major
 
 
-def node_major_version() -> int | None:
+def node_version_tuple() -> tuple[int, int, int] | None:
     node = tool("node")
     if not node:
         return None
     output = version_of(node, ["-v"])
-    match = re.search(r"v(\d+)", output)
-    return int(match.group(1)) if match else None
+    match = re.search(r"v(\d+)\.(\d+)\.(\d+)", output)
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2)), int(match.group(3))
+
+
+def is_supported_node(ver: tuple[int, int, int]) -> bool:
+    major, minor, _ = ver
+    if major == 20:
+        return (major, minor) >= MIN_NODE_20
+    if major == 22:
+        return (major, minor) >= MIN_NODE_22
+    return major >= 23
 
 
 # --------------------------------------------------------------------------
@@ -196,7 +210,7 @@ def install_node() -> bool:
     elif manager == "pacman":
         cmd = ["sudo", "pacman", "-S", "--needed", "--noconfirm", "nodejs", "npm"]
     else:  # zypper
-        cmd = ["sudo", "zypper", "install", "-y", "nodejs20", "npm20"]
+        cmd = ["sudo", "zypper", "install", "-y", "nodejs22", "npm22"]
     note(" ".join(cmd))
     return run(cmd).returncode == 0
 
@@ -317,33 +331,34 @@ def main() -> int:
         return 1
     ok(f"Java {java_version}")
 
-    # ---- 3. Node 18+ / npm ----------------------------------------------
-    step("3/4", f"Checking Node.js {MIN_NODE}+ and npm...")
-    node_version = node_major_version()
+    # ---- 3. Node 20.19+ / 22.12+ / npm -----------------------------------
+    step("3/4", f"Checking Node.js {NODE_REQ_TEXT} and npm...")
+    node_ver = node_version_tuple()
     npm_path = tool("npm")
-    if node_version is None or npm_path is None:
+    if node_ver is None or npm_path is None:
         warn("Node.js / npm is not installed.")
         if args.check:
-            fail("Install Node.js 18+ from https://nodejs.org and run this again.")
+            fail(f"Install Node.js {NODE_REQ_TEXT} from https://nodejs.org and run this again.")
             return 1
         if args.no_tools or not ask("Install Node.js LTS now?", args.yes):
-            fail("Install Node.js 18+ from https://nodejs.org and run this again.")
+            fail(f"Install Node.js {NODE_REQ_TEXT} from https://nodejs.org and run this again.")
             return 1
         if not install_node():
             fail("Automatic Node.js installation failed.")
-            note("Install Node.js 18+ from https://nodejs.org, then re-run setup.py.")
+            note(f"Install Node.js {NODE_REQ_TEXT} from https://nodejs.org, then re-run setup.py.")
             return 1
-        node_version = node_major_version()
+        node_ver = node_version_tuple()
         npm_path = tool("npm")
-        if node_version is None or npm_path is None:
+        if node_ver is None or npm_path is None:
             warn("Node.js is installed but this terminal cannot see it yet.")
             note("Close this terminal, open a new one, and run setup.py again.")
             return 1
-    if node_version < MIN_NODE:
-        fail(f"Node.js {node_version} found, but {MIN_NODE}+ is required.")
-        note("Install a newer Node.js: https://nodejs.org")
+    if not is_supported_node(node_ver):
+        ver_str = ".".join(map(str, node_ver))
+        fail(f"Node.js {ver_str} found, but Vite 8 requires {NODE_REQ_TEXT}.")
+        note("Install Node.js 22 LTS: https://nodejs.org")
         return 1
-    ok(f"Node {node_version}, npm {version_of(npm_path, ['-v']).strip()}")
+    ok(f"Node {'.'.join(map(str, node_ver))}, npm {version_of(npm_path, ['-v']).strip()}")
 
     if args.check:
         print()
@@ -363,7 +378,7 @@ def main() -> int:
     print(_colour("  Setup complete - RideWise is ready to run", GREEN + BOLD))
     print(_colour("=" * 58, BOLD))
     print()
-    print("Terminal 1 - backend (in-memory H2, no PostgreSQL needed):")
+    print("Terminal 1 - backend (H2 test configuration, no PostgreSQL needed):")
     if IS_WINDOWS:
         print("  cd backend\\ridewise")
         print("  mvnw.cmd spring-boot:test-run")

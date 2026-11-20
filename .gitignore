@@ -12,7 +12,10 @@ frontend/node_modules/
 .env.*
 !.env.example
 
-# Logs and editor noise
+# Logs, Python bytecode, test output, and editor noise
+__pycache__/
+*.pyc
+test-output*.txt
 *.log
 .DS_Store
 Thumbs.db
