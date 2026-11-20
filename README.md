@@ -59,7 +59,9 @@
 
 ## Bring Up the Full RideWise Stack - Quick Setup
 
-First install dependencies once with [`setup.py`](setup.py) (`python3 setup.py` or `py setup.py`), then launch the H2 test configuration and Vite dev server:
+ First go through the step-by-step **[Setup & Local Development Guide (docs/SETUP.md)](docs/SETUP.md)**. It clearly covers everything you need to clone 
+
+If your tools are already installed, run the automatic dependency installer [`setup.py`](setup.py) (`python3 setup.py` or `py setup.py`), then launch the H2 test configuration and Vite dev server:
 
 ```bash
 # Terminal 1 — backend on :8080 (in-memory H2 test configuration, no PostgreSQL needed)
@@ -73,7 +75,7 @@ cd frontend && npm run dev
 
 | Tool | Required Version | Notes |
 |---|---|---|
-| **Java JDK** | **21+** | Spring Boot 3.4 backend |
+| **Java 21+ & IDE** | **Java 21+** | Spring Boot 3.4 backend — [**IntelliJ IDEA**](https://www.jetbrains.com/idea/download/) (recommended), [**Eclipse / STS**](https://spring.io/tools), or [**VS Code**](https://code.visualstudio.com/Download) (see [IDE setup in `docs/SETUP.md`](docs/SETUP.md#recommended-ide-setup-for-the-spring-boot-backend)) |
 | **Node.js & npm** | **20.19+** or **22.12+** (**22 LTS recommended**) | Required by Vite 8 (`^20.19.0 \|\| >=22.12.0`) |
 | **Python** | **3.8+** | For `setup.py` cross-platform bootstrapper |
 | **PostgreSQL** | **15+** *(optional)* | Needed only for persistent storage; H2 test configuration works without it |
@@ -103,9 +105,9 @@ Most GPS apps solve only one slice of the road—consumer turn-by-turn apps igno
 ## Screenshots and Demo
 
 <p align="center">
-  <a href="docs/video/ridewise-promo.mp4">
-    <img src="docs/screenshots/promo-city-transit.png" alt="Watch the RideWise demo video" width="90%" />
-  </a>
+  <video src="docs/video/ridewise-promo.mp4" poster="docs/screenshots/promo-city-transit.png" width="90%" autoplay loop muted playsinline controls>
+    Your browser does not support the video tag.
+  </video>
   <br/>
   <sub><b>▶ Watch the demo video</b> — <a href="docs/video/ridewise-promo.mp4">docs/video/ridewise-promo.mp4</a> (19 MB MP4 recorded directly from the running app)</sub>
 </p>

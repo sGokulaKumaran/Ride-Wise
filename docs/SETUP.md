@@ -8,11 +8,42 @@ This guide covers everything you need to run RideWise locally—from the 1-minut
 
 | Tool | Required Version | Notes |
 |---|---|---|
-| **Java JDK** | **21+** (21 LTS) | Required for Spring Boot 3.4 backend ([Adoptium](https://adoptium.net/)) |
+| **Java 21+ & IDE** | **21+** (21 LTS) | Required for the Spring Boot 3.4 backend. We recommend installing [**IntelliJ IDEA**](https://www.jetbrains.com/idea/download/) first (which can download JDK 21 for you automatically), or using [**Eclipse / Spring Tools 4**](https://spring.io/tools) or [**VS Code**](https://code.visualstudio.com/Download). |
 | **Node.js & npm** | **20.19+** or **22.12+** (**22 LTS recommended**) | Required by Vite 8 (`^20.19.0 \|\| >=22.12.0`). *Node 18 will fail on `npm run dev`.* |
 | **Python** | **3.8+** | Only needed to run the cross-platform `setup.py` helper |
 | **PostgreSQL** | **15+** *(optional)* | Not needed for the H2 test configuration; required for persistent local data |
 | **Git** | Any recent version | To clone the repository |
+
+### Recommended IDE Setup for the Spring Boot Backend
+
+We recommend installing **[IntelliJ IDEA](https://www.jetbrains.com/idea/download/)** first—it gives you the cleanest, fastest Spring Boot experience and can download JDK 21 automatically without manual setup. If you prefer another editor, you can also use **Eclipse / Spring Tools 4** or **Visual Studio Code**.
+
+#### Option 1: IntelliJ IDEA (Recommended — Easiest Setup)
+1. **Install:** Download and install [**IntelliJ IDEA**](https://www.jetbrains.com/idea/download/) (Community Edition is free and works out of the box; Ultimate also works).
+2. **Open Backend:** Launch IntelliJ → click **Open** → select the **`backend/ridewise`** folder (where `pom.xml` lives) and trust the project.
+3. **Download / Select Java 21 Inside IntelliJ:** Press `Ctrl+Alt+Shift+S` (or **File → Project Structure → Project**). Under **SDK**, if Java 21 is not listed, click **Add SDK → Download JDK...**, choose **Version 21**, and click **Download**.
+4. **Load Maven Dependencies:** IntelliJ automatically reads `pom.xml` and downloads all Spring Boot dependencies (or click the **Maven (`m`)** icon on the right sidebar → **Reload All Maven Projects**).
+5. **Configure & Run the Backend:**
+   - Open `src/main/java/vehicle/ridewise/RideWiseApplication.java`.
+   - **To run with PostgreSQL:** Click the green **Run (`▶`)** icon next to `RideWiseApplication` → **Modify Run Configuration...** → in **Environment variables**, add:
+     `DATABASE_URL=jdbc:postgresql://localhost:5432/ridewise;DB_USERNAME=postgres;DB_PASSWORD=your_postgres_password`
+     Then click **OK** and press **Run (`▶`)** — the backend starts on `http://localhost:8080`.
+   - **To run with in-memory H2 (no database setup):** Open the integrated Terminal in IntelliJ and run `./mvnw spring-boot:test-run` (Windows: `.\mvnw.cmd spring-boot:test-run`).
+
+#### Option 2: Visual Studio Code (Lightweight Full-Stack Editor)
+1. **Install:** Download and install [**Visual Studio Code**](https://code.visualstudio.com/Download).
+2. **Install Required Extensions & Packages:** Open the Extensions tab (`Ctrl+Shift+X`) and install:
+   - [**Extension Pack for Java**](https://marketplace.visualstudio.com/items?itemName=vscjava.vscode-java-pack) *(Microsoft — includes Language Support, Debugger, Maven, and Test Runner)*
+   - [**Spring Boot Extension Pack**](https://marketplace.visualstudio.com/items?itemName=vmware.vscode-boot-dev-pack) *(VMware — Spring Boot Dashboard & Initializr)*
+   - *(Recommended for Frontend)* [**Tailwind CSS IntelliSense**](https://marketplace.visualstudio.com/items?itemName=bradlc.vscode-tailwindcss) and [**ESLint**](https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint)
+3. **Install / Select JDK 21 in VS Code:** Press `Ctrl+Shift+P` → run **`Java: Install New JDK`**, download **JDK 21**, and reload the window.
+4. **Run the Backend:** Open the project in VS Code, open the **Spring Boot Dashboard** on the left sidebar (or open `RideWiseApplication.java`), or run the backend from the integrated terminal (`Ctrl+\``) inside `backend/ridewise`.
+
+#### Option 3: Eclipse IDE / Spring Tools 4 (STS)
+1. **Install:** Download [**Spring Tools 4 for Eclipse**](https://spring.io/tools) or [**Eclipse IDE for Enterprise Java and Web Developers**](https://www.eclipse.org/downloads/packages/).
+2. **Import Project:** Go to **File → Import... → Maven → Existing Maven Projects** → click **Browse...** and select the **`backend/ridewise`** folder → click **Finish**.
+3. **Verify Java 21:** Go to **Window → Preferences → Java → Installed JREs** and ensure a **Java 21 JDK** is selected (Eclipse 2024+ bundles JDK 21 automatically).
+4. **Configure & Run the Backend:** Right-click `RideWiseApplication.java` → **Run As → Run Configurations...** → open the **Environment** tab to add `DATABASE_URL`, `DB_USERNAME`, and `DB_PASSWORD`, then click **Run** (starts on `http://localhost:8080`).
 
 ---
 

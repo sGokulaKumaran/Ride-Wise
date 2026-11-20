@@ -46,27 +46,44 @@ flowchart TD
 ## 2. What Already Exists (Current RideWise)
 
 > [!NOTE]
-> These features remain **untouched**. Every user (normal AND org) can use them.
+> All core personal features **and** the multi-tenant organization & fleet platform below are **built and live in production**. Every user can ride solo/in groups, drive for an organization, manage fleets, and track vehicles from one unified account.
 
 | Feature | Status | Details |
-|---------|--------|---------|
-| **User Auth** | ✅ Built | Email/password, session-based, BCrypt hashing |
-| **Solo Ride** | ✅ Built | Pick origin → destination, OSRM routing, turn-by-turn nav |
-| **Group Ride** | ✅ Built | Creator starts ride, invites riders, live location broadcast via WebSocket |
-| **Live Map** | ✅ Built | Leaflet + MapLibre, real-time GPS tracking |
-| **Riders System** | ✅ Built | Add connections, see nearby riders, search by username |
-| **Ride History** | ✅ Built | View past rides, distance, duration |
-| **Notifications** | ✅ Built | In-app notifications for ride invites, connection requests |
-| **Admin Panel** | ✅ Built | Platform-wide admin (view all users, rides, stats) |
-| **Onboarding** | ✅ Built | Username, mobile, address setup after signup |
-| **Settings** | ✅ Built | Theme, accessibility, profile visibility |
-| **Account** | ✅ Built | Edit profile, password, delete account |
+|---|---|---|
+| **User Auth & Sessions** | ✅ Built | Email/password, BCrypt hashing, 30-day persistent `SESSION` cookie backed by `spring-session-jdbc` in PostgreSQL (survives Render sleep/wake cycles) |
+| **Solo Navigation** | ✅ Built | OSRM routing with alternatives, pure segment-projected `navigation.js` engine (accuracy-scaled hysteresis), spoken voice guidance, Screen Wake Lock, 6 map styles, 4 UI themes |
+| **Group Riding & Rejoin** | ✅ Built | Real-time `/ws/rides` WebSocket (25 s heartbeat), opt-in location sharing, live **Off route** status, and purple rejoin path ahead on the main route |
+| **Multi-Tenant Organizations** | ✅ Built | Public discovery & private access-code unlock (`OrgAccess`), per-organization RBAC (`OWNER`, `ADMIN`, `DRIVER`, `VIEWER`) enforced server-side via `OrgGuard` |
+| **Fleet & DB-Locked Trips** | ✅ Built | Nullable unique columns (`active_vehicle_key`, `active_driver_key`) prevent double-booking atomically; 5 s throttled DB persistence; 4,000-point thinned GPS replay & CSV export |
+| **Driver Mode** | ✅ Built | 3-tap trip start, app-wide background `DriverTripContext`, server-checked speed alerts, crowd level reporting (`Seats free`, `Filling up`, `Full`), one-tap **SOS** |
+| **Passenger & Customer Tracking** | ✅ Built | Continuous tracking across shifts (`/ws/fleet` with 25 s heartbeat), browser-side stop-by-stop ETAs, server-evaluated **"Tell me when it's near"** proximity alerts, org announcements |
+| **Org Admin Suite (9 Tabs)** | ✅ Built | **Overview**, **Live map**, **Vehicles** (`Active`/`Servicing`/`Repair`/`Retired`), **Routes**, **People**, **Trips**, **Announce**, **Statistics**, **Settings**, plus audit log |
+| **Riders Community** | ✅ Built | Search by username, 50 km nearby riders (privacy-masked), connections |
+| **Platform Admin & Hygiene** | ✅ Built | Platform dashboard, user/ride management, org verification/suspension, feedback with optional Gmail SMTP forwarding, 6-hour automated `DataCleanupService` |
+| **Onboarding, Search & Account** | ✅ Built | Onboarding flow, universal header search (`All`, `Rides`, `Riders`, `Orgs`, `Go`), Add to Home Screen (`manifest.webmanifest`), accessibility controls, JSON account export & deletion |
 
-**Tech Stack:** React + Vite + Tailwind (frontend) | Spring Boot + MySQL + WebSocket (backend)
+**Tech Stack:** React 19 + Vite 8 + Tailwind CSS 3 + Leaflet + MapLibre (frontend) | Spring Boot 3.4 + Java 21 + PostgreSQL 15+ + Spring Session JDBC + Raw WebSockets (backend)
 
 ---
 
-## 3. What Will Be Built (New Features)
+## 3. What Will Be Built (Uncompleted / Future Features)
+
+All multi-organization, driver, passenger, and fleet tracking capabilities from the original plan are now **completed** (see Section 2 and the [Addendum](#addendum--how-this-plan-was-built-and-what-was-corrected)). Only the following uncompleted items remain for future releases:
+
+| Planned Feature | Current State | What Remains to Build |
+|---|---|---|
+| **Scheduled Timetables & Stop-Order Optimization** | Routes have ordered stops and live ETAs | Add scheduled departure/arrival timetables (*"expected at 7:40 AM"*), driver shift schedules, and automated stop-order optimization |
+| **Free-Form / Polygon Geofencing** | Per-vehicle *"Tell me when it's near"* stop alerts exist | Draw custom polygon zones on the map and trigger enter/leave geofence alerts for fleet admins and passengers |
+| **Web Push Notifications & Offline Cache** | In-app notification bell + `manifest.webmanifest` | Add a Service Worker for offline asset caching and Web Push (`VAPID`) so alerts wake a closed browser |
+| **Native Mobile Wrapper (Background GPS)** | Screen Wake Lock keeps GPS active while screen is on | Package a native wrapper (Capacitor / React Native) so drivers can stream GPS fixes reliably even when the phone screen is locked |
+| **Multi-Instance Scaling (Redis Pub/Sub)** | In-memory `FleetBroadcaster` & `RideLocationBroadcaster` | Back broadcasters with Redis Pub/Sub to scale horizontally across multiple Spring Boot instances |
+| **Organization Logo Upload** | Initials tile generated from org name | Attach object storage (Cloudflare R2 / S3) for custom organization logos and vehicle photos |
+
+---
+
+### Reference Archive: Original Feature Specifications
+
+*(The detailed design sections below are preserved as historical architecture notes; see the [Addendum](#addendum--how-this-plan-was-built-and-what-was-corrected) at the bottom for where the implemented codebase improved on the original draft.)*
 
 ### 3.1 Account Type System
 
@@ -1105,7 +1122,7 @@ README follow this section.*
 | 10 | A trip ends when the driver presses Stop | Also: ended by an admin, **automatically** after 30 silent minutes, and immediately when the driver is removed or suspended (in the organization, or their account on the platform) or the organization is suspended or deleted | A dead phone must not keep a bus "in use" all day |
 | 11 | Removing a vehicle deletes it | A vehicle with trip history is **retired** instead; a vehicle on a trip cannot be removed or sent to repair | History must keep the vehicle it belongs to |
 | 12 | `/org-admin/dashboard` | `/org-admin/:orgId/dashboard` | One person can manage several organizations |
-| 13 | A trip = a vehicle and a destination | Organizations save **routes with stops**; the road is planned *through* the stops; a trip keeps its own copy, so editing a route never changes history. A free destination is still possible | That is what makes a bus a bus — and what "arrives at my stop in 6 minutes" needs |
+| 13 | A trip = a vehicle and a destination | Organizations save **routes with stops**; the road is planned *through* the stops; a trip keeps its own copy, so editing a route never changes history. A free destination is still possible | That is what makes a bus — and what "arrives at my stop in 6 minutes" needs |
 | 14 | Owners and admins only administer | They may also drive | In a small organization they often do |
 
 ### Added beyond the plan
