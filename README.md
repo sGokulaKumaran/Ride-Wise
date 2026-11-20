@@ -1,14 +1,23 @@
+
+<h1 align="center">RideWise</h1>
+
+<h2>Welcome to RideWise — every journey, connected.</h2>
+
+<p>
+  From a single rider to an entire fleet, RideWise brings navigation,
+  live group coordination, and real-time vehicle tracking together in
+  one open-source platform. Navigate solo with spoken directions,
+  keep your group on course with live location sharing and intelligent
+  rejoin paths, or follow campus and city transport as it moves.
+  One platform, powered by open map infrastructure, keeping every
+  journey connected.
+</p>
+
+
 <div align="center">
   <img src="docs/screenshots/fleet-map-college.png" alt="RideWise live fleet map — Greenfield Institute of Technology" width="100%" />
 </div>
 
-<h1 align="center">RideWise</h1>
-
-<p align="center">
-  <b>Turn-by-turn GPS navigation, live group riding, and multi-tenant fleet tracking — all in one open-source app.</b><br/>
-  <i>Built for solo riders, group rides, college buses, travel operators, and city fleets.<br/>
-  Runs on open map infrastructure with zero paid API keys for personal and educational use.</i>
-</p>
 
 <p align="center">
   <a href="https://ride-wise.pages.dev">
@@ -36,8 +45,7 @@
   <img src="https://img.shields.io/badge/Maps-Leaflet%20%2B%20OSM%20%2B%20OSRM-199900?style=flat-square&logo=leaflet&logoColor=white" alt="Leaflet + OSM + OSRM" />
 </p>
 
-> **Welcome to RideWise — from here on, you're in the ride.**
-> Whether you're carving solo roads with spoken turn-by-turn directions, leading a pack where nobody gets left behind thanks to live purple off-route rejoin lines, or watching an entire campus or city bus fleet move across the map in real time — pick your basemap, drop into gear, and roll out.
+
 
 <div align="center">
 
@@ -49,7 +57,7 @@
 
 ---
 
-## New Here? Run It in Two Commands
+## Bring Up the Full RideWise Stack - Quick Setup
 
 First install dependencies once with [`setup.py`](setup.py) (`python3 setup.py` or `py setup.py`), then launch the H2 test configuration and Vite dev server:
 
@@ -71,9 +79,9 @@ cd frontend && npm run dev
 | **PostgreSQL** | **15+** *(optional)* | Needed only for persistent storage; H2 test configuration works without it |
 | **Git** | Any recent version | To clone the repository |
 
-> [!NOTE]
-> **Trying the live app at [ride-wise.pages.dev](https://ride-wise.pages.dev)?**
-> The live backend runs on Render's free tier, so after 15 minutes of inactivity the very first request takes **~30–60 seconds** to wake up. Once awake, `spring-session-jdbc` keeps your session alive across sleep/wake cycles.
+> [!TIP]
+> **Just exploring?** Jump straight into the [live RideWise app](https://ride-wise.pages.dev) — no local setup required.
+
 
 ---
 
