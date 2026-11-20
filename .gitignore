@@ -1,4 +1,6 @@
 promo/
+setupimages/
+
 
 # Build output
 backend/ridewise/target/

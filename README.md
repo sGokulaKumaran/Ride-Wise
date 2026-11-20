@@ -423,6 +423,7 @@ Whether you just want to poke around locally in 60 seconds or run the full Postg
 RideWise ships with a single cross-platform setup script (`setup.py`) that checks and installs everything else for you—including Java 21+ and Node.js 18+. The only thing you need first is **Python 3.8 or newer**:
 
 - **Download Python:** [https://www.python.org/downloads/](https://www.python.org/downloads/)
+- **Detailed Windows walkthrough:** [How to Install Python on Windows (freeCodeCamp)](https://www.freecodecamp.org/news/how-to-install-python-in-windows-operating-system/)
 - **Windows tip:** On the very first screen of the Python installer, **check the box that says `Add python.exe to PATH`** before clicking *Install Now*.
 - **macOS / Linux:** Python 3 is usually pre-installed.
 
@@ -494,31 +495,55 @@ If you want real, persistent storage (or if this is your first time setting up P
 
 #### 1. Download & Install PostgreSQL
 
-1. Download the official installer for your OS from **[https://www.postgresql.org/download/](https://www.postgresql.org/download/)** (PostgreSQL 15, 16, or 17 all work great).
-2. During installation:
-   - Keep **pgAdmin 4** checked (it gives you a clean visual UI to manage databases).
-   - Keep the default port **`5432`** and superuser **`postgres`**.
-   - **Remember the password** you set for `postgres`—you'll use it as `DB_PASSWORD` in Step 3.
+1. Download the official installer for your OS from **[https://www.postgresql.org/download/](https://www.postgresql.org/download/)** (PostgreSQL 15+ all work great).
+   - Need a full click-by-click guide? See the **[Official PostgreSQL Installation Docs](https://www.postgresql.org/docs/current/tutorial-install.html)** or this **[Windows PostgreSQL Setup Guide](https://pleasanter.org/en/manual/setup/installation/install-database/install-postgresql-on-windows/)**.
+2. During installation, only three screens really matter:
+   - **Select Components:** Keep **PostgreSQL Server**, **pgAdmin 4**, and **Command Line Tools** checked.
+   - **Password:** Set a password for the `postgres` superuser and **remember it**—you'll use it as `DB_PASSWORD` in Step 3.
+   - **Port:** Leave the default port as **`5432`** (and click Next through the rest).
 
-<p align="center">
-  <img src="docs/screenshots/setup/pg-step-1-download-install.png" alt="PostgreSQL Step 1: Download and Install" width="92%" />
-  <br/>
-  <sub><b>PostgreSQL Step 1</b> — Install PostgreSQL with pgAdmin 4 checked, Port <code>5432</code>, and note your <code>postgres</code> password</sub>
-</p>
+<table>
+  <tr>
+    <td align="center" width="33%">
+      <img src="docs/screenshots/setup/pg-install-components.png" alt="PostgreSQL installer: Select Components" width="100%" />
+    </td>
+    <td align="center" width="33%">
+      <img src="docs/screenshots/setup/pg-install-password.png" alt="PostgreSQL installer: Set postgres superuser password" width="100%" />
+    </td>
+    <td align="center" width="33%">
+      <img src="docs/screenshots/setup/pg-install-port.png" alt="PostgreSQL installer: Keep default port 5432" width="100%" />
+    </td>
+  </tr>
+  <tr>
+    <td align="center"><sub><b>1. Select Components</b><br/>Keep <code>pgAdmin 4</code> &amp; CLI tools checked</sub></td>
+    <td align="center"><sub><b>2. Superuser Password</b><br/>Remember this for <code>DB_PASSWORD</code></sub></td>
+    <td align="center"><sub><b>3. Port</b><br/>Keep the default port <code>5432</code></sub></td>
+  </tr>
+</table>
 
 #### 2. Log In & Create the `ridewise` Database
 
-- **Using pgAdmin 4 (GUI):** Open **pgAdmin 4** → expand **Servers → PostgreSQL** (enter the password you created in Step 1) → right-click **Databases** → **Create → Database...** → name it **`ridewise`** → click **Save**.
+- **Using pgAdmin 4 (GUI):** Open **pgAdmin 4**, connect to your local server (`localhost`, port `5432`, username `postgres`, and the password from Step 1), then right-click **Databases → Create → Database...**, name it **`ridewise`**, and click **Save**.
+  - Need a detailed visual walkthrough of pgAdmin 4? See **[Creating a PostgreSQL Database in pgAdmin 4](https://elfinwoodecology.org/2020/12/09/creating-a-postgresql-database/)**.
 - **Or using the terminal (`psql`) in one line:**
   ```bash
   psql -U postgres -c "CREATE DATABASE ridewise;"
   ```
 
-<p align="center">
-  <img src="docs/screenshots/setup/pg-step-2-create-database.png" alt="PostgreSQL Step 2: Create the ridewise database" width="92%" />
-  <br/>
-  <sub><b>PostgreSQL Step 2</b> — Create an empty <code>ridewise</code> database via pgAdmin 4 or <code>psql</code></sub>
-</p>
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/setup/pgadmin-connect-server.jpg" alt="pgAdmin 4: Connect to local PostgreSQL server" width="90%" />
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/setup/pgadmin-create-database.jpg" alt="pgAdmin 4: Right-click Databases, Create, Database" width="90%" />
+    </td>
+  </tr>
+  <tr>
+    <td align="center"><sub><b>Connect in pgAdmin 4</b><br/>Host <code>localhost</code> · Port <code>5432</code> · User <code>postgres</code></sub></td>
+    <td align="center"><sub><b>Create the database</b><br/>Right-click <b>Databases → Create → Database...</b> and name it <code>ridewise</code></sub></td>
+  </tr>
+</table>
 
 #### 3. Set Environment Variables & Start Both Servers
 
