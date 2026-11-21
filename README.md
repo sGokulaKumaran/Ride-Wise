@@ -24,7 +24,7 @@
   <a href="https://ride-wise.pages.dev">
     <img src="https://img.shields.io/badge/Live%20App-ride--wise.pages.dev-f97316?style=for-the-badge&logo=cloudflarepages&logoColor=white" alt="Live App" />
   </a>
-  <a href="docs/video/ridewise-promo.mp4">
+  <a href="https://drive.google.com/file/d/1E6lUD8i4y4ZnQ73IWQIi5h3QJdVsaJIH/view?usp=drive_link">
     <img src="https://img.shields.io/badge/Watch-Demo%20Video-111827?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Watch Demo Video" />
   </a>
   <a href="LICENSE">
@@ -115,11 +115,10 @@ Most GPS apps solve only one slice of the road—consumer turn-by-turn apps igno
 ## Screenshots and Demo
 
 <p align="center">
-  <video src="docs/video/ridewise-promo.mp4" poster="docs/screenshots/promo-city-transit.png" width="90%" autoplay loop muted playsinline controls>
-    Your browser does not support the video tag.
-  </video>
-  <br/>
-  <sub><b>▶ Watch the demo video</b> — <a href="docs/video/ridewise-promo.mp4">docs/video/ridewise-promo.mp4</a> (19 MB MP4 recorded directly from the running app)</sub>
+  <a href="https://drive.google.com/file/d/1E6lUD8i4y4ZnQ73IWQIi5h3QJdVsaJIH/view?usp=drive_link">
+    <img src="docs/screenshots/promo gif/demo-preview.gif" alt="RideWise full demo tour — solo navigation, group rides, college bus, travel fleets, and city transit" width="90%" />
+  </a>
+  
 </p>
 
 <table>
@@ -295,5 +294,5 @@ RideWise is released under the **GNU Affero General Public License v3.0 (AGPL-3.
 
 <p align="center">
   <sub>Built by <b>Gokula Kumaran S</b> · CSBS, Ramco Institute of Technology</sub><br/>
-  <sub><a href="https://ride-wise.pages.dev">Live App</a> · <a href="docs/video/ridewise-promo.mp4">Demo Video</a> · <a href="https://github.com/sGokulaKumaran/Ride-Wise">Source Code</a></sub>
+  <sub><a href="https://ride-wise.pages.dev">Live App</a> · <a href="https://drive.google.com/file/d/1E6lUD8i4y4ZnQ73IWQIi5h3QJdVsaJIH/view?usp=drive_link">Demo Video</a> · <a href="https://github.com/sGokulaKumaran/Ride-Wise">Source Code</a></sub>
 </p>
