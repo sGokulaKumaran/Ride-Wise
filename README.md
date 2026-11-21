@@ -116,7 +116,7 @@ Most GPS apps solve only one slice of the road—consumer turn-by-turn apps igno
 
 <p align="center">
   <a href="https://drive.google.com/file/d/1E6lUD8i4y4ZnQ73IWQIi5h3QJdVsaJIH/view?usp=drive_link">
-    <img src="docs/screenshots/promo gif/demo-preview.gif" alt="RideWise full demo tour — solo navigation, group rides, college bus, travel fleets, and city transit" width="90%" />
+    <img src="docs/screenshots/promo-gif/demo-preview.gif" alt="RideWise full demo tour — solo navigation, group rides, college bus, travel fleets, and city transit" width="90%" />
   </a>
   
 </p>
