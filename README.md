@@ -1,16 +1,17 @@
-
 <h1 align="center">RideWise</h1>
 
-<h2>Welcome to RideWise — every journey, connected.</h2>
+<h3 align="center">Every journey, connected.</h3>
 
-<p>
-  From a single rider to an entire fleet, RideWise brings navigation,
-  live group coordination, and real-time vehicle tracking together in
-  one open-source platform. Navigate solo with spoken directions,
-  keep your group on course with live location sharing and intelligent
-  rejoin paths, or follow campus and city transport as it moves.
-  One platform, powered by open map infrastructure, keeping every
-  journey connected.
+<p align="center">
+  <b>RideWise is an open-source navigation and fleet-tracking platform.</b><br/>
+  One account lets you navigate solo with turn-by-turn voice guidance, ride
+  together on a live shared map, drive a college bus, or manage a multi-vehicle
+  city fleet — all powered by open map infrastructure, with no paid map API
+  keys required for personal or educational use.
+</p>
+
+<p align="center">
+  <i>Built for solo riders, group rides, college buses, travel operators, and city fleets.</i>
 </p>
 
 
@@ -49,7 +50,7 @@
 
 <div align="center">
 
-[**Quick Start**](#quick-start) · [**What RideWise Does**](#what-ridewise-does) · [**Screenshots & Demo**](#screenshots-and-demo) ·
+[**Quick Start**](#quick-start) · [**What RideWise Does**](#what-ridewise-does) · [**How It Works**](#how-ridewise-works) · [**Screenshots & Demo**](#screenshots-and-demo) ·
 [**Architecture**](#architecture-summary) · [**Repository Blueprint**](#repository-blueprint) · [**Testing**](#testing-and-production-builds) ·
 [**API Reference**](docs/API.md) · [**Roadmap**](docs/ARCHITECTURE.md#roadmap) · [**Contributing**](#contributing) · [**License**](#license-and-fair-use)
 
@@ -57,11 +58,11 @@
 
 ---
 
-## Bring Up the Full RideWise Stack - Quick Setup
+## Bring Up the Full RideWise Stack — Quick Setup
 
- First go through the step-by-step **[Setup & Local Development Guide (docs/SETUP.md)](docs/SETUP.md)**. It clearly covers everything you need to clone 
+New to the project? Follow the step-by-step **[Setup & Local Development Guide (docs/SETUP.md)](docs/SETUP.md)** first. It covers everything you need to clone, configure, and run RideWise on Windows, macOS, or Linux — including the full PostgreSQL walkthrough and a troubleshooting section.
 
-If your tools are already installed, run the automatic dependency installer [`setup.py`](setup.py) (`python3 setup.py` or `py setup.py`), then launch the H2 test configuration and Vite dev server:
+Already have Java 21+, a supported Node.js version (20.19+ or 22.12+; Node 21 is not supported), and Python 3.8+? Run the automatic dependency installer [`setup.py`](setup.py) (`python3 setup.py` or `py setup.py`), then launch the H2 test configuration and the Vite dev server:
 
 ```bash
 # Terminal 1 — backend on :8080 (in-memory H2 test configuration, no PostgreSQL needed)
@@ -99,6 +100,15 @@ Most GPS apps solve only one slice of the road—consumer turn-by-turn apps igno
 | **Drivers** | Start trips in 3 taps with app-wide background tracking, speed alerts, crowd updates, and one-tap **SOS**. |
 | **Organization admins** | 9-tab operations suite (**Overview**, **Live map**, **Vehicles**, **Routes**, **People**, **Trips** with GPS replay + CSV export, **Announce**, **Statistics**, **Settings**). |
 | **Platform admins** | Platform-wide metrics, user management, active ride monitoring & bulk cleanup, org verification/suspension, and feedback with optional Gmail forwarding. |
+
+---
+
+## How RideWise Works
+
+1. **Plan a route** — place search (Photon, with Nominatim fallback) and routing (OSRM, with a FOSSGIS failover) run directly in the browser, so no map or routing traffic passes through the backend.
+2. **Navigate** — your phone's GPS feeds the pure `navigation.js` engine, which projects each fix onto the active route, announces maneuvers, and detects off-route drift with accuracy-scaled hysteresis.
+3. **Coordinate live** — group riders stream positions over `/ws/rides` and see who is on or off route; fleet drivers stream over `/ws/fleet` while passengers watch a vehicle or organization across trips.
+4. **Operate** — organization admins manage vehicles, multi-stop routes, drivers, announcements, analytics, and GPS trip replays from a nine-tab dashboard, while platform admins oversee users, organizations, and feedback.
 
 ---
 
@@ -145,6 +155,16 @@ Most GPS apps solve only one slice of the road—consumer turn-by-turn apps igno
 
 RideWise pairs a **React 19 / Vite 8 / Leaflet** SPA with a **Spring Boot 3.4 / Java 21 / PostgreSQL** API and raw JSON WebSockets (`/ws/rides` and `/ws/fleet`), proxied in production via Cloudflare Pages Functions so `SESSION` cookies remain first-party.
 
+| Layer | Technology |
+|---|---|
+| **Frontend** | React 19 · Vite 8 · Tailwind CSS 3 · Leaflet |
+| **Backend** | Spring Boot 3.4 · Java 21 · raw JSON WebSockets |
+| **Database** | PostgreSQL 15+ in production · in-memory H2 for tests |
+| **Authentication** | Spring Session JDBC · HttpOnly `SESSION` cookie |
+| **Maps** | OpenStreetMap · Stadia · Esri · OpenTopoMap · CyclOSM |
+| **Search & routing** | Photon · Nominatim · OSRM (FOSSGIS failover) |
+| **Live deployment** | Cloudflare Pages + Render + Aiven (free tier) |
+
 **Four core design rules:**
 1. **Pure navigation math** — [`frontend/src/services/navigation.js`](frontend/src/services/navigation.js) has zero React or Leaflet dependencies and powers solo rides, group rides, passenger ETAs, and unit tests.
 2. **In-memory fan-out, throttled persistence** — WebSockets broadcast from memory (`FleetBroadcaster`, `RideLocationBroadcaster`); PostgreSQL persists state at most every **5 s** and stores thinned tracks (capped at 4,000 points/trip). Both `/ws/fleet` and `/ws/rides` send a **25 s heartbeat `ping`** to survive proxy idle timeouts.
@@ -170,13 +190,19 @@ python3 setup.py      # Windows: py setup.py  (supports --check, --yes, --no-too
 - **Option A — H2 Test Configuration (1 minute, no database setup):**
   Uses `backend/ridewise/src/test/resources/application.properties` on the test classpath (`MODE=PostgreSQL`):
   ```bash
+  # Terminal 1 — backend on :8080
   cd backend/ridewise && ./mvnw spring-boot:test-run   # Windows: .\mvnw.cmd spring-boot:test-run
+
+  # Terminal 2 — frontend on :5173
   cd frontend && npm run dev
   ```
 - **Option B — Persistent PostgreSQL 15+:**
   Create database `ridewise`, copy variables from [`.env.example`](.env.example), export `DATABASE_URL`, `DB_USERNAME`, `DB_PASSWORD`, and run:
   ```bash
+  # Terminal 1 — backend on :8080
   cd backend/ridewise && ./mvnw spring-boot:run        # Windows: .\mvnw.cmd spring-boot:run
+
+  # Terminal 2 — frontend on :5173
   cd frontend && npm run dev
   ```
 
@@ -210,7 +236,7 @@ RideWise/
 ├── setup.py                              # Cross-platform setup script (Python 3.8+)
 ├── CONTRIBUTING.md                       # Contribution guide & PR checklist
 ├── NOTICE / LICENSE                      # Third-party attributions & GNU AGPL-3.0
-└── Full plan for the platform/           # Complete product & architecture blueprint
+└── Detailed plan of this platform/       # Complete product & architecture blueprint
 ```
 
 ---

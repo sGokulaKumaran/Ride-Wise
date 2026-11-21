@@ -675,7 +675,7 @@ public class OrganizationService {
     static String normalizeCode(String input) {
         if (input == null) return null;
         String compact = input.trim().toUpperCase(Locale.ROOT).replaceAll("[\\s-]", "");
-        if (compact.startsWith("RW")) compact = compact.substring(2);
+        if (compact.startsWith("RW")) compact = compact.substring(2);//RW means Ride-Wise
         if (compact.length() != 6) return null;
         for (char c : compact.toCharArray()) {
             if (CODE_ALPHABET.indexOf(c) < 0) return null;

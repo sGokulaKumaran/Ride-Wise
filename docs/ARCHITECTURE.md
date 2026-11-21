@@ -102,7 +102,7 @@ flowchart LR
 
 ## Roadmap
 
-The full design and expansion plan is documented in [`Full plan for the platform/RIDEWISE_COMPLETE_PLATFORM_PLAN.md`](../Full%20plan%20for%20the%20platform/RIDEWISE_COMPLETE_PLATFORM_PLAN.md).
+The full design and expansion plan is documented in [`Detailed plan of this platform/RIDEWISE_COMPLETE_PLATFORM_PLAN.md`](../Detailed%20plan%20of%20this%20platform/RIDEWISE_COMPLETE_PLATFORM_PLAN.md).
 
 | Capability | Status |
 |---|---|
