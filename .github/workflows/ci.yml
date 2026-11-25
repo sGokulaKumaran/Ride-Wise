@@ -1,0 +1,100 @@
+name: RideWise CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend (Lint, Test & Build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+  backend:
+    name: Backend (Maven Test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend/ridewise
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      - name: Run Spring Boot tests
+        run: |
+          chmod +x mvnw
+          ./mvnw -B test
+
+  docs-and-svg:
+    name: Docs & Animated SVG Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate SVG XML & README assets
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          import re
+          import sys
+          import xml.etree.ElementTree as ET
+
+          errors = []
+
+          for svg in sorted(pathlib.Path("docs/assets").glob("*.svg")):
+              try:
+                  tree = ET.parse(svg)
+                  root = tree.getroot()
+                  for elem in root.iter():
+                      tag = elem.tag.split("}")[-1].lower()
+                      if tag in ("script", "style"):
+                          errors.append(f"{svg}: disallowed <{tag}> element for GitHub-safe SMIL SVG")
+              except ET.ParseError as exc:
+                  errors.append(f"{svg}: invalid XML ({exc})")
+
+          readme = pathlib.Path("README.md").read_text(encoding="utf-8")
+          for match in re.finditer(r'src="(docs/[^"]+)"', readme):
+              asset = pathlib.Path(match.group(1))
+              if not asset.exists():
+                  errors.append(f"README.md: missing image asset {asset}")
+
+          if errors:
+              for err in errors:
+                  print(f"ERROR: {err}", file=sys.stderr)
+              sys.exit(1)
+
+          print("All SVGs valid and all README assets verified.")
+          PY

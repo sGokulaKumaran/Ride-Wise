@@ -26,6 +26,9 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/sGokulaKumaran/Ride-Wise/actions/workflows/ci.yml">
+    <img src="https://github.com/sGokulaKumaran/Ride-Wise/actions/workflows/ci.yml/badge.svg" alt="RideWise CI" />
+  </a>
   <a href="https://github.com/sGokulaKumaran/Ride-Wise/stargazers">
     <img src="https://img.shields.io/github/stars/sGokulaKumaran/Ride-Wise?style=flat-square&logo=github&color=f59e0b" alt="GitHub Stars" />
   </a>
@@ -315,10 +318,12 @@ Uses `backend/ridewise/src/test/resources/application.properties` on the test cl
 
 ```bash
 # Terminal 1 — backend on :8080
-cd backend/ridewise && ./mvnw spring-boot:test-run   # Windows: .\mvnw.cmd spring-boot:test-run
+cd backend/ridewise
+./mvnw spring-boot:test-run   # Windows: .\mvnw.cmd spring-boot:test-run
 
 # Terminal 2 — frontend on :5173 (proxies /api/* and /ws/* to :8080)
-cd frontend && npm run dev
+cd frontend
+npm run dev
 ```
 
 </details>
@@ -331,10 +336,12 @@ Create database `ridewise`, copy variables from [`.env.example`](.env.example), 
 
 ```bash
 # Terminal 1 — backend on :8080
-cd backend/ridewise && ./mvnw spring-boot:run        # Windows: .\mvnw.cmd spring-boot:run
+cd backend/ridewise
+./mvnw spring-boot:run        # Windows: .\mvnw.cmd spring-boot:run
 
 # Terminal 2 — frontend on :5173
-cd frontend && npm run dev
+cd frontend
+npm run dev
 ```
 
 </details>
@@ -402,17 +409,25 @@ RideWise/
 
 ```bash
 # Backend — Spring integration & WebSocket tests (isolated H2 test configuration)
-cd backend/ridewise && ./mvnw test        # Windows: .\mvnw.cmd test
+cd backend/ridewise
+./mvnw test        # Windows: .\mvnw.cmd test
 
 # Frontend — pure logic tests (node --test tests/)
-cd frontend && npm test
+cd frontend
+npm test
 
 # Frontend — ESLint check (separate from npm test)
-cd frontend && npm run lint
+cd frontend
+npm run lint
 
 # Production builds
-cd frontend && npm run build && npm run preview
-cd backend/ridewise && ./mvnw package && java -jar target/ridewise-0.0.1-SNAPSHOT.jar
+cd frontend
+npm run build
+npm run preview
+
+cd backend/ridewise
+./mvnw package
+java -jar target/ridewise-0.0.1-SNAPSHOT.jar
 ```
 
 </details>
