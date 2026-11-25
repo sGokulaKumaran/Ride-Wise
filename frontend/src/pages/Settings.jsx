@@ -31,7 +31,7 @@ import MobileNav from "./components/layout/MobileNav";
 import { applyA11ySettings } from "../utils/a11y";
 import {
   MAP_STYLES,
-  MAP_STYLE_AUTO,
+  // MAP_STYLE_AUTO,
   loadMapStyleChoice,
   saveMapStyleChoice,
 } from "./components/ride/mapStyles";
@@ -392,11 +392,14 @@ function SettingsScreen() {
             <OptionBlock
               icon="layers"
               label="Map style"
-              sub="Auto matches your active theme"
+              // sub="Auto matches your active theme"
+              sub="Choose your preferred basemap"
               tc={tc}
             >
               <div className="flex flex-wrap gap-2">
-                {[{ id: MAP_STYLE_AUTO, label: "Auto" }, ...MAP_STYLES].map((style) => (
+                {/* Temporarily disabled Automatic map layer option */}
+                {/* {[{ id: MAP_STYLE_AUTO, label: "Auto" }, ...MAP_STYLES].map((style) => ( */}
+                {MAP_STYLES.map((style) => (
                   <Chip
                     key={style.id}
                     selected={mapStyle === style.id}

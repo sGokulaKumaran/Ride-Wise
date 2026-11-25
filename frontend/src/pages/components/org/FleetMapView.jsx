@@ -40,7 +40,7 @@ import { haversineDistance } from "../../../services/routingApi";
 import {
   MAP_MAX_ZOOM,
   MAP_STYLES,
-  MAP_STYLE_AUTO,
+  // MAP_STYLE_AUTO,
   ROUTE_COLORS,
   loadMapStyleChoice,
   resolveMapStyle,
@@ -602,7 +602,8 @@ export default function FleetMapView({
   const bottom = (padding?.bottom ?? 0) + 12;
   const control = `border rounded-full flex items-center justify-center transition-colors ${tc.mapControl}`;
   const controlSize = compact ? "h-9 w-9" : "h-11 w-11";
-  const selectedStyleId = styleChoice === MAP_STYLE_AUTO ? MAP_STYLE_AUTO : styleDef.id;
+  // const selectedStyleId = styleChoice === MAP_STYLE_AUTO ? MAP_STYLE_AUTO : styleDef.id;
+  const selectedStyleId = styleDef.id;
 
   return (
     <div
@@ -650,7 +651,9 @@ export default function FleetMapView({
               <div className="fixed inset-0 z-[1]" onClick={() => setShowStyles(false)} />
               <div role="menu" className={`absolute right-0 z-[2] mt-2 w-56 overflow-hidden rounded-xl border py-1 shadow-lg ${tc.card} ${tc.text}`}>
                 <p className={`px-3.5 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider ${tc.sub}`}>Map style</p>
-                {[{ id: MAP_STYLE_AUTO, label: "Automatic", hint: "Matches your theme" }, ...MAP_STYLES].map((option) => {
+                {/* Temporarily disabled Automatic map layer option */}
+                {/* {[{ id: MAP_STYLE_AUTO, label: "Automatic", hint: "Matches your theme" }, ...MAP_STYLES].map((option) => { */}
+                {MAP_STYLES.map((option) => {
                   const selected = selectedStyleId === option.id;
                   return (
                     <button

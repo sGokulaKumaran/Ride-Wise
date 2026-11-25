@@ -35,16 +35,17 @@ export const MAP_STYLES = [
     maxNativeZoom: 19,
     credit: OSM_CREDIT,
   },
-  {
-    id: "dark",
-    label: "Dark",
-    hint: "Easy on the eyes at night",
-    dark: true,
-    url: "https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png",
-    maxNativeZoom: 20,
-    credit: `© Stadia Maps · ${OSM_CREDIT}`,
-    fallback: { url: OSM_TILES, maxNativeZoom: 19, invert: true, credit: OSM_CREDIT },
-  },
+  // Temporarily disabled: Stadia Maps account limit exceeded
+  // {
+  //   id: "dark",
+  //   label: "Dark",
+  //   hint: "Easy on the eyes at night",
+  //   dark: true,
+  //   url: "https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png",
+  //   maxNativeZoom: 20,
+  //   credit: `© Stadia Maps · ${OSM_CREDIT}`,
+  //   fallback: { url: OSM_TILES, maxNativeZoom: 19, invert: true, credit: OSM_CREDIT },
+  // },
   {
     id: "satellite",
     label: "Satellite",
@@ -54,20 +55,21 @@ export const MAP_STYLES = [
     maxNativeZoom: 19,
     credit: "© Esri, Maxar, Earthstar Geographics",
   },
-  {
-    id: "terrain",
-    label: "Terrain",
-    hint: "Hills and elevation",
-    dark: false,
-    url: "https://tiles.stadiamaps.com/tiles/stamen_terrain/{z}/{x}/{y}{r}.png",
-    maxNativeZoom: 18,
-    credit: `© Stadia Maps · Stamen · ${OSM_CREDIT}`,
-    fallback: {
-      url: "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
-      maxNativeZoom: 17,
-      credit: `© OpenTopoMap · ${OSM_CREDIT}`,
-    },
-  },
+  // Temporarily disabled: Stadia Maps account limit exceeded
+  // {
+  //   id: "terrain",
+  //   label: "Terrain",
+  //   hint: "Hills and elevation",
+  //   dark: false,
+  //   url: "https://tiles.stadiamaps.com/tiles/stamen_terrain/{z}/{x}/{y}{r}.png",
+  //   maxNativeZoom: 18,
+  //   credit: `© Stadia Maps · Stamen · ${OSM_CREDIT}`,
+  //   fallback: {
+  //     url: "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+  //     maxNativeZoom: 17,
+  //     credit: `© OpenTopoMap · ${OSM_CREDIT}`,
+  //   },
+  // },
   {
     id: "cycle",
     label: "Cycling",
@@ -86,11 +88,14 @@ const STYLE_KEY = "ridewise-map-style";
 export function loadMapStyleChoice() {
   try {
     const saved = localStorage.getItem(STYLE_KEY);
-    if (saved === MAP_STYLE_AUTO || MAP_STYLES.some((style) => style.id === saved)) return saved;
+    // Temporarily disabled Automatic map layer option:
+    // if (saved === MAP_STYLE_AUTO || MAP_STYLES.some((style) => style.id === saved)) return saved;
+    if (MAP_STYLES.some((style) => style.id === saved)) return saved;
   } catch {
     // storage unavailable
   }
-  return MAP_STYLE_AUTO;
+  // return MAP_STYLE_AUTO;
+  return MAP_STYLES[0].id;
 }
 
 export function saveMapStyleChoice(choice) {

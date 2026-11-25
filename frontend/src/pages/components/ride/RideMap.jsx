@@ -54,7 +54,7 @@ import { GPS, getLastKnownLocation, requestFreshFix } from "../../../services/lo
 import {
   MAP_MAX_ZOOM,
   MAP_STYLES,
-  MAP_STYLE_AUTO,
+  // MAP_STYLE_AUTO,
   RIDER_COLORS,
   ROUTE_COLORS,
   loadMapStyleChoice,
@@ -1057,7 +1057,8 @@ export default function RideMap({
   const control =
     `border rounded-full flex items-center justify-center transition-colors ${tc.mapControl}`;
   const controlSize = compact ? "h-9 w-9" : "h-11 w-11";
-  const selectedStyleId = styleChoice === MAP_STYLE_AUTO ? MAP_STYLE_AUTO : styleDef.id;
+  // const selectedStyleId = styleChoice === MAP_STYLE_AUTO ? MAP_STYLE_AUTO : styleDef.id;
+  const selectedStyleId = styleDef.id;
 
   return (
     <div
@@ -1130,7 +1131,9 @@ export default function RideMap({
                 <p className={`px-3.5 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider ${tc.sub}`}>
                   Map style
                 </p>
-                {[{ id: MAP_STYLE_AUTO, label: "Automatic", hint: "Matches your theme" }, ...MAP_STYLES].map((option) => {
+                {/* Temporarily disabled Automatic map layer option */}
+                {/* {[{ id: MAP_STYLE_AUTO, label: "Automatic", hint: "Matches your theme" }, ...MAP_STYLES].map((option) => { */}
+                {MAP_STYLES.map((option) => {
                   const selected = selectedStyleId === option.id;
                   return (
                     <button
