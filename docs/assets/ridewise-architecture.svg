@@ -1,0 +1,309 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 900 350" width="900" height="350" role="img" aria-label="RideWise Live Data-Flow Architecture Diagram with animated signal pulses across Browser SPA, Open Geospatial Stack, Cloudflare Edge, Spring Boot, and PostgreSQL.">
+  <defs>
+    <linearGradient id="arch-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#090f1d"/>
+      <stop offset="100%" stop-color="#111827"/>
+    </linearGradient>
+
+    <radialGradient id="glow-emerald" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#34d399" stop-opacity="0.9"/>
+      <stop offset="45%" stop-color="#10b981" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#10b981" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="glow-orange" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fb923c" stop-opacity="0.9"/>
+      <stop offset="45%" stop-color="#f97316" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#f97316" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="glow-blue" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#60a5fa" stop-opacity="0.9"/>
+      <stop offset="45%" stop-color="#3b82f6" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#3b82f6" stop-opacity="0"/>
+    </radialGradient>
+
+    <clipPath id="arch-clip">
+      <rect x="0" y="0" width="900" height="350" rx="18"/>
+    </clipPath>
+
+    <!-- Circuit Wire Paths -->
+    <!-- Direct Geo: Browser SPA <-> Open Geospatial Stack (0 backend bytes) -->
+    <path id="wire-geo-req" d="M 218 122 H 274 Q 286 122 286 110 V 100 Q 286 88 298 88 H 348"/>
+    <path id="wire-geo-res" d="M 348 116 H 308 Q 296 116 296 128 V 138 Q 296 150 284 150 H 218"/>
+
+    <!-- REST API: Browser SPA -> Cloudflare Edge -> Spring Boot -->
+    <path id="wire-rest-1" d="M 218 222 H 278"/>
+    <path id="wire-rest-2" d="M 448 222 H 504"/>
+
+    <!-- Live WebSockets (/ws/rides & /ws/fleet): Browser <-> Cloudflare Edge <-> Spring Boot -->
+    <path id="wire-ws-up-1" d="M 218 250 H 278"/>
+    <path id="wire-ws-up-2" d="M 448 250 H 504"/>
+    <path id="wire-ws-down-2" d="M 504 274 H 448"/>
+    <path id="wire-ws-down-1" d="M 278 274 H 218"/>
+
+    <!-- Persistence: Spring Boot <-> PostgreSQL -->
+    <path id="wire-db-write" d="M 690 226 H 706 Q 716 226 716 216 V 200 Q 716 190 726 190 H 738"/>
+    <path id="wire-db-read" d="M 738 222 H 726 Q 716 222 716 232 V 250 Q 716 260 706 260 H 690"/>
+  </defs>
+
+  <g clip-path="url(#arch-clip)">
+    <rect x="0" y="0" width="900" height="350" fill="url(#arch-bg)"/>
+
+    <!-- Subtle PCB grid lines -->
+    <g stroke="#131f38" stroke-width="1">
+      <line x1="0" y1="70" x2="900" y2="70"/>
+      <line x1="0" y1="140" x2="900" y2="140"/>
+      <line x1="0" y1="210" x2="900" y2="210"/>
+      <line x1="0" y1="280" x2="900" y2="280"/>
+      <line x1="150" y1="48" x2="150" y2="350"/>
+      <line x1="300" y1="48" x2="300" y2="350"/>
+      <line x1="450" y1="48" x2="450" y2="350"/>
+      <line x1="600" y1="48" x2="600" y2="350"/>
+      <line x1="750" y1="48" x2="750" y2="350"/>
+    </g>
+
+    <!-- Header bar & Legend -->
+    <rect x="0" y="0" width="900" height="44" fill="#0d1526"/>
+    <line x1="0" y1="44" x2="900" y2="44" stroke="#1e293b" stroke-width="1"/>
+    <circle cx="24" cy="22" r="4" fill="#10b981">
+      <animate attributeName="opacity" values="1;0.35;1" dur="2s" repeatCount="indefinite"/>
+    </circle>
+    <text x="36" y="26" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11.5" font-weight="700" letter-spacing="0.8" fill="#e2e8f0">RIDEWISE · LIVE DATA-FLOW ARCHITECTURE</text>
+
+    <!-- Legend -->
+    <g font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="11" font-weight="600">
+      <circle cx="468" cy="22" r="4" fill="#10b981"/>
+      <text x="478" y="26" fill="#6ee7b7">Direct Geo (0 backend bytes)</text>
+      <circle cx="644" cy="22" r="4" fill="#f97316"/>
+      <text x="654" y="26" fill="#fdba74">WebSockets (/ws)</text>
+      <circle cx="774" cy="22" r="4" fill="#3b82f6"/>
+      <text x="784" y="26" fill="#93c5fd">REST &amp; DB</text>
+    </g>
+
+    <!-- Base Wires (dark track + colored trace) -->
+    <g fill="none" stroke-linecap="round">
+      <!-- Emerald Direct Geo wires -->
+      <use href="#wire-geo-req" xlink:href="#wire-geo-req" stroke="#064e3b" stroke-width="5"/>
+      <use href="#wire-geo-req" xlink:href="#wire-geo-req" stroke="#10b981" stroke-opacity="0.55" stroke-width="2" stroke-dasharray="6 4"/>
+      <use href="#wire-geo-res" xlink:href="#wire-geo-res" stroke="#064e3b" stroke-width="5"/>
+      <use href="#wire-geo-res" xlink:href="#wire-geo-res" stroke="#34d399" stroke-opacity="0.55" stroke-width="2"/>
+
+      <!-- Blue REST wires -->
+      <use href="#wire-rest-1" xlink:href="#wire-rest-1" stroke="#1e3a8a" stroke-width="5"/>
+      <use href="#wire-rest-1" xlink:href="#wire-rest-1" stroke="#3b82f6" stroke-opacity="0.6" stroke-width="2"/>
+      <use href="#wire-rest-2" xlink:href="#wire-rest-2" stroke="#1e3a8a" stroke-width="5"/>
+      <use href="#wire-rest-2" xlink:href="#wire-rest-2" stroke="#3b82f6" stroke-opacity="0.6" stroke-width="2"/>
+
+      <!-- Orange WebSocket wires -->
+      <use href="#wire-ws-up-1" xlink:href="#wire-ws-up-1" stroke="#7c2d12" stroke-width="5"/>
+      <use href="#wire-ws-up-1" xlink:href="#wire-ws-up-1" stroke="#f97316" stroke-opacity="0.65" stroke-width="2"/>
+      <use href="#wire-ws-up-2" xlink:href="#wire-ws-up-2" stroke="#7c2d12" stroke-width="5"/>
+      <use href="#wire-ws-up-2" xlink:href="#wire-ws-up-2" stroke="#f97316" stroke-opacity="0.65" stroke-width="2"/>
+      <use href="#wire-ws-down-2" xlink:href="#wire-ws-down-2" stroke="#7c2d12" stroke-width="5"/>
+      <use href="#wire-ws-down-2" xlink:href="#wire-ws-down-2" stroke="#fb923c" stroke-opacity="0.55" stroke-width="2" stroke-dasharray="5 4"/>
+      <use href="#wire-ws-down-1" xlink:href="#wire-ws-down-1" stroke="#7c2d12" stroke-width="5"/>
+      <use href="#wire-ws-down-1" xlink:href="#wire-ws-down-1" stroke="#fb923c" stroke-opacity="0.55" stroke-width="2" stroke-dasharray="5 4"/>
+
+      <!-- Blue DB wires -->
+      <use href="#wire-db-write" xlink:href="#wire-db-write" stroke="#1e3a8a" stroke-width="5"/>
+      <use href="#wire-db-write" xlink:href="#wire-db-write" stroke="#3b82f6" stroke-opacity="0.6" stroke-width="2"/>
+      <use href="#wire-db-read" xlink:href="#wire-db-read" stroke="#1e3a8a" stroke-width="5"/>
+      <use href="#wire-db-read" xlink:href="#wire-db-read" stroke="#60a5fa" stroke-opacity="0.5" stroke-width="2" stroke-dasharray="5 4"/>
+    </g>
+
+    <!-- Wire Labels -->
+    <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="600">
+      <text x="234" y="82" fill="#6ee7b7">Direct HTTPS</text>
+      <text x="223" y="213" fill="#93c5fd">HTTPS</text>
+      <text x="458" y="213" fill="#93c5fd">REST</text>
+      <text x="225" y="290" fill="#fdba74">WSS /ws/*</text>
+      <text x="455" y="290" fill="#fdba74">25s ping</text>
+      <text x="698" y="182" fill="#93c5fd">5s flush</text>
+    </g>
+
+    <!-- Traveling Light Pulses along Wires -->
+    <!-- 1. Emerald Geo Request Pulses (2 staggered) -->
+    <g>
+      <circle cx="0" cy="0" r="10" fill="url(#glow-emerald)"/>
+      <circle cx="0" cy="0" r="3.5" fill="#d1fae5"/>
+      <animateMotion dur="2.3s" begin="0s" repeatCount="indefinite" calcMode="spline" keySplines=".45 0 .55 1" keyPoints="0;1" keyTimes="0;1">
+        <mpath href="#wire-geo-req" xlink:href="#wire-geo-req"/>
+      </animateMotion>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.14;0.86;1" dur="2.3s" begin="0s" repeatCount="indefinite"/>
+    </g>
+    <g>
+      <circle cx="0" cy="0" r="10" fill="url(#glow-emerald)"/>
+      <circle cx="0" cy="0" r="3.5" fill="#d1fae5"/>
+      <animateMotion dur="2.3s" begin="-1.15s" repeatCount="indefinite" calcMode="spline" keySplines=".45 0 .55 1" keyPoints="0;1" keyTimes="0;1">
+        <mpath href="#wire-geo-req" xlink:href="#wire-geo-req"/>
+      </animateMotion>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.14;0.86;1" dur="2.3s" begin="-1.15s" repeatCount="indefinite"/>
+    </g>
+
+    <!-- 2. Emerald Geo Response Pulses -->
+    <g>
+      <circle cx="0" cy="0" r="10" fill="url(#glow-emerald)"/>
+      <circle cx="0" cy="0" r="3.5" fill="#ecfdf5"/>
+      <animateMotion dur="2.1s" begin="-0.5s" repeatCount="indefinite" calcMode="spline" keySplines=".45 0 .55 1" keyPoints="0;1" keyTimes="0;1">
+        <mpath href="#wire-geo-res" xlink:href="#wire-geo-res"/>
+      </animateMotion>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.14;0.86;1" dur="2.1s" begin="-0.5s" repeatCount="indefinite"/>
+    </g>
+
+    <!-- 3. Blue REST Pulses (Browser -> Edge -> Backend) -->
+    <g>
+      <circle cx="0" cy="0" r="9" fill="url(#glow-blue)"/>
+      <circle cx="0" cy="0" r="3.2" fill="#dbeafe"/>
+      <animateMotion dur="1.7s" begin="0s" repeatCount="indefinite" calcMode="spline" keySplines=".45 0 .55 1" keyPoints="0;1" keyTimes="0;1">
+        <mpath href="#wire-rest-1" xlink:href="#wire-rest-1"/>
+      </animateMotion>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1" dur="1.7s" begin="0s" repeatCount="indefinite"/>
+    </g>
+    <g>
+      <circle cx="0" cy="0" r="9" fill="url(#glow-blue)"/>
+      <circle cx="0" cy="0" r="3.2" fill="#dbeafe"/>
+      <animateMotion dur="1.7s" begin="-0.45s" repeatCount="indefinite" calcMode="spline" keySplines=".45 0 .55 1" keyPoints="0;1" keyTimes="0;1">
+        <mpath href="#wire-rest-2" xlink:href="#wire-rest-2"/>
+      </animateMotion>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1" dur="1.7s" begin="-0.45s" repeatCount="indefinite"/>
+    </g>
+
+    <!-- 4. Orange Live Telemetry Pulses (Bidirectional WebSockets) -->
+    <g>
+      <circle cx="0" cy="0" r="10" fill="url(#glow-orange)"/>
+      <circle cx="0" cy="0" r="3.5" fill="#ffedd5"/>
+      <animateMotion dur="1.4s" begin="0s" repeatCount="indefinite" calcMode="spline" keySplines=".45 0 .55 1" keyPoints="0;1" keyTimes="0;1">
+        <mpath href="#wire-ws-up-1" xlink:href="#wire-ws-up-1"/>
+      </animateMotion>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1" dur="1.4s" begin="0s" repeatCount="indefinite"/>
+    </g>
+    <g>
+      <circle cx="0" cy="0" r="10" fill="url(#glow-orange)"/>
+      <circle cx="0" cy="0" r="3.5" fill="#ffedd5"/>
+      <animateMotion dur="1.4s" begin="-0.35s" repeatCount="indefinite" calcMode="spline" keySplines=".45 0 .55 1" keyPoints="0;1" keyTimes="0;1">
+        <mpath href="#wire-ws-up-2" xlink:href="#wire-ws-up-2"/>
+      </animateMotion>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1" dur="1.4s" begin="-0.35s" repeatCount="indefinite"/>
+    </g>
+    <g>
+      <circle cx="0" cy="0" r="10" fill="url(#glow-orange)"/>
+      <circle cx="0" cy="0" r="3.5" fill="#fed7aa"/>
+      <animateMotion dur="1.4s" begin="-0.7s" repeatCount="indefinite" calcMode="spline" keySplines=".45 0 .55 1" keyPoints="0;1" keyTimes="0;1">
+        <mpath href="#wire-ws-down-2" xlink:href="#wire-ws-down-2"/>
+      </animateMotion>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1" dur="1.4s" begin="-0.7s" repeatCount="indefinite"/>
+    </g>
+    <g>
+      <circle cx="0" cy="0" r="10" fill="url(#glow-orange)"/>
+      <circle cx="0" cy="0" r="3.5" fill="#fed7aa"/>
+      <animateMotion dur="1.4s" begin="-1.05s" repeatCount="indefinite" calcMode="spline" keySplines=".45 0 .55 1" keyPoints="0;1" keyTimes="0;1">
+        <mpath href="#wire-ws-down-1" xlink:href="#wire-ws-down-1"/>
+      </animateMotion>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1" dur="1.4s" begin="-1.05s" repeatCount="indefinite"/>
+    </g>
+
+    <!-- 5. Blue DB Write & Read Pulses -->
+    <g>
+      <circle cx="0" cy="0" r="9.5" fill="url(#glow-blue)"/>
+      <circle cx="0" cy="0" r="3.2" fill="#dbeafe"/>
+      <animateMotion dur="2.2s" begin="0s" repeatCount="indefinite" calcMode="spline" keySplines=".45 0 .55 1" keyPoints="0;1" keyTimes="0;1">
+        <mpath href="#wire-db-write" xlink:href="#wire-db-write"/>
+      </animateMotion>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1" dur="2.2s" begin="0s" repeatCount="indefinite"/>
+    </g>
+    <g>
+      <circle cx="0" cy="0" r="9.5" fill="url(#glow-blue)"/>
+      <circle cx="0" cy="0" r="3.2" fill="#e0f2fe"/>
+      <animateMotion dur="2.2s" begin="-1.1s" repeatCount="indefinite" calcMode="spline" keySplines=".45 0 .55 1" keyPoints="0;1" keyTimes="0;1">
+        <mpath href="#wire-db-read" xlink:href="#wire-db-read"/>
+      </animateMotion>
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.15;0.85;1" dur="2.2s" begin="-1.1s" repeatCount="indefinite"/>
+    </g>
+
+    <!-- Nodes -->
+    <!-- Node 1: Browser SPA -->
+    <g>
+      <rect x="28" y="98" width="190" height="196" rx="12" fill="#0d1526" stroke="#334155" stroke-width="1.2"/>
+      <rect x="28" y="98" width="190" height="4" rx="2" fill="#3b82f6"/>
+      <text x="44" y="126" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="14" font-weight="700" fill="#f8fafc">Browser SPA</text>
+      <text x="44" y="148" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#94a3b8">React 19 · Vite 8</text>
+      <text x="44" y="166" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#94a3b8">Leaflet Map UI</text>
+      <line x1="44" y1="184" x2="202" y2="184" stroke="#1e293b" stroke-width="1"/>
+      <text x="44" y="206" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#93c5fd">navigation.js (pure)</text>
+      <text x="44" y="226" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#6ee7b7">1100 ms rate queues</text>
+      <text x="44" y="246" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#fdba74">~1 km geo rounding</text>
+      <text x="44" y="274" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" fill="#64748b">GPS + Voice + WakeLock</text>
+      <!-- Ports -->
+      <circle cx="218" cy="122" r="3.5" fill="#10b981"/>
+      <circle cx="218" cy="150" r="3.5" fill="#34d399"/>
+      <circle cx="218" cy="222" r="3.5" fill="#3b82f6"/>
+      <circle cx="218" cy="250" r="3.5" fill="#f97316"/>
+      <circle cx="218" cy="274" r="3.5" fill="#fb923c"/>
+    </g>
+
+    <!-- Node 2: Open Geospatial Stack -->
+    <g>
+      <rect x="348" y="64" width="276" height="84" rx="12" fill="#0d1526" stroke="#065f46" stroke-width="1.2"/>
+      <rect x="348" y="64" width="276" height="4" rx="2" fill="#10b981"/>
+      <text x="364" y="90" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="13.5" font-weight="700" fill="#ecfdf5">Open Geospatial Stack</text>
+      <rect x="530" y="76" width="82" height="18" rx="9" fill="#064e3b"/>
+      <text x="539" y="88.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="9.5" font-weight="700" fill="#6ee7b7">0 BACKEND B</text>
+      <text x="364" y="112" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#a7f3d0">Tiles: OSM · Esri · CyclOSM</text>
+      <text x="364" y="131" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#94a3b8">Search: Photon / Nominatim · OSRM</text>
+      <!-- Ports -->
+      <circle cx="348" cy="88" r="3.5" fill="#10b981"/>
+      <circle cx="348" cy="116" r="3.5" fill="#34d399"/>
+    </g>
+
+    <!-- Node 3: Cloudflare Pages Edge -->
+    <g>
+      <rect x="278" y="196" width="170" height="100" rx="12" fill="#0d1526" stroke="#334155" stroke-width="1.2"/>
+      <rect x="278" y="196" width="170" height="4" rx="2" fill="#f97316"/>
+      <text x="294" y="222" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="13.5" font-weight="700" fill="#f8fafc">Cloudflare Edge</text>
+      <text x="294" y="244" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#fdba74">Pages Functions</text>
+      <text x="294" y="262" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#94a3b8">/api/* &amp; /ws/* proxy</text>
+      <text x="294" y="280" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#64748b">1st-party SESSION</text>
+      <!-- Ports -->
+      <circle cx="278" cy="222" r="3.5" fill="#3b82f6"/>
+      <circle cx="278" cy="250" r="3.5" fill="#f97316"/>
+      <circle cx="278" cy="274" r="3.5" fill="#fb923c"/>
+      <circle cx="448" cy="222" r="3.5" fill="#3b82f6"/>
+      <circle cx="448" cy="250" r="3.5" fill="#f97316"/>
+      <circle cx="448" cy="274" r="3.5" fill="#fb923c"/>
+    </g>
+
+    <!-- Node 4: Spring Boot 3.4 API -->
+    <g>
+      <rect x="504" y="196" width="186" height="100" rx="12" fill="#0d1526" stroke="#334155" stroke-width="1.2"/>
+      <rect x="504" y="196" width="186" height="4" rx="2" fill="#22c55e"/>
+      <text x="520" y="222" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="13.5" font-weight="700" fill="#f8fafc">Spring Boot 3.4</text>
+      <text x="520" y="244" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#86efac">Java 21 · OrgGuard</text>
+      <text x="520" y="262" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#94a3b8">8 REST Controllers</text>
+      <text x="520" y="280" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#fdba74">Memory Broadcasters</text>
+      <!-- Ports -->
+      <circle cx="504" cy="222" r="3.5" fill="#3b82f6"/>
+      <circle cx="504" cy="250" r="3.5" fill="#f97316"/>
+      <circle cx="504" cy="274" r="3.5" fill="#fb923c"/>
+      <circle cx="690" cy="226" r="3.5" fill="#3b82f6"/>
+      <circle cx="690" cy="260" r="3.5" fill="#60a5fa"/>
+    </g>
+
+    <!-- Node 5: PostgreSQL 15+ / H2 -->
+    <g>
+      <rect x="738" y="160" width="136" height="136" rx="12" fill="#0d1526" stroke="#334155" stroke-width="1.2"/>
+      <rect x="738" y="160" width="136" height="4" rx="2" fill="#60a5fa"/>
+      <text x="752" y="186" font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="13.5" font-weight="700" fill="#f8fafc">PostgreSQL</text>
+      <text x="752" y="206" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#93c5fd">Prod 15+ / Test H2</text>
+      <line x1="752" y1="218" x2="860" y2="218" stroke="#1e293b" stroke-width="1"/>
+      <text x="752" y="238" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#94a3b8">Thinned GPS (4k)</text>
+      <text x="752" y="256" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#94a3b8">Atomic Lock Keys</text>
+      <text x="752" y="274" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" fill="#94a3b8">JDBC Sessions</text>
+      <!-- Ports -->
+      <circle cx="738" cy="190" r="3.5" fill="#3b82f6"/>
+      <circle cx="738" cy="222" r="3.5" fill="#60a5fa"/>
+    </g>
+  </g>
+
+  <rect x="1" y="1" width="898" height="348" rx="17" fill="none" stroke="#1e293b" stroke-width="1.5"/>
+</svg>

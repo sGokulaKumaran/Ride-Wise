@@ -1,24 +1,14 @@
 <a id="top"></a>
 
-<h1 align="center">RideWise</h1>
-
-<h3 align="center">Every journey, connected.</h3>
-
-<p align="center">
-  <b>RideWise is an open-source navigation and fleet-tracking platform.</b><br/>
-  One account lets you navigate solo with turn-by-turn voice guidance, ride
-  together on a live shared map, drive a college bus, or manage a multi-vehicle
-  city fleet — all powered by open map infrastructure, with no paid map API
-  keys required for personal or educational use.
-</p>
-
-<p align="center">
-  <i>Built for solo riders, group rides, college buses, travel operators, and city fleets.</i>
-</p>
-
 <div align="center">
-  <img src="docs/screenshots/fleet-map-college.png" alt="RideWise live fleet map — Greenfield Institute of Technology" width="100%" />
+  <a href="https://ride-wise.pages.dev">
+    <img src="docs/assets/ridewise-hero.svg" alt="RideWise — Every journey, connected. Live navigation, group sync, and fleet tracking platform." width="100%" />
+  </a>
 </div>
+
+<p align="center">
+  <b>One open-source navigation &amp; fleet-tracking platform</b> — navigate solo with voice guidance, ride together on a live shared map, drive a college bus, or manage a multi-vehicle city fleet without paid map API keys.
+</p>
 
 <p align="center">
   <a href="https://ride-wise.pages.dev">
@@ -69,9 +59,34 @@
 
 </div>
 
+<br/>
+
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <b>🧭 Solo Navigation</b><br/>
+      <sub>Turn-by-turn spoken guidance, route alternatives, pure-JS off-route recovery, 4 UI themes &amp; selectable basemaps.</sub>
+    </td>
+    <td width="33%" valign="top">
+      <b>👥 Live Group Rides</b><br/>
+      <sub>Real-time rider sync over <code>/ws/rides</code>, opt-in sharing, instant <b>Off route</b> status &amp; purple rejoin path ahead.</sub>
+    </td>
+    <td width="33%" valign="top">
+      <b>🚌 Campus &amp; City Fleets</b><br/>
+      <sub>3-tap driver dispatch, stop-by-stop passenger ETAs, proximity alerts, crowd badges &amp; 9-tab org operations.</sub>
+    </td>
+  </tr>
+</table>
+
 ---
 
 ## Screenshots and Demo
+
+<div align="center">
+  <img src="docs/screenshots/fleet-map-college.png" alt="RideWise live fleet map — Greenfield Institute of Technology" width="100%" />
+</div>
+
+<br/>
 
 <p align="center">
   <a href="https://drive.google.com/file/d/1E6lUD8i4y4ZnQ73IWQIi5h3QJdVsaJIH/view?usp=drive_link">
@@ -253,25 +268,11 @@ Most GPS apps solve only one slice of the road—consumer turn-by-turn apps igno
 
 RideWise pairs a **React 19 / Vite 8 / Leaflet** SPA with a **Spring Boot 3.4 / Java 21 / PostgreSQL** API and raw JSON WebSockets (`/ws/rides` and `/ws/fleet`), proxied in production via Cloudflare Pages Functions so `SESSION` cookies remain first-party.
 
-```mermaid
-flowchart LR
-  User["Browser SPA (React 19 + Vite 8 + Leaflet + navigation.js)"]
+<div align="center">
+  <img src="docs/assets/ridewise-architecture.svg" alt="RideWise live data-flow architecture — animated wires and signal pulses across Browser SPA, Open Geospatial Stack, Cloudflare Edge, Spring Boot 3.4, and PostgreSQL" width="100%" />
+</div>
 
-  subgraph Geo["Browser-Direct Open Geospatial Stack (0 backend bytes)"]
-    Tiles["Map Tiles (OSM / Esri / CyclOSM)"]
-    Search["Place Search (Photon -> Nominatim)"]
-    Routing["Turn-by-Turn Routing (OSRM -> FOSSGIS)"]
-  end
-
-  Proxy["Cloudflare Pages Functions (/api/* and /ws/*)"]
-  Backend["Spring Boot 3.4 + Java 21 (8 REST Controllers + /ws/rides & /ws/fleet)"]
-  DB["PostgreSQL 15+ (Prod) / H2 (Test)"]
-
-  User -->|Direct HTTPS| Geo
-  User -->|First-Party HTTPS / WSS| Proxy
-  Proxy --> Backend
-  Backend --> DB
-```
+<br/>
 
 | Layer | Technology |
 |---|---|
@@ -381,7 +382,7 @@ RideWise/
 │   │   ├── services/                     # Pure navigation.js, routingApi.js, WS & REST clients
 │   │   └── pages/                        # Home, Ride, Riders, Settings, Admin, Organizations
 │   └── tests/                            # Native node --test suites
-├── docs/                                 # Setup, Architecture, Maps, API, Deployment & screenshots
+├── docs/                                 # Setup, Architecture, Maps, API, Deployment, assets & screenshots
 ├── .env.example                          # Environment variable template
 ├── setup.py                              # Cross-platform setup script (Python 3.8+)
 ├── CONTRIBUTING.md                       # Contribution guide & PR checklist
