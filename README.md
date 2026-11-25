@@ -1,3 +1,5 @@
+<a id="top"></a>
+
 <h1 align="center">RideWise</h1>
 
 <h3 align="center">Every journey, connected.</h3>
@@ -14,11 +16,9 @@
   <i>Built for solo riders, group rides, college buses, travel operators, and city fleets.</i>
 </p>
 
-
 <div align="center">
   <img src="docs/screenshots/fleet-map-college.png" alt="RideWise live fleet map — Greenfield Institute of Technology" width="100%" />
 </div>
-
 
 <p align="center">
   <a href="https://ride-wise.pages.dev">
@@ -36,6 +36,21 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/sGokulaKumaran/Ride-Wise/stargazers">
+    <img src="https://img.shields.io/github/stars/sGokulaKumaran/Ride-Wise?style=flat-square&logo=github&color=f59e0b" alt="GitHub Stars" />
+  </a>
+  <a href="https://github.com/sGokulaKumaran/Ride-Wise/network/members">
+    <img src="https://img.shields.io/github/forks/sGokulaKumaran/Ride-Wise?style=flat-square&logo=github&color=6366f1" alt="GitHub Forks" />
+  </a>
+  <a href="https://github.com/sGokulaKumaran/Ride-Wise/issues">
+    <img src="https://img.shields.io/github/issues/sGokulaKumaran/Ride-Wise?style=flat-square&logo=github&color=ec4899" alt="Open Issues" />
+  </a>
+  <a href="https://github.com/sGokulaKumaran/Ride-Wise/commits">
+    <img src="https://img.shields.io/github/last-commit/sGokulaKumaran/Ride-Wise?style=flat-square&logo=github&color=10b981" alt="Last Commit" />
+  </a>
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/Java-21-ED8B00?style=flat-square&logo=openjdk&logoColor=white" alt="Java 21" />
   <img src="https://img.shields.io/badge/Spring%20Boot-3.4-6DB33F?style=flat-square&logo=springboot&logoColor=white" alt="Spring Boot 3.4" />
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React 19" />
@@ -46,69 +61,13 @@
   <img src="https://img.shields.io/badge/Maps-Leaflet%20%2B%20OSM%20%2B%20OSRM-199900?style=flat-square&logo=leaflet&logoColor=white" alt="Leaflet + OSM + OSRM" />
 </p>
 
-
-
 <div align="center">
 
-[**Quick Start**](#quick-start) · [**What RideWise Does**](#what-ridewise-does) · [**How It Works**](#how-ridewise-works) · [**Screenshots & Demo**](#screenshots-and-demo) ·
-[**Architecture**](#architecture-summary) · [**Repository Blueprint**](#repository-blueprint) · [**Testing**](#testing-and-production-builds) ·
+[**Screenshots & Demo**](#screenshots-and-demo) · [**What RideWise Does**](#what-ridewise-does) · [**How It Works**](#how-ridewise-works) · [**Architecture**](#architecture-summary) ·
+[**Quick Start**](#quick-start) · [**Repository Blueprint**](#repository-blueprint) · [**Testing**](#testing-and-production-builds) ·
 [**API Reference**](docs/API.md) · [**Roadmap**](docs/ARCHITECTURE.md#roadmap) · [**Contributing**](#contributing) · [**License**](#license-and-fair-use)
 
 </div>
-
----
-
-## Bring Up the Full RideWise Stack — Quick Setup
-
-New to the project? Follow the step-by-step **[Setup & Local Development Guide (docs/SETUP.md)](docs/SETUP.md)** first. It covers everything you need to clone, configure, and run RideWise on Windows, macOS, or Linux — including the full PostgreSQL walkthrough and a troubleshooting section.
-
-Already have Java 21+, a supported Node.js version (20.19+ or 22.12+; Node 21 is not supported), and Python 3.8+? Run the automatic dependency installer [`setup.py`](setup.py) (`python3 setup.py` or `py setup.py`), then launch the H2 test configuration and the Vite dev server:
-
-```bash
-# Terminal 1 — backend on :8080 (in-memory H2 test configuration, no PostgreSQL needed)
-cd backend/ridewise && ./mvnw spring-boot:test-run   # Windows: .\mvnw.cmd spring-boot:test-run
-
-# Terminal 2 — frontend on :5173 (proxies /api/* and /ws/* to :8080)
-cd frontend && npm run dev
-```
-
-### Prerequisites
-
-| Tool | Required Version | Notes |
-|---|---|---|
-| **Java 21+ & IDE** | **Java 21+** | Spring Boot 3.4 backend — [**IntelliJ IDEA**](https://www.jetbrains.com/idea/download/) (recommended), [**Eclipse / STS**](https://spring.io/tools), or [**VS Code**](https://code.visualstudio.com/Download) (see [IDE setup in `docs/SETUP.md`](docs/SETUP.md#recommended-ide-setup-for-the-spring-boot-backend)) |
-| **Node.js & npm** | **20.19+** or **22.12+** (**22 LTS recommended**) | Required by Vite 8 (`^20.19.0 \|\| >=22.12.0`) |
-| **Python** | **3.8+** | For `setup.py` cross-platform bootstrapper |
-| **PostgreSQL** | **15+** *(optional)* | Needed only for persistent storage; H2 test configuration works without it |
-| **Git** | Any recent version | To clone the repository |
-
-> [!TIP]
-> **Just exploring?** Jump straight into the [live RideWise app](https://ride-wise.pages.dev) — no local setup required.
-
-
----
-
-## What RideWise Does
-
-Most GPS apps solve only one slice of the road—consumer turn-by-turn apps ignore fleets, and fleet tools lock you behind sales calls and per-vehicle fees. RideWise combines both behind **per-organization RBAC**: one account can navigate solo in the morning, lead a group ride at noon, drive a college bus in the afternoon, and manage a 20-vehicle transit fleet at night.
-
-| Role | What you can do |
-|---|---|
-| **Solo riders** | Plan routes with alternatives, spoken turn-by-turn guidance, segment-projected off-route recovery, 6 map styles (`Auto`, `Standard`, `Dark`, `Satellite`, `Terrain`, `Cycling`), 4 UI themes (`Dark`, `Light`, `Warm`, `Midnight`), Screen Wake Lock, Add to Home Screen via web manifest *(no offline service worker cache yet)*, universal header search, and ride history. |
-| **Group riders** | Invite friends over `/ws/rides` with opt-in location sharing, live **Off route** rider status, and a **purple rejoin path** ahead on the main route instead of awkward U-turns. |
-| **Passengers & customers** | Browse public organizations or unlock private ones with an access code (e.g. `RW-ZU5NHC`), watch live vehicles with stop-by-stop ETAs and crowd badges (`Seats free`, `Filling up`, `Full`), set **"Tell me when it's near"** proximity alerts, and read announcements. |
-| **Drivers** | Start trips in 3 taps with app-wide background tracking, speed alerts, crowd updates, and one-tap **SOS**. |
-| **Organization admins** | 9-tab operations suite (**Overview**, **Live map**, **Vehicles**, **Routes**, **People**, **Trips** with GPS replay + CSV export, **Announce**, **Statistics**, **Settings**). |
-| **Platform admins** | Platform-wide metrics, user management, active ride monitoring & bulk cleanup, org verification/suspension, and feedback with optional Gmail forwarding. |
-
----
-
-## How RideWise Works
-
-1. **Plan a route** — place search (Photon, with Nominatim fallback) and routing (OSRM, with a FOSSGIS failover) run directly in the browser, so no map or routing traffic passes through the backend.
-2. **Navigate** — your phone's GPS feeds the pure `navigation.js` engine, which projects each fix onto the active route, announces maneuvers, and detects off-route drift with accuracy-scaled hysteresis.
-3. **Coordinate live** — group riders stream positions over `/ws/rides` and see who is on or off route; fleet drivers stream over `/ws/fleet` while passengers watch a vehicle or organization across trips.
-4. **Operate** — organization admins manage vehicles, multi-stop routes, drivers, announcements, analytics, and GPS trip replays from a nine-tab dashboard, while platform admins oversee users, organizations, and feedback.
 
 ---
 
@@ -118,7 +77,6 @@ Most GPS apps solve only one slice of the road—consumer turn-by-turn apps igno
   <a href="https://drive.google.com/file/d/1E6lUD8i4y4ZnQ73IWQIi5h3QJdVsaJIH/view?usp=drive_link">
     <img src="docs/screenshots/promo-gif/demo-preview.gif" alt="RideWise full demo tour — solo navigation, group rides, college bus, travel fleets, and city transit" width="90%" />
   </a>
-  
 </p>
 
 <table>
@@ -148,11 +106,172 @@ Most GPS apps solve only one slice of the road—consumer turn-by-turn apps igno
   </tr>
 </table>
 
+<details>
+<summary><b>Explore Solo Navigation &amp; Customization (5 screenshots)</b></summary>
+<br/>
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/home-dashboard.png" alt="RideWise home dashboard" width="100%" />
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/solo-directions.png" alt="Solo route planning and directions" width="275" />
+    </td>
+  </tr>
+  <tr>
+    <td align="center"><sub><b>Home dashboard</b><br/>Universal search, quick mode launchers &amp; active session overview</sub></td>
+    <td align="center"><sub><b>Route planning &amp; alternatives</b><br/>Turn-by-turn preview, distance, duration &amp; route comparison</sub></td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/solo-satellite.png" alt="Satellite map layer during solo ride" width="100%" />
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/theme-switcher.jpg" alt="App theme switcher" width="275" />
+    </td>
+  </tr>
+  <tr>
+    <td align="center"><sub><b>Satellite basemap</b><br/>Switchable Esri World Imagery layer for terrain &amp; landmarks</sub></td>
+    <td align="center"><sub><b>UI themes</b><br/>Dark, Light, Warm &amp; Midnight themes for day or night riding</sub></td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <img src="docs/screenshots/ride-history.jpg" alt="Saved ride history view" width="320" /><br/>
+      <sub><b>Ride history</b><br/>Past solo &amp; group trips with route stats and replay access</sub>
+    </td>
+  </tr>
+</table>
+
+</details>
+
+<details>
+<summary><b>Explore Group Ride Live Sync &amp; Off-Route Recovery (3 screenshots)</b></summary>
+<br/>
+
+<table>
+  <tr>
+    <td align="center" colspan="2">
+      <img src="docs/screenshots/promo-group-sync.png" alt="Group ride live telemetry sync showcase" width="90%" /><br/>
+      <sub><b>Live group coordination</b><br/>Real-time rider positions, route progress &amp; status synced over <code>/ws/rides</code></sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/group-ride.png" alt="Active group ride shared map" width="275" />
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/group-offroute-leader.png" alt="Leader view of off-route group rider" width="275" />
+    </td>
+  </tr>
+  <tr>
+    <td align="center"><sub><b>Shared group map</b><br/>Colour-coded rider markers along the active route</sub></td>
+    <td align="center"><sub><b>Leader off-route visibility</b><br/>Instant <b>Off route</b> status alert when a rider drifts away</sub></td>
+  </tr>
+</table>
+
+</details>
+
+<details>
+<summary><b>Explore Campus, Travels, City Transit &amp; Admin Suite (7 screenshots)</b></summary>
+<br/>
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/promo-city-transit.png" alt="City transit multi-vehicle live map" width="100%" />
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/promo-dispatch-and-customer.png" alt="Fleet dispatch and customer tracking side-by-side" width="100%" />
+    </td>
+  </tr>
+  <tr>
+    <td align="center"><sub><b>City transit operations</b><br/>Multi-route live fleet monitoring across city corridors</sub></td>
+    <td align="center"><sub><b>Dispatch &amp; passenger sync</b><br/>Live vehicle broadcast paired with customer ETA tracking</sub></td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/fleet-map-city.png" alt="City fleet live map" width="100%" />
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/fleet-college-all.png" alt="College buses live overview" width="100%" />
+    </td>
+  </tr>
+  <tr>
+    <td align="center"><sub><b>City fleet map</b><br/>Active vehicles, route overlays &amp; live telemetry markers</sub></td>
+    <td align="center"><sub><b>Campus shuttle overview</b><br/>All college bus routes and live status in one view</sub></td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/org-public-page.png" alt="Public organization directory page" width="100%" />
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/customer-tracking.png" alt="Customer live vehicle tracking view" width="275" />
+    </td>
+  </tr>
+  <tr>
+    <td align="center"><sub><b>Organization portal</b><br/>Public browsing or private access-code unlock (e.g. <code>RW-ZU5NHC</code>)</sub></td>
+    <td align="center"><sub><b>Customer tracking</b><br/>Live vehicle pin, upcoming stops &amp; proximity alert controls</sub></td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <img src="docs/screenshots/admin-overview.jpg" alt="Platform admin overview dashboard" width="90%" /><br/>
+      <sub><b>Platform &amp; organization admin suite</b><br/>System metrics, user/org controls, GPS trip replays &amp; analytics</sub>
+    </td>
+  </tr>
+</table>
+
+</details>
+
+---
+
+## What RideWise Does
+
+Most GPS apps solve only one slice of the road—consumer turn-by-turn apps ignore fleets, and fleet tools lock you behind sales calls and per-vehicle fees. RideWise combines both behind **per-organization RBAC**: one account can navigate solo in the morning, lead a group ride at noon, drive a college bus in the afternoon, and manage a 20-vehicle transit fleet at night.
+
+| Role | What you can do |
+|---|---|
+| **Solo riders** | Plan routes with alternatives, spoken turn-by-turn guidance, segment-projected off-route recovery, selectable basemaps (`Standard`, `Satellite`, `Cycling`, plus optional theme-matched layers), 4 UI themes (`Dark`, `Light`, `Warm`, `Midnight`), Screen Wake Lock, Add to Home Screen via web manifest *(no offline service worker cache yet)*, universal header search, and ride history. |
+| **Group riders** | Invite friends over `/ws/rides` with opt-in location sharing, live **Off route** rider status, and a **purple rejoin path** ahead on the main route instead of awkward U-turns. |
+| **Passengers & customers** | Browse public organizations or unlock private ones with an access code (e.g. `RW-ZU5NHC`), watch live vehicles with stop-by-stop ETAs and crowd badges (`Seats free`, `Filling up`, `Full`), set **"Tell me when it's near"** proximity alerts, and read announcements. |
+| **Drivers** | Start trips in 3 taps with app-wide background tracking, speed alerts, crowd updates, and one-tap **SOS**. |
+| **Organization admins** | 9-tab operations suite (**Overview**, **Live map**, **Vehicles**, **Routes**, **People**, **Trips** with GPS replay + CSV export, **Announce**, **Statistics**, **Settings**). |
+| **Platform admins** | Platform-wide metrics, user management, active ride monitoring & bulk cleanup, org verification/suspension, and feedback with optional Gmail forwarding. |
+
+---
+
+## How RideWise Works
+
+1. **Plan a route** — place search (Photon, with Nominatim fallback) and routing (OSRM, with a FOSSGIS failover) run directly in the browser, so no map or routing traffic passes through the backend.
+2. **Navigate** — your phone's GPS feeds the pure `navigation.js` engine, which projects each fix onto the active route, announces maneuvers, and detects off-route drift with accuracy-scaled hysteresis.
+3. **Coordinate live** — group riders stream positions over `/ws/rides` and see who is on or off route; fleet drivers stream over `/ws/fleet` while passengers watch a vehicle or organization across trips.
+4. **Operate** — organization admins manage vehicles, multi-stop routes, drivers, announcements, analytics, and GPS trip replays from a nine-tab dashboard, while platform admins oversee users, organizations, and feedback.
+
 ---
 
 ## Architecture Summary
 
 RideWise pairs a **React 19 / Vite 8 / Leaflet** SPA with a **Spring Boot 3.4 / Java 21 / PostgreSQL** API and raw JSON WebSockets (`/ws/rides` and `/ws/fleet`), proxied in production via Cloudflare Pages Functions so `SESSION` cookies remain first-party.
+
+```mermaid
+flowchart LR
+  User["Browser SPA (React 19 + Vite 8 + Leaflet + navigation.js)"]
+
+  subgraph Geo["Browser-Direct Open Geospatial Stack (0 backend bytes)"]
+    Tiles["Map Tiles (OSM / Esri / CyclOSM)"]
+    Search["Place Search (Photon -> Nominatim)"]
+    Routing["Turn-by-Turn Routing (OSRM -> FOSSGIS)"]
+  end
+
+  Proxy["Cloudflare Pages Functions (/api/* and /ws/*)"]
+  Backend["Spring Boot 3.4 + Java 21 (8 REST Controllers + /ws/rides & /ws/fleet)"]
+  DB["PostgreSQL 15+ (Prod) / H2 (Test)"]
+
+  User -->|Direct HTTPS| Geo
+  User -->|First-Party HTTPS / WSS| Proxy
+  Proxy --> Backend
+  Backend --> DB
+```
 
 | Layer | Technology |
 |---|---|
@@ -160,7 +279,7 @@ RideWise pairs a **React 19 / Vite 8 / Leaflet** SPA with a **Spring Boot 3.4 / 
 | **Backend** | Spring Boot 3.4 · Java 21 · raw JSON WebSockets |
 | **Database** | PostgreSQL 15+ in production · in-memory H2 for tests |
 | **Authentication** | Spring Session JDBC · HttpOnly `SESSION` cookie |
-| **Maps** | OpenStreetMap · Stadia · Esri · OpenTopoMap · CyclOSM |
+| **Maps** | OpenStreetMap · Esri · CyclOSM *(Stadia Dark/Terrain & OpenTopoMap supported in config)* |
 | **Search & routing** | Photon · Nominatim · OSRM (FOSSGIS failover) |
 | **Live deployment** | Cloudflare Pages + Render + Aiven (free tier) |
 
@@ -176,34 +295,62 @@ RideWise pairs a **React 19 / Vite 8 / Leaflet** SPA with a **Spring Boot 3.4 / 
 
 ## Quick Start
 
-### 1. Check Tools & Install Dependencies
+> [!TIP]
+> **Just exploring?** Jump straight into the [live RideWise app](https://ride-wise.pages.dev) — no local setup required.
+
+Clone the repository and run the cross-platform dependency bootstrapper [`setup.py`](setup.py) (`--check`, `--yes`, `--no-tools` supported):
 
 ```bash
 git clone https://github.com/sGokulaKumaran/Ride-Wise.git
 cd Ride-Wise
-python3 setup.py      # Windows: py setup.py  (supports --check, --yes, --no-tools)
+python3 setup.py      # Windows: py setup.py
 ```
 
-### 2. Run Locally
+<details open>
+<summary><b>Option A — 1-Minute H2 Test Configuration (no database setup required)</b></summary>
+<br/>
 
-- **Option A — H2 Test Configuration (1 minute, no database setup):**
-  Uses `backend/ridewise/src/test/resources/application.properties` on the test classpath (`MODE=PostgreSQL`):
-  ```bash
-  # Terminal 1 — backend on :8080
-  cd backend/ridewise && ./mvnw spring-boot:test-run   # Windows: .\mvnw.cmd spring-boot:test-run
+Uses `backend/ridewise/src/test/resources/application.properties` on the test classpath (`MODE=PostgreSQL`):
 
-  # Terminal 2 — frontend on :5173
-  cd frontend && npm run dev
-  ```
-- **Option B — Persistent PostgreSQL 15+:**
-  Create database `ridewise`, copy variables from [`.env.example`](.env.example), export `DATABASE_URL`, `DB_USERNAME`, `DB_PASSWORD`, and run:
-  ```bash
-  # Terminal 1 — backend on :8080
-  cd backend/ridewise && ./mvnw spring-boot:run        # Windows: .\mvnw.cmd spring-boot:run
+```bash
+# Terminal 1 — backend on :8080
+cd backend/ridewise && ./mvnw spring-boot:test-run   # Windows: .\mvnw.cmd spring-boot:test-run
 
-  # Terminal 2 — frontend on :5173
-  cd frontend && npm run dev
-  ```
+# Terminal 2 — frontend on :5173 (proxies /api/* and /ws/* to :8080)
+cd frontend && npm run dev
+```
+
+</details>
+
+<details>
+<summary><b>Option B — Persistent PostgreSQL 15+ Setup</b></summary>
+<br/>
+
+Create database `ridewise`, copy variables from [`.env.example`](.env.example), export `DATABASE_URL`, `DB_USERNAME`, `DB_PASSWORD`, and run:
+
+```bash
+# Terminal 1 — backend on :8080
+cd backend/ridewise && ./mvnw spring-boot:run        # Windows: .\mvnw.cmd spring-boot:run
+
+# Terminal 2 — frontend on :5173
+cd frontend && npm run dev
+```
+
+</details>
+
+<details>
+<summary><b>Prerequisites &amp; Recommended Tools</b></summary>
+<br/>
+
+| Tool | Required Version | Notes |
+|---|---|---|
+| **Java 21+ & IDE** | **Java 21+** | Spring Boot 3.4 backend — [**IntelliJ IDEA**](https://www.jetbrains.com/idea/download/) (recommended), [**Eclipse / STS**](https://spring.io/tools), or [**VS Code**](https://code.visualstudio.com/Download) (see [IDE setup in `docs/SETUP.md`](docs/SETUP.md#recommended-ide-setup-for-the-spring-boot-backend)) |
+| **Node.js & npm** | **20.19+** or **22.12+** (**22 LTS recommended**) | Required by Vite 8 (`^20.19.0 \|\| >=22.12.0`); Node 21 is not supported |
+| **Python** | **3.8+** | For `setup.py` cross-platform bootstrapper |
+| **PostgreSQL** | **15+** *(optional)* | Needed only for persistent storage; H2 test configuration works without it |
+| **Git** | Any recent version | To clone the repository |
+
+</details>
 
 > [!WARNING]
 > **Default admin credentials:** On first boot with an empty database, `DataInitializer` seeds `admin@ridewise.com` with password **`Admin@123`** unless `RIDEWISE_ADMIN_EMAIL` / `RIDEWISE_ADMIN_PASSWORD` are set. **Change this password immediately before exposing your server publicly.**
@@ -213,6 +360,10 @@ python3 setup.py      # Windows: py setup.py  (supports --check, --yes, --no-too
 ---
 
 ## Repository Blueprint
+
+<details>
+<summary><b>Browse the full repository structure</b></summary>
+<br/>
 
 ```text
 RideWise/
@@ -238,9 +389,15 @@ RideWise/
 └── Detailed plan of this platform/       # Complete product & architecture blueprint
 ```
 
+</details>
+
 ---
 
 ## Testing and Production Builds
+
+<details>
+<summary><b>Run backend tests, frontend tests, lint &amp; production builds</b></summary>
+<br/>
 
 ```bash
 # Backend — Spring integration & WebSocket tests (isolated H2 test configuration)
@@ -256,6 +413,8 @@ cd frontend && npm run lint
 cd frontend && npm run build && npm run preview
 cd backend/ridewise && ./mvnw package && java -jar target/ridewise-0.0.1-SNAPSHOT.jar
 ```
+
+</details>
 
 Docker support is included via [`backend/ridewise/Dockerfile`](backend/ridewise/Dockerfile) — see [**docs/DEPLOYMENT.md**](docs/DEPLOYMENT.md) for `docker build` / `docker run` and Cloudflare Pages / Render hosting instructions.
 
@@ -293,6 +452,7 @@ RideWise is released under the **GNU Affero General Public License v3.0 (AGPL-3.
 ---
 
 <p align="center">
+  <b>If RideWise helped you or inspired your project, consider giving the repo a ⭐!</b><br/><br/>
   <sub>Built by <b>Gokula Kumaran S</b> · CSBS, Ramco Institute of Technology</sub><br/>
-  <sub><a href="https://ride-wise.pages.dev">Live App</a> · <a href="https://drive.google.com/file/d/1E6lUD8i4y4ZnQ73IWQIi5h3QJdVsaJIH/view?usp=drive_link">Demo Video</a> · <a href="https://github.com/sGokulaKumaran/Ride-Wise">Source Code</a></sub>
+  <sub><a href="https://ride-wise.pages.dev">Live App</a> · <a href="https://drive.google.com/file/d/1E6lUD8i4y4ZnQ73IWQIi5h3QJdVsaJIH/view?usp=drive_link">Demo Video</a> · <a href="https://github.com/sGokulaKumaran/Ride-Wise">Source Code</a> · <a href="#top">⬆ Back to top</a></sub>
 </p>
