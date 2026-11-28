@@ -208,8 +208,12 @@ class RideLocationSocketTests {
             JsonNode seen = adminHandler.await("location", 5000);
             assertNotNull(seen, "admin should receive the member's live position");
             assertEquals(memberId, seen.get("location").get("userId").asLong());
-            assertTrue(userLocationRepository.findByUserId(memberId).isPresent(),
-                    "the latest-location row must exist while sharing");
+            boolean exists = false;
+            for (int i = 0; i < 20 && !exists; i++) {
+            exists = userLocationRepository.findByUserId(memberId).isPresent();
+            if (!exists) Thread.sleep(50);
+            }
+            assertTrue(exists, "the latest-location row must exist while sharing");
 
             // The member stops sharing.
             memberWs.sendMessage(new TextMessage(json(Map.of("type", "stop", "rideId", rideId))));
@@ -217,9 +221,13 @@ class RideLocationSocketTests {
             JsonNode cleared = adminHandler.await("location-cleared", 5000);
             assertNotNull(cleared, "the group must be told to remove that marker");
             assertEquals(memberId, cleared.get("userId").asLong());
-            assertTrue(userLocationRepository.findByUserId(memberId).isEmpty(),
-                    "stopping sharing must delete the stored position (no ghost marker)");
-        } finally {
+            boolean gone = false;
+            for (int i = 0; i < 20 && !gone; i++) {
+                gone = userLocationRepository.findByUserId(memberId).isEmpty();
+                if (!gone) Thread.sleep(50);
+            }
+            assertTrue(gone, "stopping sharing must delete the stored position (no ghost marker)");
+            } finally {
             closeQuietly(memberWs);
             closeQuietly(adminWs);
         }
